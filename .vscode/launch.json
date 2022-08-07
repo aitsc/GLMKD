@@ -1,0 +1,97 @@
+{
+    // 使用 IntelliSense 了解相关属性。 
+    // 悬停以查看现有属性的描述。
+    // 欲了解更多信息，请访问: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Current File",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "name": "debug",
+            "type": "python",
+            "request": "launch",
+            "console": "integratedTerminal",
+            "program": "~/anaconda3/envs/GLM/bin/deepspeed",
+            // "program": "pretrain_glm.py",
+            // "program": "finetune_glm.py",
+            // "program": "distill_tinybert/pretrain.py",
+            // "program": "distill_tinybert/finetune.py",
+            "args": [
+                // deepspeed
+                "--master_port=12368",
+                "--include=localhost:6",
+                // "pretrain_glm.py",
+                "distill_tinybert/pretrain.py",
+                "--deepspeed_config=config/config_block_tiny6.json", // 注意其中的 batch size
+                "--deepspeed-activation-checkpointing",
+                "--deepspeed",
+                // "--load=",
+                "--block-lm",
+                "--num-layers=6",
+                "--hidden-size=768",
+                "--num-attention-heads=12",
+                "--max-position-embeddings=512",
+                "--tokenizer-model-type=bert-base-uncased",
+                "--tokenizer-type=BertWordPieceTokenizer",
+                "--fp16",
+                "--checkpoint-activations",
+                "--model-parallel-size=1",
+                "--save-interval=5000",
+                // 预训练
+                "--save=../GLM/data/checkpoints/distill/tiny6",
+                "--experiment-name=test",
+                "--bert-prob=1.0",
+                "--train-data=bert-base",
+                "--split=949,50,1",
+                "--distributed-backend=nccl",
+                "--lr-decay-style=cosine",
+                "--lr-decay-iters=120000",
+                "--lr-decay-ratio=0.05",
+                "--warmup=.05",
+                "--train-iters=123456789",
+                "--no-lazy-loader",
+                "--resume-dataloader",
+                // 微调
+                // "--task=COPA",
+                // "--data-dir=../GLM/data/english_data/superglue/COPA",
+                // "--load-pretrained=../GLM/data/checkpoints/distill/student-em+pre6-64*100000",
+                // "--save=../GLM/data/checkpoints/distill/student-em+pre6-64*100000/finetune/COPA",
+                // "--experiment-name=tiny6-COPA-220805_141454", // date +"%y%m%d_%H%M%S"
+                // "--seq-length=256",
+                // "--batch-size=16",
+                // "--epochs=700",
+                // "--lr-decay-style=linear",
+                // "--warmup=0.1",
+                // "--weight-decay=1.0e-1",
+                // "--pattern-id=0",
+                // "--log-interval=50",
+                // "--lr=1e-5",
+                // "--overwrite",
+                // "--finetune",
+                // "--cloze-eval",
+                // "--eval-batch-size=16",
+                // "--save-epoch=100000",
+                // 教师
+                "--has_teacher",
+                "--teacher_num_layers=12",
+                "--teacher_hidden_size=768",
+                "--teacher_num_attention_heads=12",
+                "--teacher_max_position_embeddings=512",
+                "--load-pretrained=../GLM/data/checkpoints/pretrain/blocklm-base-blank", //
+            ],
+            "env": {
+                "NCCL_DEBUG":"info",
+                "NCCL_IB_DISABLE":"0",
+                "NCCL_NET_GDR_LEVEL":"2",
+                "CUDA_VISIBLE_DEVICES":"6",
+            },
+            "justMyCode": false,
+        },
+    ]
+}

@@ -482,6 +482,9 @@ class Stories(PromptReader):
 
 class BertBaseData(BertData):
     PATH = '/root/data/formatted_one_article_per_line'
+    PATH = '../GLM/data/pretrain/bertbase/wiki.txt'
+    PATH = '../GLM/data/pretrain/bertbase/wikicorpus_en_one_article_per_line.txt'
+    PATH = '../GLM/data/pretrain/bertbase/wikibook_glm.txt'
 
 
 class BertLargeData(BertData):

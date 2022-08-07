@@ -895,7 +895,7 @@ class BertWordPieceTokenizer(Tokenizer):
             return token.Id
         if type_token:
             return self.type_token_map[token].Id
-        token = token.strip()
+        token = token.strip().lower()  # 不能 cased 模型
         return self.text_tokenizer.vocab[token]
 
     def DecodeIds(self, Ids, type_token=False):

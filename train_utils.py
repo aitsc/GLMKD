@@ -13,6 +13,21 @@ from model.modeling_bert import BertForMultipleChoice, BertForSequenceClassifica
 from utils import print_rank_0, get_checkpoint_name, get_checkpoint_iteration
 
 
+def remove_hook(hook):
+    if type(hook) == dict:
+        for k, v in list(hook.items()):
+            if remove_hook(v):
+                del hook[k]
+    elif type(hook) == list:
+        hook_len = len(hook)
+        for i, v in enumerate(hook[::-1]):
+            if remove_hook(v):
+                del hook[hook_len - i - 1]
+    else:
+        return True
+    return False
+
+
 def load_pretrained(model, checkpoint_path, args, task_tokens=None):
     load_dir, tag, release, success = get_checkpoint_iteration(checkpoint_path)
     checkpoint_name = get_checkpoint_name(load_dir, tag, release)
@@ -59,7 +74,7 @@ def load_pretrained(model, checkpoint_path, args, task_tokens=None):
         model.prompt_spell.init_embedding(model.word_embeddings.weight.data, task_tokens)
 
 
-def get_model(args, model_type=None, multi_token=True, num_labels=None, spell_length=None):
+def get_model(args, model_type=None, multi_token=True, num_labels=None, spell_length=None, glm_wrap=None, other_model_obj=None):
     """Build the model."""
     print_rank_0('building GPT2 model ...')
     if args.pretrained_bert:
@@ -78,7 +93,7 @@ def get_model(args, model_type=None, multi_token=True, num_labels=None, spell_le
                                                                   num_labels=num_labels)
         else:
             raise NotImplementedError
-    else:
+    elif other_model_obj is None:
         output_predict, paralle_output = True, True
         if (model_type == "multiple_choice" or model_type == "classification") and not args.cloze_eval:
             output_predict = False
@@ -106,6 +121,8 @@ def get_model(args, model_type=None, multi_token=True, num_labels=None, spell_le
                          attention_scale=args.attention_scale)
         if args.freeze_transformer:
             model.freeze_transformer(tune_prefix_layers=args.tune_prefix_layers)
+        if glm_wrap is not None:
+            model = glm_wrap(model, args)
         if model_type is not None:
             if model_type == 'multiple_choice':
                 if args.cloze_eval:
@@ -126,6 +143,8 @@ def get_model(args, model_type=None, multi_token=True, num_labels=None, spell_le
                 pass
             else:
                 raise NotImplementedError(model_type)
+    else:
+        model = other_model_obj
 
     if mpu.get_data_parallel_rank() == 0:
         print(' > number of parameters on model parallel rank {}: {}'.format(
@@ -240,11 +259,11 @@ def get_learning_rate_scheduler(optimizer, args):
     return lr_scheduler
 
 
-def setup_model_and_optimizer(args, model_type=None, multi_token=True, num_labels=None, spell_length=None):
+def setup_model_and_optimizer(args, model_type=None, multi_token=True, num_labels=None, spell_length=None, **kw):
     """Setup model and optimizer."""
 
     model = get_model(args, model_type=model_type, multi_token=multi_token, num_labels=num_labels,
-                      spell_length=spell_length)
+                      spell_length=spell_length, **kw)
     param_groups = get_optimizer_param_groups(model)
 
     if args.train_data is not None or args.data_dir is not None and (args.epochs > 0 or args.train_iters > 0):
@@ -322,7 +341,7 @@ def see_memory_usage(message, force=False):
 
 
 def train_step(data_iterator, model, optimizer, lr_scheduler, args, timers, forward_step_func, mems=None,
-               single_step=False):
+               single_step=False, **kwargs):
     """Single training step."""
     lm_loss_total, count = 0.0, 0
     mems = [] if mems is None else mems
@@ -332,7 +351,7 @@ def train_step(data_iterator, model, optimizer, lr_scheduler, args, timers, forw
         skipped_iter, complete = 0, False
         # Forward model for one step.
         timers('forward').start()
-        lm_loss, mems, _ = forward_step_func(data_iterator, model, args, timers, mems)
+        lm_loss, mems, _ = forward_step_func(data_iterator, model, args, timers, mems, **kwargs)
         timers('forward').stop()
         # print_rank_0("Forward step")
         if not args.deepspeed:
@@ -349,6 +368,8 @@ def train_step(data_iterator, model, optimizer, lr_scheduler, args, timers, forw
             # Calculate gradients, reduce across processes, and clip.
             timers('backward').start()
             backward_step(optimizer, model, lm_loss, args, timers)
+            if 'distill_hook' in kwargs:
+                remove_hook(kwargs['distill_hook'])
             timers('backward').stop()
             # print_rank_0("Backward step")
             # Update parameters.
@@ -380,6 +401,8 @@ def train_step(data_iterator, model, optimizer, lr_scheduler, args, timers, forw
             print_rank_0("Found NaN loss, skip backward")
             del lm_loss, reduced_loss
             mems = []
+            if 'distill_hook' in kwargs:
+                remove_hook(kwargs['distill_hook'])
         if single_step:
             break
     if args.deepspeed:

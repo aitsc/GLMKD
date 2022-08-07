@@ -6,4 +6,7 @@ logs
 runs
 settings.json
 .gitignore
-.vscode/
+.vscode/*
+!.vscode/launch.json
+__pycache__/
+test*

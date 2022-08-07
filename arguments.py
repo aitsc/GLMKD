@@ -394,7 +394,7 @@ def add_finetune_config_args(parser):
     return parser
 
 
-def get_args():
+def get_args(arg_list=None):
     """Parse all the args."""
 
     parser = argparse.ArgumentParser(description='PyTorch BERT Model')
@@ -409,7 +409,7 @@ def get_args():
     # Include DeepSpeed configuration arguments
     parser = deepspeed.add_config_arguments(parser)
 
-    args = parser.parse_args()
+    args = parser.parse_args(arg_list)
     if not args.train_data and not args.data_dir:
         print('WARNING: No training data specified')
 

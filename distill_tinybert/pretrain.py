@@ -28,18 +28,12 @@ from utils import print_rank_0
 from utils import get_sample_writer, get_log_dir, get_hostname
 import torch.distributed as dist
 from pretrain_glm import get_batch, evaluate_and_print_results, initialize_distributed, set_random_seed, get_train_val_test_data, report_iteration_metrics
-from distill_tinybert.distill_model import GLMStudent, HookModel
+from distill_tinybert.distill_model import GLMStudent
 
 tokenizer = None
 
 
-def forward_step(data_iterator, model, args, timers, mems, teacher_model=None, hook_model=None,
-    distill_hook=None):
-    if distill_hook:
-        distill_hook_student = distill_hook['student']
-        distill_hook_teacher = distill_hook['teacher']
-    else:
-        distill_hook_student = distill_hook_teacher = None
+def forward_step(data_iterator, model, args, timers, mems, teacher_model=None, is_distill=False):
     """Forward step."""
 
     # Get the batch.
@@ -61,17 +55,20 @@ def forward_step(data_iterator, model, args, timers, mems, teacher_model=None, h
     else:
         mode = 'bert'
 
-    logits, *mems = model(tokens, position_ids, attention_mask, *mems, distill_hook=distill_hook_student)
+    logits, *mems = model(tokens, position_ids, attention_mask, *mems, is_distill=is_distill)
+    if is_distill:
+        s_inter_vars = logits
+        logits, *mems = mems
     losses = mpu.vocab_parallel_cross_entropy(logits.contiguous().float(), labels)
     loss_mask = loss_mask.view(-1)
     loss = torch.sum(losses.view(-1) * loss_mask)
     if loss_mask.sum().item() > 0:
         loss = loss / loss_mask.sum()
 
-    if teacher_model is not None and hook_model is not None:
+    if teacher_model is not None and is_distill:
         with torch.no_grad():
-            teacher_model(tokens, position_ids, attention_mask, distill_hook=distill_hook_teacher)
-        loss = hook_model(distill_hook_student, distill_hook_teacher)
+            t_inter_vars = teacher_model(tokens, position_ids, attention_mask, is_distill=is_distill)[0]
+        loss = GLMStudent.compute_loss(s_inter_vars, t_inter_vars)
 
     return loss, mems, mode
 
@@ -212,9 +209,10 @@ def main(args):
     if args.has_teacher:
         teacher_model = get_teacher_model(args)
         load_pretrained(teacher_model, args.load_pretrained, args)
-        hook_model = get_model(args, other_model_obj=HookModel())
+        is_distill = True
     else:
-        teacher_model = hook_model = None
+        teacher_model = None
+        is_distill = False
 
     summary_writer = None
     if torch.distributed.get_rank() == 0:
@@ -269,8 +267,8 @@ def main(args):
                                            lr_scheduler,
                                            (train_data_iterator, multi_train_iterator),
                                            (val_data_iterator, multi_val_iterator),
-                                           timers, args, summary_writer=summary_writer, teacher_model=teacher_model, hook_model=hook_model,
-                                           distill_hook={'student': {}, 'teacher': {}})
+                                           timers, args, summary_writer=summary_writer, teacher_model=teacher_model,
+                                           is_distill=is_distill)
 
         if args.do_valid:
             prefix = 'the end of training for val data'

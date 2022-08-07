@@ -105,7 +105,8 @@ class GLMModel(torch.nn.Module):
         print_rank_0(log_str)
 
     def forward(self, input_ids, position_ids, attention_mask, *mems, return_memory=False, detach_memory=True,
-                prompt_pos=None, distill_hook=None):
+                prompt_pos=None, is_distill=False):
+        inter_vars = []
         # Embeddings.
         batch_size = input_ids.size(0)
         words_embeddings = self.word_embeddings(input_ids)
@@ -116,13 +117,12 @@ class GLMModel(torch.nn.Module):
             batch_index = torch.arange(batch_size, device=input_ids.device).unsqueeze(1)
             embeddings[batch_index, prompt_pos] = prompt_embeds
         # Transformer.
-        if distill_hook is not None:
-            distill_hook['transformer'] = dh = {}
-        else:
-            dh = None
         transformer_output = self.transformer(embeddings, position_ids, attention_mask, mems,
                                               return_memory=return_memory, detach_memory=detach_memory,
-                                              distill_hook=dh)
+                                              is_distill=is_distill)
+        if is_distill:
+            inter_vars.append(transformer_output[0])
+            transformer_output = transformer_output[1:] if len(transformer_output) > 2 else transformer_output[1]
         logits, hidden_layers = transformer_output
         outputs = hidden_layers
 
@@ -133,11 +133,11 @@ class GLMModel(torch.nn.Module):
             logits_parallel = F.linear(logits_parallel, self.word_embeddings.weight)
 
             if self.parallel_output:
-                return (logits_parallel, *outputs)
+                return (*inter_vars, logits_parallel, *outputs)
 
-            return (mpu.gather_from_model_parallel_region(logits_parallel), *outputs)
+            return (*inter_vars, mpu.gather_from_model_parallel_region(logits_parallel), *outputs)
         else:
-            return (logits, *outputs)
+            return (*inter_vars, logits, *outputs)
 
 
 class EncoderDecoder(torch.nn.Module):

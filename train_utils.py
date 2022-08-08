@@ -13,21 +13,6 @@ from model.modeling_bert import BertForMultipleChoice, BertForSequenceClassifica
 from utils import print_rank_0, get_checkpoint_name, get_checkpoint_iteration
 
 
-def remove_hook(hook):
-    if type(hook) == dict:
-        for k, v in list(hook.items()):
-            if remove_hook(v):
-                del hook[k]
-    elif type(hook) == list:
-        hook_len = len(hook)
-        for i, v in enumerate(hook[::-1]):
-            if remove_hook(v):
-                del hook[hook_len - i - 1]
-    else:
-        return True
-    return False
-
-
 def load_pretrained(model, checkpoint_path, args, task_tokens=None):
     load_dir, tag, release, success = get_checkpoint_iteration(checkpoint_path)
     checkpoint_name = get_checkpoint_name(load_dir, tag, release)
@@ -74,7 +59,7 @@ def load_pretrained(model, checkpoint_path, args, task_tokens=None):
         model.prompt_spell.init_embedding(model.word_embeddings.weight.data, task_tokens)
 
 
-def get_model(args, model_type=None, multi_token=True, num_labels=None, spell_length=None, glm_wrap=None, other_model_obj=None):
+def get_model(args, model_type=None, multi_token=True, num_labels=None, spell_length=None, glm_wrap=None):
     """Build the model."""
     print_rank_0('building GPT2 model ...')
     if args.pretrained_bert:
@@ -93,7 +78,7 @@ def get_model(args, model_type=None, multi_token=True, num_labels=None, spell_le
                                                                   num_labels=num_labels)
         else:
             raise NotImplementedError
-    elif other_model_obj is None:
+    else:
         output_predict, paralle_output = True, True
         if (model_type == "multiple_choice" or model_type == "classification") and not args.cloze_eval:
             output_predict = False
@@ -143,8 +128,6 @@ def get_model(args, model_type=None, multi_token=True, num_labels=None, spell_le
                 pass
             else:
                 raise NotImplementedError(model_type)
-    else:
-        model = other_model_obj
 
     if mpu.get_data_parallel_rank() == 0:
         print(' > number of parameters on model parallel rank {}: {}'.format(
@@ -368,8 +351,6 @@ def train_step(data_iterator, model, optimizer, lr_scheduler, args, timers, forw
             # Calculate gradients, reduce across processes, and clip.
             timers('backward').start()
             backward_step(optimizer, model, lm_loss, args, timers)
-            if 'distill_hook' in kwargs:
-                remove_hook(kwargs['distill_hook'])
             timers('backward').stop()
             # print_rank_0("Backward step")
             # Update parameters.
@@ -401,8 +382,6 @@ def train_step(data_iterator, model, optimizer, lr_scheduler, args, timers, forw
             print_rank_0("Found NaN loss, skip backward")
             del lm_loss, reduced_loss
             mems = []
-            if 'distill_hook' in kwargs:
-                remove_hook(kwargs['distill_hook'])
         if single_step:
             break
     if args.deepspeed:

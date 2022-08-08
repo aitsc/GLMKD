@@ -24,8 +24,8 @@
             // "program": "distill_tinybert/finetune.py",
             "args": [
                 // deepspeed
-                "--master_port=12367",
-                "--include=localhost:7",
+                "--master_port=12369",
+                "--include=localhost:6",
                 // "pretrain_glm.py",
                 "distill_tinybert/pretrain.py",
                 "--deepspeed_config=config/config_block_tiny6.json", // 注意其中的 batch size

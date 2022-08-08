@@ -106,7 +106,7 @@ class GLMModel(torch.nn.Module):
 
     def forward(self, input_ids, position_ids, attention_mask, *mems, return_memory=False, detach_memory=True,
                 prompt_pos=None, is_distill=False):
-        inter_vars = []
+        inter_vars = {}
         # Embeddings.
         batch_size = input_ids.size(0)
         words_embeddings = self.word_embeddings(input_ids)
@@ -121,10 +121,15 @@ class GLMModel(torch.nn.Module):
                                               return_memory=return_memory, detach_memory=detach_memory,
                                               is_distill=is_distill)
         if is_distill:
-            inter_vars.append(transformer_output[0])
+            inter_vars['transformer'] = transformer_output[0]
             transformer_output = transformer_output[1:] if len(transformer_output) > 2 else transformer_output[1]
         logits, hidden_layers = transformer_output
         outputs = hidden_layers
+
+        if is_distill:
+            inter_vars_out = [inter_vars]
+        else:
+            inter_vars_out = []
 
         if self.output_predict:
             # Parallel logits.
@@ -133,11 +138,11 @@ class GLMModel(torch.nn.Module):
             logits_parallel = F.linear(logits_parallel, self.word_embeddings.weight)
 
             if self.parallel_output:
-                return (*inter_vars, logits_parallel, *outputs)
+                return (*inter_vars_out, logits_parallel, *outputs)
 
-            return (*inter_vars, mpu.gather_from_model_parallel_region(logits_parallel), *outputs)
+            return (*inter_vars_out, mpu.gather_from_model_parallel_region(logits_parallel), *outputs)
         else:
-            return (*inter_vars, logits, *outputs)
+            return (*inter_vars_out, logits, *outputs)
 
 
 class EncoderDecoder(torch.nn.Module):

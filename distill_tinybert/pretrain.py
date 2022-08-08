@@ -209,6 +209,7 @@ def main(args):
     if args.has_teacher:
         teacher_model = get_teacher_model(args)
         load_pretrained(teacher_model, args.load_pretrained, args)
+        teacher_model.eval()
         is_distill = True
     else:
         teacher_model = None

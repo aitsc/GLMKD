@@ -24,7 +24,6 @@ class GLMForMultiTokenCloze(torch.nn.Module):
         return self.model.named_parameters(prefix=prefix, recurse=recurse)
 
     def forward(self, input_ids, position_ids, attention_mask, target_ids=None, logit_mask=None, prompt_pos=None, is_distill=False):
-        inter_vars = []
         if target_ids == None:
             return self.model(input_ids, position_ids, attention_mask, is_distill=is_distill)
         num_choices = None
@@ -39,7 +38,7 @@ class GLMForMultiTokenCloze(torch.nn.Module):
                 prompt_pos = prompt_pos.reshape(-1, prompt_pos.size(-1))
         outputs, *mems = self.model(input_ids, position_ids, attention_mask, prompt_pos=prompt_pos, is_distill=is_distill)
         if is_distill:
-            inter_vars.append(outputs)
+            inter_vars = outputs
             outputs, *mems = mems
         if self.take_softmax:
             outputs = torch.nn.functional.log_softmax(outputs, dim=-1)
@@ -54,7 +53,9 @@ class GLMForMultiTokenCloze(torch.nn.Module):
             logits = logits / logit_mask.sum(dim=1) ** self.length_penalty
         if num_choices is not None:
             logits = logits.view(-1, num_choices)
-        return (*inter_vars, logits, *mems)
+        if is_distill:
+            return (inter_vars, logits, *mems)
+        return (logits, *mems)
 
 
 class GLMForMultiTokenClozeFast(torch.nn.Module):
@@ -133,13 +134,12 @@ class GLMForSingleTokenCloze(torch.nn.Module):
         return self.model.named_parameters(prefix=prefix, recurse=recurse)
 
     def forward(self, input_ids, position_ids, attention_mask, target_ids=None, logit_mask=None, prompt_pos=None, is_distill=False):
-        inter_vars = []
         if target_ids is None:
             return self.model(input_ids, position_ids, attention_mask, is_distill=is_distill)
         assert len(input_ids.shape) == 2
         outputs, *mems = self.model(input_ids, position_ids, attention_mask, prompt_pos=prompt_pos, is_distill=is_distill)
         if is_distill:
-            inter_vars.append(outputs)
+            inter_vars = outputs
             outputs, *mems = mems
         batch_ids = torch.arange(outputs.size(0), dtype=attention_mask.dtype, device=attention_mask.device)
         target_logits = outputs[batch_ids, attention_mask]
@@ -150,7 +150,9 @@ class GLMForSingleTokenCloze(torch.nn.Module):
         batch_ids = batch_ids.unsqueeze(1).expand_as(target_ids)
         output = target_prob[batch_ids, target_ids]
 
-        return (*inter_vars, output, target_logits, *mems)
+        if is_distill:
+            return (inter_vars, output, target_logits, *mems)
+        return (output, target_logits, *mems)
 
 
 class GLMForSequenceClassification(torch.nn.Module):

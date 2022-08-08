@@ -1,84 +1,34 @@
-"""Finetune utilities."""
+import sys, os
+sys.path.append(os.getcwd())
 
-import os
 import json
-
-import random
-
 from tasks.data_utils import build_data_loader, FakeDataloader
-from utils import get_sample_writer, get_log_dir, print_and_save_args, debug_finetune_data
-from arguments import get_args
+from utils import get_sample_writer, get_log_dir, print_and_save_args, get_inter_vars
+from distill_tinybert.teacher import get_args, get_teacher_model
 from filelock import FileLock
 import pretrain_glm
-from pretrain_glm import forward_step as lm_forward_step
+from pretrain_glm import forward_step
 import pathlib
 import mpu
 
 import torch
 import torch.utils.data
 from configure_data import prepare_tokenizer
+from distill_tinybert.distill_model import GLMStudent
 
 from utils import print_rank_0
 from utils import Timers
 from train_utils import setup_model_and_optimizer, train_step, load_pretrained
 from utils import load_checkpoint, save_checkpoint
-from pretrain_glm import report_iteration_metrics
-from pretrain_glm import evaluate_and_print_results
 from pretrain_glm import initialize_distributed
 from pretrain_glm import set_random_seed
 from configure_data import make_data_loader
-
-
-def process_batch(batch, args):
-    """Process batch and produce inputs for the model."""
-    keys = ["text", "label"]
-    if args.pretrained_bert:
-        keys += ["padding_mask", "types"]
-    else:
-        keys += ["mask", "position"]
-        if args.cloze_eval:
-            if args.fast_decode:
-                keys += ["dec_text", "dec_position", "dec_mask", "dec_target", "dec_logit_mask"]
-            else:
-                keys += ["target", "logit_mask"]
-                if args.segment_length > 0:
-                    keys += ["segment_id"]
-                if args.continuous_prompt:
-                    keys += ["prompt_pos"]
-    if args.variable_num_choices:
-        keys.append("loss_mask")
-    # Broadcast data.
-    datatype = torch.int64
-    data_b = mpu.broadcast_data(keys, batch, datatype)
-
-    if "padding_mask" in data_b:
-        attention_mask = data_b['padding_mask'].float().cuda().contiguous()
-        if args.fp16:
-            attention_mask = attention_mask.half()
-        data_b["padding_mask"] = attention_mask
-    return data_b
-
+from finetune_glm import _train, _build_train_valid_dataloaders, process_batch, mix_forward_step
 
 tokenizer = None
 
 
-def mix_forward_step(batch_and_dataloader, model, args, times, mems):
-    use_blocklm = 0
-    if args.block_lm_ratio > 0.0:
-        if mpu.get_model_parallel_rank() == 0:
-            if random.random() > 1 / (1 + args.block_lm_ratio):
-                use_blocklm = 1
-        use_blocklm = torch.cuda.LongTensor([use_blocklm])
-        torch.distributed.broadcast(use_blocklm, mpu.get_model_parallel_src_rank(),
-                                    group=mpu.get_model_parallel_group())
-        use_blocklm = use_blocklm.item()
-    if use_blocklm:
-        return lm_forward_step((batch_and_dataloader[1], None), model, args, times, mems)
-    else:
-        return finetune_forward_step(batch_and_dataloader[0], model, args, times, mems)
-
-
-def finetune_forward_step(batch, model, args, timers, mems):
+def finetune_forward_step(batch, model, args, timers, mems, teacher_model=None):
     """Simple forward step with cross-entropy loss."""
     # Get the batch.
     timers('batch generator').start()
@@ -90,6 +40,8 @@ def finetune_forward_step(batch, model, args, timers, mems):
     data = process_batch(batch_, args)
     timers('batch generator').stop()
 
+    is_distill = teacher_model is not None
+    inter_vars_ = []
     # Forward model.
     if args.pretrained_bert:
         tokens, types, labels, attention_mask = data['text'], data['types'], data['label'], data['padding_mask']
@@ -100,15 +52,19 @@ def finetune_forward_step(batch, model, args, timers, mems):
 
         if not args.fast_decode:
             target_ids, logit_mask = data['target'], data['logit_mask']
+            m_in = [tokens, position_ids, attention_mask, target_ids, logit_mask]
+            m_kw = {'is_distill': is_distill}
             if args.continuous_prompt:
-                prompt_pos = data["prompt_pos"]
-                result = model(tokens, position_ids, attention_mask, target_ids, logit_mask, prompt_pos=prompt_pos)
-            else:
-                result = model(tokens, position_ids, attention_mask, target_ids, logit_mask)
+                m_kw['prompt_pos'] = data["prompt_pos"]
+            result = get_inter_vars(model(*m_in, **m_kw), inter_vars_)
+            with torch.no_grad():
+                result_t = get_inter_vars(teacher_model(*m_in, **m_kw), inter_vars_) if is_distill else None
             if not args.multi_token:
                 logits, lm_logits, *mems = result
+                logits_t, lm_logits_t, *mems_t = result_t if is_distill else (None, None,)
             else:
                 logits, *mems = result
+                logits_t, *mems_t = result_t if is_distill else (None,)
         else:
             dec_input_ids, dec_position_ids, dec_attention_mask = data['dec_text'], data['dec_position'], data[
                 'dec_mask']
@@ -117,7 +73,11 @@ def finetune_forward_step(batch, model, args, timers, mems):
                                   dec_attention_mask, dec_target_ids, dec_logit_mask)
     else:
         tokens, labels, position_ids, attention_mask = data['text'], data['label'], data['position'], data['mask']
-        logits, *mems = model(tokens, position_ids, attention_mask)
+        m_in = [tokens, position_ids, attention_mask]
+        m_kw = {'is_distill': is_distill}
+        logits, *mems = get_inter_vars(model(*m_in, **m_kw), inter_vars_)
+        with torch.no_grad():
+            logits_t, *mems_t = get_inter_vars(teacher_model(*m_in, **m_kw), inter_vars_) if is_distill else (None,)
 
     if args.adapet:
         batch_size, num_classes = logits.size()[:2]
@@ -133,10 +93,13 @@ def finetune_forward_step(batch, model, args, timers, mems):
             from torch_scatter import scatter_sum
             if "loss_mask" in data:
                 logits = logits * data["loss_mask"]
+                logits_t = logits_t * data["loss_mask"] if is_distill else None
             logits = scatter_sum(logits, data["segment_id"], dim=1)
+            logits_t = scatter_sum(logits_t, data["segment_id"], dim=1) if is_distill else None
         elif "loss_mask" in data:
             loss_mask = data["loss_mask"]
             logits = logits * loss_mask - 10000.0 * (1.0 - loss_mask)
+            logits_t = logits_t * loss_mask - 10000.0 * (1.0 - loss_mask) if is_distill else None
         if args.loss_func == "cross_entropy":
             # Cross-entropy loss.
             loss_func = torch.nn.CrossEntropyLoss()
@@ -155,128 +118,14 @@ def finetune_forward_step(batch, model, args, timers, mems):
         else:
             raise NotImplementedError
 
-    # Reduce loss for logging.
+    if is_distill:
+        if args.distill_pre:
+            loss = GLMStudent.pre_loss(logits, logits_t)
+        else:
+            s_inter_vars, t_inter_vars = inter_vars_
+            loss = GLMStudent.inter_loss(s_inter_vars, t_inter_vars)
 
     return loss, mems, 'bert'
-
-
-def _build_infinite_size_dataloader(dataloader):
-    """Build a looped dataloader with infinite size."""
-
-    iterator = dataloader.__iter__()
-    while True:
-        try:
-            yield iterator.__next__()
-        except StopIteration:
-            iterator = dataloader.__iter__()
-
-
-def _build_train_valid_dataloaders(train_dataset, valid_dataset, args):
-    """Traing and validation dataloaders."""
-    print_rank_0('building train and validation dataloaders ...')
-    # Training dataset.
-    train_dataloader = build_data_loader(train_dataset, args.batch_size, args.num_workers, drop_last=False)
-    # Set the training iterations.
-    args.train_iters_per_epoch = len(train_dataloader)
-    args.train_iters = args.epochs * args.train_iters_per_epoch
-    # Validation dataset. For this dataset, we do not need to set up
-    # shuffling so we can just use a simple infinite loop.
-    valid_dataloader = None
-    if valid_dataset is not None:
-        valid_dataloader_ = build_data_loader(valid_dataset, args.batch_size,
-                                              args.num_workers, drop_last=False)
-        valid_dataloader = _build_infinite_size_dataloader(valid_dataloader_)
-
-    return train_dataloader, valid_dataloader
-
-
-def _train(model, optimizer, lr_scheduler, forward_step,
-           train_dataloader, valid_dataloader, end_of_epoch_callback, args, timers, summary_writer=None):
-    """Train the model."""
-
-    # Turn on training mode which enables dropout.
-    model.train()
-
-    # Tracking loss.
-    args.iteration = 0
-    total_lm_loss = 0.0
-    best_score, best_iteration = 0, None
-    # Starting epoch and iteration
-    start_epoch = args.iteration // args.train_iters_per_epoch
-    start_iteration = args.iteration % args.train_iters_per_epoch
-    if not args.block_lm_ratio:
-        valid_dataloader = valid_dataloader[0]
-    # For each remaining epoch
-    timers('interval time').start()
-    for epoch in range(start_epoch, args.epochs):
-        print_rank_0('working on epoch {} ...'.format(epoch))
-
-        # Set the data loader epoch to shuffle the index iterator.
-        if mpu.get_model_parallel_rank() == 0:
-            train_dataloader[0].sampler.set_epoch(args.seed + epoch)
-
-        # For all the batches in the dataset.
-        for iteration_, batch in enumerate(train_dataloader[0]):
-
-            # Ignore the iterations before starting value
-            if iteration_ < start_iteration:
-                continue
-            # Set to zero so the next epoch does not skip any batches.
-            start_iteration = 0
-
-            # Train for one step.
-            if args.block_lm_ratio > 0.0:
-                data = (batch, train_dataloader[1])
-            else:
-                data = batch
-            lm_loss, skipped_iter, _ = train_step(data, model, optimizer, lr_scheduler, args,
-                                                  timers, forward_step_func=forward_step, single_step=True)
-            args.iteration += 1
-            total_lm_loss += lm_loss.data.detach().float()
-
-            # Logging.
-            if args.iteration % args.log_interval == 0:
-                learning_rate = optimizer.param_groups[0]['lr']
-                avg_lm_loss = total_lm_loss.item() / args.log_interval
-                elapsed_time = timers('interval time').elapsed()
-                timers.log(['forward', 'backward', 'allreduce', 'optimizer', 'batch generator'],
-                           normalizer=args.log_interval)
-                report_iteration_metrics(summary_writer, optimizer, learning_rate, avg_lm_loss,
-                                         elapsed_time * 1000.0 / args.log_interval, args.iteration, args.train_iters,
-                                         args)
-                total_lm_loss = 0.0
-
-            # Evaluation
-            if args.eval_interval and valid_dataloader is not None and args.iteration % args.eval_interval == 0:
-                prefix = 'iteration {}'.format(args.iteration)
-                evaluate_and_print_results(prefix, valid_dataloader, model, args, timers, step=args.iteration,
-                                           verbose=False, forward_step_func=forward_step,
-                                           summary_writer=summary_writer)
-
-        # Checkpointing at the end of each epoch.
-        if args.save and (epoch + 1) % args.save_epoch == 0:
-            save_checkpoint(args.iteration, model, optimizer, lr_scheduler, args, only_changed_parameters=True)
-
-        # Callback at the end of each epoch.
-        if end_of_epoch_callback is not None and (epoch + 1) % args.eval_epoch == 0:
-            score_dict = end_of_epoch_callback(model, epoch, summary_writer=summary_writer)
-            if score_dict:
-                validation_metric = args.validation_metric if args.validation_metric else list(score_dict.keys())[0]
-                validation_score = score_dict[validation_metric]
-                if best_iteration is None or validation_score > best_score:
-                    best_iteration = args.iteration
-                    best_score = validation_score
-                    print_rank_0(f"Found best {validation_metric} {best_score} at {best_iteration}")
-                    save_checkpoint(args.iteration, model, optimizer, lr_scheduler, args, tag="best", barrier=False,
-                                    only_changed_parameters=True, no_deepspeed=True, no_save_optim=True)
-                    if torch.distributed.get_rank() == 0:
-                        score_dict.update({"type": "validation", "epoch": epoch})
-                        with open(os.path.join(args.log_dir, "results.json"), "w") as output:
-                            output.write(json.dumps(score_dict) + "\n")
-                        with open(os.path.join(args.save, "best_checkpointed_iteration.txt"), "w") as output:
-                            output.write(str(best_iteration))
-    torch.distributed.barrier()
-    return best_iteration
 
 
 def finetune(args, train_valid_datasets_provider, model_kwargs, forward_step=finetune_forward_step,
@@ -341,8 +190,16 @@ def finetune(args, train_valid_datasets_provider, model_kwargs, forward_step=fin
 
     # Build model, optimizer and learning rate scheduler.
     timers('model and optimizer').start()
-    model, optimizer, lr_scheduler = setup_model_and_optimizer(args, **model_kwargs)
+    glm_wrap = GLMStudent if args.teacher_load_pretrained else None
+    model, optimizer, lr_scheduler = setup_model_and_optimizer(args, **model_kwargs, glm_wrap=glm_wrap)
     timers('model and optimizer').stop()
+
+    if args.teacher_load_pretrained:
+        teacher_model = get_teacher_model(args, **model_kwargs)
+        load_pretrained(teacher_model, args.teacher_load_pretrained, args)
+        teacher_model.eval()
+    else:
+        teacher_model = None
 
     # If pretrained checkpoint is provided and we have not trained for
     # any iteration (i.e., iteration is zero), then load the pretrained
@@ -419,7 +276,7 @@ def finetune(args, train_valid_datasets_provider, model_kwargs, forward_step=fin
         best_iteration = _train(model, optimizer, lr_scheduler, forward_step,
                                 (train_dataloader, train_block_dataloader), (valid_dataloader, valid_block_dataloader),
                                 end_of_epoch_callback, args, timers,
-                                summary_writer=summary_writer)
+                                summary_writer=summary_writer, teacher_model=teacher_model)
         if end_of_train_callback is not None and best_iteration is not None:
             with FileLock(os.path.join(pathlib.Path.home(), "checkpoint_lock"), timeout=-1):
                 args.load = os.path.join(args.save, "best")
@@ -467,4 +324,4 @@ if __name__ == '__main__':
     else:
         raise NotImplementedError('Task {} is not implemented.'.format(args.task))
 
-    main(args)
+    main(args, finetune)

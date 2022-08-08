@@ -13,19 +13,19 @@ import torch
 
 import deepspeed
 from contextlib import ExitStack
-from arguments import get_args
 from configure_data import configure_data, prepare_tokenizer, build_multi_task_dataset
 import mpu
 import pathlib
+from distill_tinybert.teacher import get_args, get_teacher_model
 
-from train_utils import setup_model_and_optimizer, train_step, load_pretrained, get_model
+from train_utils import setup_model_and_optimizer, train_step, load_pretrained
 from utils import Timers
 from utils import save_checkpoint
 from utils import load_checkpoint
 from utils import report_memory
 from utils import print_and_save_args
 from utils import print_rank_0
-from utils import get_sample_writer, get_log_dir, get_hostname
+from utils import get_sample_writer, get_log_dir, get_hostname, get_inter_vars
 import torch.distributed as dist
 from pretrain_glm import get_batch, evaluate_and_print_results, initialize_distributed, set_random_seed, get_train_val_test_data, report_iteration_metrics
 from distill_tinybert.distill_model import GLMStudent
@@ -33,7 +33,7 @@ from distill_tinybert.distill_model import GLMStudent
 tokenizer = None
 
 
-def forward_step(data_iterator, model, args, timers, mems, teacher_model=None, is_distill=False):
+def forward_step(data_iterator, model, args, timers, mems, teacher_model=None):
     """Forward step."""
 
     # Get the batch.
@@ -55,20 +55,19 @@ def forward_step(data_iterator, model, args, timers, mems, teacher_model=None, i
     else:
         mode = 'bert'
 
-    logits, *mems = model(tokens, position_ids, attention_mask, *mems, is_distill=is_distill)
-    if is_distill:
-        s_inter_vars = logits
-        logits, *mems = mems
+    is_distill = teacher_model is not None
+    inter_vars_ = []
+    logits, *mems = get_inter_vars(model(tokens, position_ids, attention_mask, *mems, is_distill=is_distill), inter_vars_)
     losses = mpu.vocab_parallel_cross_entropy(logits.contiguous().float(), labels)
     loss_mask = loss_mask.view(-1)
     loss = torch.sum(losses.view(-1) * loss_mask)
     if loss_mask.sum().item() > 0:
         loss = loss / loss_mask.sum()
 
-    if teacher_model is not None and is_distill:
+    if is_distill:
         with torch.no_grad():
             t_inter_vars = teacher_model(tokens, position_ids, attention_mask, is_distill=is_distill)[0]
-        loss = GLMStudent.compute_loss(s_inter_vars, t_inter_vars)
+        loss = GLMStudent.inter_loss(inter_vars_[0], t_inter_vars)
 
     return loss, mems, mode
 
@@ -142,24 +141,7 @@ def train(model, optimizer, lr_scheduler,
     return args.iteration, skipped_iters
 
 
-def get_teacher_model(args):
-    num_layers = args.num_layers
-    hidden_size = args.hidden_size
-    num_attention_heads = args.num_attention_heads
-    max_position_embeddings = args.max_position_embeddings
-    args.num_layers = args.teacher_num_layers
-    args.hidden_size = args.teacher_hidden_size
-    args.num_attention_heads = args.teacher_num_attention_heads
-    args.max_position_embeddings = args.teacher_max_position_embeddings
-    teacher_model = get_model(args)
-    args.num_layers = num_layers
-    args.hidden_size = hidden_size
-    args.num_attention_heads = num_attention_heads
-    args.max_position_embeddings = max_position_embeddings
-    return teacher_model
-
-
-def main(args):
+def main():
     """Main training program."""
 
     # Disable CuDNN.
@@ -168,6 +150,8 @@ def main(args):
     timers = Timers()
 
     # Arguments.
+    args = get_args()
+    args.mem_length = args.mem_length if args.transformer_xl else 0
     if args.load and not args.new_save_directory:
         args.experiment_name = os.path.basename(os.path.normpath(args.load))
     else:
@@ -189,7 +173,7 @@ def main(args):
         multi_train_data, multi_val_data = build_multi_task_dataset(args, tokenizer)
 
     # Model, optimizer, and learning rate.
-    glm_wrap = GLMStudent if args.has_teacher else None
+    glm_wrap = GLMStudent if args.teacher_load_pretrained else None
     model, optimizer, lr_scheduler = setup_model_and_optimizer(args, glm_wrap=glm_wrap)
 
     if args.load is not None:
@@ -206,14 +190,12 @@ def main(args):
     if args.switch_linear:
         lr_scheduler.switch_linear(args)
 
-    if args.has_teacher:
+    if args.teacher_load_pretrained:
         teacher_model = get_teacher_model(args)
-        load_pretrained(teacher_model, args.load_pretrained, args)
+        load_pretrained(teacher_model, args.teacher_load_pretrained, args)
         teacher_model.eval()
-        is_distill = True
     else:
         teacher_model = None
-        is_distill = False
 
     summary_writer = None
     if torch.distributed.get_rank() == 0:
@@ -268,8 +250,7 @@ def main(args):
                                            lr_scheduler,
                                            (train_data_iterator, multi_train_iterator),
                                            (val_data_iterator, multi_val_iterator),
-                                           timers, args, summary_writer=summary_writer, teacher_model=teacher_model,
-                                           is_distill=is_distill)
+                                           timers, args, summary_writer=summary_writer, teacher_model=teacher_model)
 
         if args.do_valid:
             prefix = 'the end of training for val data'
@@ -292,19 +273,4 @@ def main(args):
 
 
 if __name__ == "__main__":
-    py_parser = argparse.ArgumentParser(add_help=False)
-
-    py_parser.add_argument('--teacher_num_attention_heads', type=int, default=16,
-                       help='num of transformer attention heads')
-    py_parser.add_argument('--teacher_hidden_size', type=int, default=1024,
-                       help='tansformer hidden size')
-    py_parser.add_argument('--teacher_num_layers', type=int, default=24,
-                       help='num decoder layers')
-    py_parser.add_argument('--teacher_max_position_embeddings', type=int, default=512,
-                       help='maximum number of position embeddings to use')
-    py_parser.add_argument('--has_teacher', default=False, action='store_true')
-    known, args_list = py_parser.parse_known_args()
-
-    args = get_args(args_list)
-    args = argparse.Namespace(**vars(args), **vars(known))
-    main(args)
+    main()

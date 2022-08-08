@@ -21,6 +21,7 @@ import torch
 import deepspeed
 import json
 from utils import get_hostname
+import random
 
 
 def add_model_config_args(parser):
@@ -394,6 +395,12 @@ def add_finetune_config_args(parser):
     return parser
 
 
+def add_custom_args(parser: argparse.ArgumentParser):
+    group = parser.add_argument_group('custom', 'custom configurations')
+    group.add_argument('--spare_port', type=int, default=random.randint(10000,65535))
+    return parser
+
+
 def get_args(arg_list=None):
     """Parse all the args."""
 
@@ -405,6 +412,7 @@ def get_args(arg_list=None):
     parser = add_text_generate_args(parser)
     parser = add_data_args(parser)
     parser = add_finetune_config_args(parser)
+    parser = add_custom_args(parser)
 
     # Include DeepSpeed configuration arguments
     parser = deepspeed.add_config_arguments(parser)

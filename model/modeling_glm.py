@@ -126,11 +126,7 @@ class GLMModel(torch.nn.Module):
         logits, hidden_layers = transformer_output
         outputs = hidden_layers
 
-        if is_distill:
-            inter_vars_out = [inter_vars]
-        else:
-            inter_vars_out = []
-
+        return_f = lambda o: (inter_vars, o) if is_distill else o
         if self.output_predict:
             # Parallel logits.
             logits_parallel = mpu.copy_to_model_parallel_region(
@@ -138,11 +134,11 @@ class GLMModel(torch.nn.Module):
             logits_parallel = F.linear(logits_parallel, self.word_embeddings.weight)
 
             if self.parallel_output:
-                return (*inter_vars_out, logits_parallel, *outputs)
+                return return_f((logits_parallel, *outputs))
 
-            return (*inter_vars_out, mpu.gather_from_model_parallel_region(logits_parallel), *outputs)
+            return return_f((mpu.gather_from_model_parallel_region(logits_parallel), *outputs))
         else:
-            return (*inter_vars_out, logits, *outputs)
+            return return_f((logits, *outputs))
 
 
 class EncoderDecoder(torch.nn.Module):

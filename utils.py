@@ -30,6 +30,13 @@ from tensorboardX import SummaryWriter
 SUMMARY_WRITER_DIR_NAME = 'runs'
 
 
+def get_inter_vars(output, inter_vars_: list, is_distill=True):
+    if type(output) in {list, tuple} and type(output[0])==dict and is_distill:
+        inter_vars_.append(output[0])
+        return output[1]
+    return output
+
+
 def get_log_dir(name, base):
     return os.path.join(base, SUMMARY_WRITER_DIR_NAME, name)
 
@@ -58,8 +65,11 @@ def get_hostname():
 
 def get_spare_port(args):
     if torch.distributed.get_rank() == 0:
-        port = subprocess.check_output(["shuf -n 1 -i 10000-65535"], shell=True)
-        port = int(port.strip())
+        if args.spare_port:
+            port = args.spare_port
+        else:
+            port = subprocess.check_output(["shuf -n 1 -i 10000-65535"], shell=True)
+            port = int(port.strip())
         if port == args.master_port:
             port = subprocess.check_output(["shuf -n 1 -i 10000-65535"], shell=True)
             port = int(port.strip())

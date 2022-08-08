@@ -3,6 +3,7 @@
 import torch
 import torch.nn
 from .modeling_glm import GLMModel
+from utils import get_inter_vars
 
 
 class GLMForMultiTokenCloze(torch.nn.Module):
@@ -36,10 +37,8 @@ class GLMForMultiTokenCloze(torch.nn.Module):
             logit_mask = logit_mask.reshape(-1, logit_mask.size(-1))
             if prompt_pos is not None:
                 prompt_pos = prompt_pos.reshape(-1, prompt_pos.size(-1))
-        outputs, *mems = self.model(input_ids, position_ids, attention_mask, prompt_pos=prompt_pos, is_distill=is_distill)
-        if is_distill:
-            inter_vars = outputs
-            outputs, *mems = mems
+        inter_vars_ = []
+        outputs, *mems = get_inter_vars(self.model(input_ids, position_ids, attention_mask, prompt_pos=prompt_pos, is_distill=is_distill), inter_vars_)
         if self.take_softmax:
             outputs = torch.nn.functional.log_softmax(outputs, dim=-1)
         # select the target logits
@@ -54,7 +53,7 @@ class GLMForMultiTokenCloze(torch.nn.Module):
         if num_choices is not None:
             logits = logits.view(-1, num_choices)
         if is_distill:
-            return (inter_vars, logits, *mems)
+            return inter_vars_[0], (logits, *mems)
         return (logits, *mems)
 
 
@@ -137,10 +136,8 @@ class GLMForSingleTokenCloze(torch.nn.Module):
         if target_ids is None:
             return self.model(input_ids, position_ids, attention_mask, is_distill=is_distill)
         assert len(input_ids.shape) == 2
-        outputs, *mems = self.model(input_ids, position_ids, attention_mask, prompt_pos=prompt_pos, is_distill=is_distill)
-        if is_distill:
-            inter_vars = outputs
-            outputs, *mems = mems
+        inter_vars_ = []
+        outputs, *mems = get_inter_vars(self.model(input_ids, position_ids, attention_mask, prompt_pos=prompt_pos, is_distill=is_distill), inter_vars_)
         batch_ids = torch.arange(outputs.size(0), dtype=attention_mask.dtype, device=attention_mask.device)
         target_logits = outputs[batch_ids, attention_mask]
         if self.take_softmax:
@@ -151,7 +148,7 @@ class GLMForSingleTokenCloze(torch.nn.Module):
         output = target_prob[batch_ids, target_ids]
 
         if is_distill:
-            return (inter_vars, output, target_logits, *mems)
+            return inter_vars_[0], (output, target_logits, *mems)
         return (output, target_logits, *mems)
 
 

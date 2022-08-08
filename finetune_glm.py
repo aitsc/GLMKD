@@ -191,7 +191,7 @@ def _build_train_valid_dataloaders(train_dataset, valid_dataset, args):
 
 
 def _train(model, optimizer, lr_scheduler, forward_step,
-           train_dataloader, valid_dataloader, end_of_epoch_callback, args, timers, summary_writer=None):
+           train_dataloader, valid_dataloader, end_of_epoch_callback, args, timers, summary_writer=None, **kwargs):
     """Train the model."""
 
     # Turn on training mode which enables dropout.
@@ -230,7 +230,7 @@ def _train(model, optimizer, lr_scheduler, forward_step,
             else:
                 data = batch
             lm_loss, skipped_iter, _ = train_step(data, model, optimizer, lr_scheduler, args,
-                                                  timers, forward_step_func=forward_step, single_step=True)
+                                                  timers, forward_step_func=forward_step, single_step=True, **kwargs)
             args.iteration += 1
             total_lm_loss += lm_loss.data.detach().float()
 

@@ -18,18 +18,18 @@ class GLMStudent(torch.nn.Module):  # tinybert
         self.fit_dense = torch.nn.Linear(args.hidden_size, args.teacher_hidden_size)
 
     def forward(self, *inputs, **kwargs):
-        logits, *mems = self.model(*inputs, **kwargs)
         if 'is_distill' in kwargs and kwargs['is_distill']:
+            inter_vars, outputs = self.model(*inputs, **kwargs)
             # {'transformer': {'layers':{0:{'layernorm_output':,'attention_scores':},..},'output':,..},..}
-            inter_vars = logits
             for v in inter_vars['transformer']['layers'].values():
                 v['layernorm_output'] = self.fit_dense(v['layernorm_output'])
             inter_vars['transformer']['output'] = self.fit_dense(inter_vars['transformer']['output'])
-            return inter_vars, *mems 
-        return logits, *mems
+            return inter_vars, outputs
+        else:
+            return self.model(*inputs, **kwargs)
 
     @staticmethod
-    def compute_loss(s_inter_vars, t_inter_vars, layers_per_block=2):
+    def inter_loss(s_inter_vars, t_inter_vars, layers_per_block=2):
         get_layer_f = lambda iv, n: [i[1][n] for i in sorted(iv['transformer']['layers'].items())]
         outputs = 0.
         # attentions
@@ -56,6 +56,12 @@ class GLMStudent(torch.nn.Module):  # tinybert
             }, width=150)
             GLMStudent.show_hook = False
         return fp16_to_fp32(outputs)
+
+    @staticmethod
+    def pre_loss(s_logits, t_logits, temperature=1.):
+        student_likelihood = F.log_softmax(s_logits / temperature, dim=-1)
+        targets_prob = F.softmax(t_logits / temperature, dim=-1)
+        return (- targets_prob * student_likelihood).mean()
 
     @staticmethod
     def print_distill(inter_vars):

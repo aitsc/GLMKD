@@ -582,7 +582,7 @@ class ParallelTransformerLayer(torch.nn.Module):
         attention_output = self.attention(layernorm_output, ltor_mask, position_embeddings, r_w_bias, r_r_bias, mem, is_distill=is_distill)
         if is_distill:
             inter_vars.update(attention_output[0])
-            attention_output = attention_output[1:] if len(attention_output) > 2 else attention_output[1]
+            attention_output = attention_output[1]
         # Residual connection.
         layernorm_input = hidden_states + attention_output
         # Layer norm post the self attention.
@@ -852,7 +852,7 @@ class GPT2ParallelTransformer(torch.nn.Module):
                 hidden_states = checkpoint(custom(l, l + chunk_length), *args)
                 if is_distill:
                     inter_vars['layers'][l] = hidden_states[0]
-                    hidden_states = hidden_states[1:] if len(hidden_states) > 2 else hidden_states[1]
+                    hidden_states = hidden_states[1]
                 l += chunk_length
         else:
             for i, layer in enumerate(self.layers):
@@ -865,7 +865,7 @@ class GPT2ParallelTransformer(torch.nn.Module):
                 hidden_states = layer(*args, mem=mem_i, is_distill=is_distill)
                 if is_distill:
                     inter_vars['layers'][i] = hidden_states[0]
-                    hidden_states = hidden_states[1:] if len(hidden_states) > 2 else hidden_states[1]
+                    hidden_states = hidden_states[1]
                 if self.max_memory_length > 0 or return_memory:
                     mem_layers.append(check_detach(hidden_states))
 
@@ -876,7 +876,7 @@ class GPT2ParallelTransformer(torch.nn.Module):
             mem_layers = self.update_mems(mem_layers, memory_states, return_memory=return_memory)
         
         if is_distill:
-            return inter_vars, output, mem_layers
+            return inter_vars, (output, mem_layers)
 
         return (output, mem_layers)
 

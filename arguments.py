@@ -398,6 +398,7 @@ def add_finetune_config_args(parser):
 def add_custom_args(parser: argparse.ArgumentParser):
     group = parser.add_argument_group('custom', 'custom configurations')
     group.add_argument('--spare_port', type=int, default=random.randint(10000,65535))
+    group.add_argument('--custom_tmp_result', type=str, default=None)
     return parser
 
 

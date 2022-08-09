@@ -284,20 +284,10 @@ def report_iteration_metrics(summary_writer, optimizer, lr, loss, elapsed_time, 
         summary_writer.add_scalar(f'Train/lr', lr, step)
         summary_writer.add_scalar(f'Train/train_loss', loss, step)
         summary_writer.add_scalar(f'Train/elapsed_time', elapsed_time, step)
-    save = f'{args.save}/report_iteration_metrics.jsonl'
-    ensure_directory_exists(save)
-    with open(save, 'a', encoding='utf8') as w:
-        jsonl = json.dumps({
-            'lr': lr,
-            'avg_loss': loss,
-            'iteration': step,
-            'elapsed_time': elapsed_time,
-            'iter_loss': iter_loss,
-        })
-        w.write(jsonl + '\n')
+        summary_writer.add_scalar(f'Train/train_loss_iter', iter_loss, step)
 
 
-def report_evaluate_metrics(summary_writer, prefix, loss, ppl, gpt_loss, bert_loss, sent_loss, multi_loss, step, args):
+def report_evaluate_metrics(summary_writer, prefix, loss, ppl, gpt_loss, bert_loss, sent_loss, multi_loss, step):
     string = ' validation loss at {}'.format(prefix)
     string += ' | LM loss: {:.6E}'.format(loss)
     string += ' | LM PPL: {:.6E}'.format(ppl)
@@ -325,19 +315,6 @@ def report_evaluate_metrics(summary_writer, prefix, loss, ppl, gpt_loss, bert_lo
             summary_writer.add_scalar(f'Train/valid_sent_loss', sent_loss, step)
         if multi_loss != 0:
             summary_writer.add_scalar(f'Train/valid_multi_loss', multi_loss, step)
-    save = f'{args.save}/report_evaluate_metrics.jsonl'
-    ensure_directory_exists(save)
-    with open(save, 'a', encoding='utf8') as w:
-        jsonl = json.dumps({
-            'LM loss': loss,
-            'LM PPL': ppl,
-            **({'GPT loss': gpt_loss} if gpt_loss != 0 else {}),
-            **({'BERT loss': bert_loss} if bert_loss != 0 else {}),
-            **({'Sent loss': sent_loss} if sent_loss != 0 else {}),
-            **({'Multi loss': multi_loss} if multi_loss != 0 else {}),
-            **({'iteration': step} if step is not None else {}),
-        })
-        w.write(jsonl + '\n')
 
 
 def train(model, optimizer, lr_scheduler,
@@ -472,7 +449,7 @@ def evaluate_and_print_results(prefix, data_iterator, model,
                                                                    forward_step_func=forward_step_func)
 
     lm_ppl = math.exp(min(20, lm_loss))
-    report_evaluate_metrics(summary_writer, prefix, lm_loss, lm_ppl, gpt_loss, bert_loss, sent_loss, multi_loss, step, args)
+    report_evaluate_metrics(summary_writer, prefix, lm_loss, lm_ppl, gpt_loss, bert_loss, sent_loss, multi_loss, step)
 
     return lm_loss
 
@@ -511,7 +488,7 @@ def initialize_distributed(args):
     # Call the init process
     init_method = 'tcp://'
     args.master_ip = os.getenv('MASTER_ADDR', 'localhost')
-    args.master_port = os.getenv('MASTER_PORT', '6000')
+    args.master_port = os.getenv('MASTER_PORT', str(random.randint(7000, 40000)))
     init_method += args.master_ip + ':' + args.master_port
     torch.distributed.init_process_group(
         backend=args.distributed_backend,
@@ -622,7 +599,7 @@ def main():
         args.log_dir = None
         if args.train_iters > 0:
             args.log_dir = get_log_dir(base=args.summary_dir, name=args.experiment_name)
-            summary_writer = get_sample_writer(log_dir=args.log_dir, iteration=args.iteration)
+            summary_writer = get_sample_writer(log_dir=args.log_dir, iteration=args.iteration, args=args)
         print_and_save_args(args, verbose=True, log_dir=args.log_dir)
 
     # Resume data loader if necessary.

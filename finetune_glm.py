@@ -403,7 +403,7 @@ def finetune(args, train_valid_datasets_provider, model_kwargs, forward_step=fin
         args.log_dir = get_log_dir(base=args.summary_dir, name=args.experiment_name)
         if os.path.exists(os.path.join(args.log_dir, "test_results.json")) and args.load is None and not args.overwrite:
             raise ValueError("Output directory ({}) already exists and is not empty.".format(args.log_dir))
-        summary_writer = get_sample_writer(log_dir=args.log_dir, iteration=args.iteration)
+        summary_writer = get_sample_writer(log_dir=args.log_dir, iteration=args.iteration, args=args)
         print_and_save_args(args, verbose=True, log_dir=args.log_dir)
 
     # Print setup timing.

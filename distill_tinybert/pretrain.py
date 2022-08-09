@@ -134,7 +134,7 @@ def main():
         args.log_dir = None
         if args.train_iters > 0:
             args.log_dir = get_log_dir(base=args.summary_dir, name=args.experiment_name)
-            summary_writer = get_sample_writer(log_dir=args.log_dir, iteration=args.iteration)
+            summary_writer = get_sample_writer(log_dir=args.log_dir, iteration=args.iteration, args=args)
         print_and_save_args(args, verbose=True, log_dir=args.log_dir)
 
     # Resume data loader if necessary.

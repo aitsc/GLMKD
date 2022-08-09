@@ -41,9 +41,11 @@ def get_log_dir(name, base):
     return os.path.join(base, SUMMARY_WRITER_DIR_NAME, name)
 
 
-def get_sample_writer(log_dir, iteration=0):
+def get_sample_writer(log_dir, iteration=0, args=None):
     """Returns a tensorboard summary writer
     """
+    if args is not None:
+        log_dir = args.log_dir = os.path.join(args.save, 'tensorboard')
     return SummaryWriter(
         log_dir=log_dir, purge_step=iteration)
 

@@ -27,7 +27,7 @@ from utils import print_and_save_args
 from utils import print_rank_0
 from utils import get_sample_writer, get_log_dir, get_hostname, get_inter_vars
 import torch.distributed as dist
-from pretrain_glm import get_batch, evaluate_and_print_results, initialize_distributed, set_random_seed, get_train_val_test_data, report_iteration_metrics
+from pretrain_glm import get_batch, evaluate_and_print_results, initialize_distributed, set_random_seed, get_train_val_test_data, train
 from distill_tinybert.distill_model import GLMStudent
 
 tokenizer = None
@@ -70,75 +70,6 @@ def forward_step(data_iterator, model, args, timers, mems, teacher_model=None):
         loss = GLMStudent.inter_loss(inter_vars_[0], t_inter_vars)
 
     return loss, mems, mode
-
-
-def train(model, optimizer, lr_scheduler,
-          train_data_iterator, val_data_iterator, timers, args, summary_writer=None, **kwargs):
-    """Train the model."""
-
-    # Turn on training mode which enables dropout.
-    model.train()
-
-    # Tracking loss.
-    total_lm_loss = 0.0
-
-    # Iterations.
-    skipped_iters = 0
-
-    timers('interval time').start()
-    report_memory_flag = True
-    mems = []
-    while args.iteration < args.train_iters:
-
-        lm_loss, skipped_iter, mems = train_step(train_data_iterator,
-                                                 model,
-                                                 optimizer,
-                                                 lr_scheduler,
-                                                 args, timers, mems=mems, forward_step_func=forward_step, **kwargs)
-        skipped_iters += skipped_iter
-        args.iteration += 1
-
-        # Update losses.
-        total_lm_loss += lm_loss.data.detach().float()
-
-        # Logging.
-        if args.iteration % args.log_interval == 0:
-            learning_rate = optimizer.param_groups[0]['lr']
-            avg_lm_loss = total_lm_loss.item() / args.log_interval
-            elapsed_time = timers('interval time').elapsed()
-            report_iteration_metrics(summary_writer, optimizer, learning_rate, avg_lm_loss,
-                                     elapsed_time * 1000.0 / args.log_interval, args.iteration, args.train_iters, args)
-            total_lm_loss = 0.0
-            if report_memory_flag:
-                report_memory('after {} iterations'.format(args.iteration))
-                report_memory_flag = False
-            # for i in range(torch.distributed.get_world_size()):
-            #     if i == torch.distributed.get_rank():
-            #         print(get_hostname())
-            #         timers.log(['forward', 'backward', 'optimizer',
-            #                     'batch generator', 'data loader'],
-            #                    normalizer=args.log_interval, reset=False)
-            #     torch.distributed.barrier()
-            if args.deepspeed or args.DDP_impl == 'torch':
-                timers.log(['forward', 'backward', 'optimizer',
-                            'batch generator', 'data loader'],
-                           normalizer=args.log_interval)
-            else:
-                timers.log(['forward', 'backward', 'allreduce', 'optimizer',
-                            'batch generator', 'data loader'],
-                           normalizer=args.log_interval)
-        # Checkpointing
-        if args.save and args.save_interval and args.iteration % args.save_interval == 0:
-            save_checkpoint(args.iteration, model, optimizer, lr_scheduler, args)
-
-        # Evaluation
-        if args.eval_interval and args.iteration % args.eval_interval == 0 and args.do_valid:
-            prefix = 'iteration {}'.format(args.iteration)
-            evaluate_and_print_results(
-                prefix, val_data_iterator, model, args, timers, verbose=False, step=args.iteration,
-                summary_writer=summary_writer, forward_step_func=forward_step)
-
-    return args.iteration, skipped_iters
 
 
 def main():
@@ -250,7 +181,7 @@ def main():
                                            lr_scheduler,
                                            (train_data_iterator, multi_train_iterator),
                                            (val_data_iterator, multi_val_iterator),
-                                           timers, args, summary_writer=summary_writer, teacher_model=teacher_model)
+                                           timers, args, summary_writer=summary_writer, teacher_model=teacher_model, forward_step_func=forward_step)
 
         if args.do_valid:
             prefix = 'the end of training for val data'

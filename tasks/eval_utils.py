@@ -22,13 +22,14 @@ import torch
 import datetime
 
 import mpu
-from utils import print_rank_0, get_spare_port, debug_finetune_data
+from utils import print_rank_0, get_spare_port, debug_finetune_data, ensure_directory_exists
 from tasks.data_utils import build_data_loader
 from finetune_glm import process_batch
 from collections import OrderedDict
 from typing import List
 from tasks.data_utils import InputExample
 from sklearn.metrics import f1_score
+import json
 
 
 def accuracy_metric(predictions, labels, examples):
@@ -51,6 +52,7 @@ def f1_macro_metric(predictions, labels, examples):
 global_tokenizer = None
 
 
+max_output = {'epoch': 0, 'score_dict': {}}
 def accuracy_func_provider(single_dataset_provider, metric_dict, args, is_test=False, eval_func=None, output_func=None,
                            only_rank0=True, tokenizer=None):
     """Provide function that calculates accuracies."""
@@ -104,11 +106,20 @@ def accuracy_func_provider(single_dataset_provider, metric_dict, args, is_test=F
             total += total_count
         score_dict = {key: score / float(total) for key, score in score_dict.items()}
         output_str = ' >> |epoch: {}| overall: total = {}'.format(epoch, total)
-        for key, score in score_dict.items():
+        for i, (key, score) in enumerate(score_dict.items()):
+            if i == 0 and epoch > 0:
+                if max_output['score_dict'].get(key, -1e10) < score:
+                    max_output['epoch'] = epoch
+                    max_output['score_dict'] = score_dict
             output_str += " {} = {:.4f}".format(key, score)
             if summary_writer is not None and epoch >= 0 and not is_test:
                 summary_writer.add_scalar(f'Train/valid_{key}', score, epoch)
-        print_rank_0(output_str)
+        print_rank_0(output_str + ' max' + str(max_output))
+        save = f'{args.save}/metrics_func.jsonl'
+        ensure_directory_exists(save)
+        with open(save, 'a', encoding='utf8') as w:
+            jsonl = json.dumps({'epoch':epoch, **score_dict})
+            w.write(jsonl + '\n')
         return score_dict
 
     return metrics_func

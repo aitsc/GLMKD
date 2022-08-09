@@ -40,8 +40,9 @@ from utils import load_checkpoint
 from utils import report_memory
 from utils import print_and_save_args
 from utils import print_rank_0
-from utils import get_sample_writer, get_log_dir, get_hostname
+from utils import get_sample_writer, get_log_dir, get_hostname, ensure_directory_exists
 import torch.distributed as dist
+import json
 
 
 def get_masks_and_position_ids(data,
@@ -270,7 +271,7 @@ def forward_step(data_iterator, model, args, timers, mems):
     return loss, mems, mode
 
 
-def report_iteration_metrics(summary_writer, optimizer, lr, loss, elapsed_time, step, total_step, args):
+def report_iteration_metrics(summary_writer, optimizer, lr, loss, elapsed_time, step, total_step, args, iter_loss=0):
     log_string = ' iteration {:8d}/{:8d} |'.format(step, total_step)
     log_string += ' elapsed time per iteration (ms): {:.1f} |'.format(elapsed_time)
     log_string += ' learning rate {:.3E} |'.format(lr)
@@ -283,9 +284,20 @@ def report_iteration_metrics(summary_writer, optimizer, lr, loss, elapsed_time, 
         summary_writer.add_scalar(f'Train/lr', lr, step)
         summary_writer.add_scalar(f'Train/train_loss', loss, step)
         summary_writer.add_scalar(f'Train/elapsed_time', elapsed_time, step)
+    save = f'{args.save}/report_iteration_metrics.jsonl'
+    ensure_directory_exists(save)
+    with open(save, 'a', encoding='utf8') as w:
+        jsonl = json.dumps({
+            'lr': lr,
+            'avg_loss': loss,
+            'iteration': step,
+            'elapsed_time': elapsed_time,
+            'iter_loss': iter_loss,
+        })
+        w.write(jsonl + '\n')
 
 
-def report_evaluate_metrics(summary_writer, prefix, loss, ppl, gpt_loss, bert_loss, sent_loss, multi_loss, step):
+def report_evaluate_metrics(summary_writer, prefix, loss, ppl, gpt_loss, bert_loss, sent_loss, multi_loss, step, args):
     string = ' validation loss at {}'.format(prefix)
     string += ' | LM loss: {:.6E}'.format(loss)
     string += ' | LM PPL: {:.6E}'.format(ppl)
@@ -313,10 +325,23 @@ def report_evaluate_metrics(summary_writer, prefix, loss, ppl, gpt_loss, bert_lo
             summary_writer.add_scalar(f'Train/valid_sent_loss', sent_loss, step)
         if multi_loss != 0:
             summary_writer.add_scalar(f'Train/valid_multi_loss', multi_loss, step)
+    save = f'{args.save}/report_evaluate_metrics.jsonl'
+    ensure_directory_exists(save)
+    with open(save, 'a', encoding='utf8') as w:
+        jsonl = json.dumps({
+            'LM loss': loss,
+            'LM PPL': ppl,
+            **({'GPT loss': gpt_loss} if gpt_loss != 0 else {}),
+            **({'BERT loss': bert_loss} if bert_loss != 0 else {}),
+            **({'Sent loss': sent_loss} if sent_loss != 0 else {}),
+            **({'Multi loss': multi_loss} if multi_loss != 0 else {}),
+            **({'iteration': step} if step is not None else {}),
+        })
+        w.write(jsonl + '\n')
 
 
 def train(model, optimizer, lr_scheduler,
-          train_data_iterator, val_data_iterator, timers, args, summary_writer=None):
+          train_data_iterator, val_data_iterator, timers, args, summary_writer=None, forward_step_func=forward_step, **kwargs):
     """Train the model."""
 
     # Turn on training mode which enables dropout.
@@ -337,12 +362,13 @@ def train(model, optimizer, lr_scheduler,
                                                  model,
                                                  optimizer,
                                                  lr_scheduler,
-                                                 args, timers, mems=mems, forward_step_func=forward_step)
+                                                 args, timers, mems=mems, forward_step_func=forward_step_func, **kwargs)
         skipped_iters += skipped_iter
         args.iteration += 1
 
         # Update losses.
-        total_lm_loss += lm_loss.data.detach().float()
+        lm_loss_ = lm_loss.data.detach().float()
+        total_lm_loss += lm_loss_
 
         # Logging.
         if args.iteration % args.log_interval == 0:
@@ -350,7 +376,8 @@ def train(model, optimizer, lr_scheduler,
             avg_lm_loss = total_lm_loss.item() / args.log_interval
             elapsed_time = timers('interval time').elapsed()
             report_iteration_metrics(summary_writer, optimizer, learning_rate, avg_lm_loss,
-                                     elapsed_time * 1000.0 / args.log_interval, args.iteration, args.train_iters, args)
+                                     elapsed_time * 1000.0 / args.log_interval, args.iteration, args.train_iters, args,
+                                     iter_loss=lm_loss_.item())
             total_lm_loss = 0.0
             if report_memory_flag:
                 report_memory('after {} iterations'.format(args.iteration))
@@ -379,7 +406,7 @@ def train(model, optimizer, lr_scheduler,
             prefix = 'iteration {}'.format(args.iteration)
             evaluate_and_print_results(
                 prefix, val_data_iterator, model, args, timers, verbose=False, step=args.iteration,
-                summary_writer=summary_writer, forward_step_func=forward_step)
+                summary_writer=summary_writer, forward_step_func=forward_step_func)
 
     return args.iteration, skipped_iters
 
@@ -445,7 +472,7 @@ def evaluate_and_print_results(prefix, data_iterator, model,
                                                                    forward_step_func=forward_step_func)
 
     lm_ppl = math.exp(min(20, lm_loss))
-    report_evaluate_metrics(summary_writer, prefix, lm_loss, lm_ppl, gpt_loss, bert_loss, sent_loss, multi_loss, step)
+    report_evaluate_metrics(summary_writer, prefix, lm_loss, lm_ppl, gpt_loss, bert_loss, sent_loss, multi_loss, step, args)
 
     return lm_loss
 

@@ -807,6 +807,7 @@ class GPT2ParallelTransformer(torch.nn.Module):
             if self.block_position_encoding:
                 block_position_embeddings = self.block_position_embeddings(block_position_ids)
                 hidden_states = hidden_states + block_position_embeddings
+        inter_vars['embeddings'] = hidden_states
         hidden_states = self.embedding_dropout(hidden_states)
 
         def check_detach(_hidden_states):

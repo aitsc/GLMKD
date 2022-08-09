@@ -232,7 +232,8 @@ def _train(model, optimizer, lr_scheduler, forward_step,
             lm_loss, skipped_iter, _ = train_step(data, model, optimizer, lr_scheduler, args,
                                                   timers, forward_step_func=forward_step, single_step=True, **kwargs)
             args.iteration += 1
-            total_lm_loss += lm_loss.data.detach().float()
+            lm_loss_ = lm_loss.data.detach().float()
+            total_lm_loss += lm_loss_
 
             # Logging.
             if args.iteration % args.log_interval == 0:
@@ -243,7 +244,7 @@ def _train(model, optimizer, lr_scheduler, forward_step,
                            normalizer=args.log_interval)
                 report_iteration_metrics(summary_writer, optimizer, learning_rate, avg_lm_loss,
                                          elapsed_time * 1000.0 / args.log_interval, args.iteration, args.train_iters,
-                                         args)
+                                         args, iter_loss=lm_loss_.item())
                 total_lm_loss = 0.0
 
             # Evaluation

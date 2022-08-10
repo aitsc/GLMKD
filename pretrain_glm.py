@@ -333,6 +333,7 @@ def train(model, optimizer, lr_scheduler,
     timers('interval time').start()
     report_memory_flag = True
     mems = []
+    save_checkpoint(0, model, optimizer, lr_scheduler, args)
     while args.iteration < args.train_iters:
 
         lm_loss, skipped_iter, mems = train_step(train_data_iterator,

@@ -109,11 +109,13 @@ def accuracy_func_provider(single_dataset_provider, metric_dict, args, is_test=F
         for key, score in score_dict.items():
             if epoch > 0:
                 msd = max_score_dict.get(key)
-                if msd and msd.get(key, -1e10) < score:
-                    msd['epoch'] = epoch
-                    msd['score_dict'] = score_dict
+                if msd:
+                    if msd['score_dict'].get(key, -1e10) < score:
+                        msd['epoch'] = epoch
+                        msd['iteration'] = args.iteration
+                        msd['score_dict'] = score_dict.copy()
                 else:
-                    max_score_dict[key] = {'epoch': epoch, 'score_dict': score_dict}
+                    max_score_dict[key] = {'epoch': epoch, 'iteration': args.iteration, 'score_dict': score_dict.copy()}
             output_str += " {} = {:.4f}".format(key, score)
             if summary_writer is not None and epoch >= 0 and not is_test:
                 summary_writer.add_scalar(f'Train/valid_{key}', score, epoch)
@@ -123,6 +125,7 @@ def accuracy_func_provider(single_dataset_provider, metric_dict, args, is_test=F
                 json.dump({
                     'args.save': args.save,
                     'args.epochs': args.epochs,
+                    'args.iteration': args.iteration,
                     'now': str(datetime.datetime.now()),
                     'epoch': epoch,
                     'max_score_dict': max_score_dict,

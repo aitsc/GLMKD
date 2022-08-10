@@ -163,7 +163,7 @@ class GLMForSequenceClassification(torch.nn.Module):
         self.multichoice_dropout = torch.nn.Dropout(hidden_dropout)
         self.multichoice_head = torch.nn.Linear(hidden_size, num_class)
 
-    def forward(self, input_ids, position_ids, attention_mask):
+    def forward(self, input_ids, position_ids, attention_mask, is_distill=False):
         num_choices = None
         if len(input_ids.shape) == 3:
             assert self.num_class == 1
@@ -171,7 +171,8 @@ class GLMForSequenceClassification(torch.nn.Module):
             input_ids = input_ids.reshape(-1, input_ids.size(-1))
             attention_mask = attention_mask.reshape(-1, *attention_mask.size()[2:])
             position_ids = position_ids.reshape(-1, *position_ids.size()[2:])
-        outputs, *mems = self.model(input_ids, position_ids, attention_mask)
+        inter_vars_ = []
+        outputs, *mems = get_inter_vars(self.model(input_ids, position_ids, attention_mask, is_distill=is_distill), inter_vars_)
         if self.pool_token == 'start':
             output = outputs[
                 torch.arange(outputs.size(0), dtype=attention_mask.dtype, device=attention_mask.device), attention_mask]
@@ -187,4 +188,6 @@ class GLMForSequenceClassification(torch.nn.Module):
         logits = self.multichoice_head(multichoice_output)
         if num_choices is not None:
             logits = logits.view(-1, num_choices)
+        if is_distill:
+            return inter_vars_[0], (logits, *mems)
         return (logits, *mems)

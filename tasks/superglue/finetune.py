@@ -75,7 +75,7 @@ def metrics_func_provider(args, tokenizer, is_test):
                                   output_func=output_func, only_rank0=False, tokenizer=tokenizer)
 
 
-def main(args, ft=finetune):
+def main(args, ft=finetune, lm_forward_step=None):
     model_kwargs = {}
     processor = PROCESSORS[args.task.lower()](args)
     pvp = PVPS[args.task.lower()](args, None, processor.get_labels(), args.seq_length,
@@ -84,7 +84,8 @@ def main(args, ft=finetune):
     if args.continuous_prompt:
         model_kwargs["spell_length"] = pvp.spell_length
     if args.task.lower() == 'wsc' and args.cloze_eval and not args.wsc_negative:
-        from tasks.language_model.finetune import lm_forward_step
+        if lm_forward_step is None:
+            from tasks.language_model.finetune import lm_forward_step
         ft(args, train_valid_datasets_provider, model_kwargs,
                  end_of_epoch_callback_provider=metrics_func_provider, forward_step=lm_forward_step)
     else:

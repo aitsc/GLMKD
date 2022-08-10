@@ -25,7 +25,7 @@
             "args": [
                 // deepspeed
                 "--master_port=12361",
-                "--include=localhost:6",
+                "--include=localhost:4",
                 "distill_tinybert/pretrain.py",
                 "--deepspeed_config=config/config_block_tiny6.json", // 注意其中的 batch size
                 "--deepspeed-activation-checkpointing",

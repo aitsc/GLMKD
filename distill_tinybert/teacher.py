@@ -19,6 +19,7 @@ def get_args():
                        help='maximum number of position embeddings to use')
     py_parser.add_argument('--teacher_load_pretrained', type=str, default=None)
     py_parser.add_argument('--distill_pre', action='store_true', help="微调蒸馏是否只蒸馏预测层,预训练蒸馏该参数无效")
+    py_parser.add_argument('--teacher_fp16', action='store_true')
     known, args_list = py_parser.parse_known_args()
 
     args = get_args_(args_list)
@@ -32,12 +33,14 @@ def get_teacher_model(args, **kwargs):
     num_attention_heads = args.num_attention_heads
     max_position_embeddings = args.max_position_embeddings
     load_pretrained = args.load_pretrained
+    fp16 = args.fp16
 
     args.num_layers = args.teacher_num_layers
     args.hidden_size = args.teacher_hidden_size
     args.num_attention_heads = args.teacher_num_attention_heads
     args.max_position_embeddings = args.teacher_max_position_embeddings
     args.load_pretrained = args.teacher_load_pretrained
+    args.fp16 = args.teacher_fp16
     teacher_model = get_model(args, **kwargs)
 
     args.num_layers = num_layers
@@ -45,4 +48,5 @@ def get_teacher_model(args, **kwargs):
     args.num_attention_heads = num_attention_heads
     args.max_position_embeddings = max_position_embeddings
     args.load_pretrained = load_pretrained
+    args.fp16 = fp16
     return teacher_model

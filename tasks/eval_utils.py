@@ -123,9 +123,13 @@ def accuracy_func_provider(single_dataset_provider, metric_dict, args, is_test=F
         if args.custom_tmp_result and epoch > 0:
             with open(args.custom_tmp_result, 'w', encoding='utf8') as w:
                 json.dump({
-                    'args.save': args.save,
-                    'args.epochs': args.epochs,
-                    'args.iteration': args.iteration,
+                    'args': {
+                        'save': args.save,
+                        'epochs': args.epochs,
+                        'iteration': args.iteration,
+                        'task': args.task,
+                        'wsc_negative': args.wsc_negative,
+                    },
                     'now': str(datetime.datetime.now()),
                     'epoch': epoch,
                     'max_score_dict': max_score_dict,

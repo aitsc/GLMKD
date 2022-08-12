@@ -18,7 +18,7 @@ EXPERIMENT_NAME=${EXPERIMENT_NAME}_${DATESTR}
 mkdir logs
 run_cmd="${DISTRIBUTED_ARGS} finetune_glm.py \
        --deepspeed \
-       --deepspeed_config config_tasks/config_blocklm_large.json \
+       --deepspeed_config config_tasks/config_blocklm_base.json \
        --finetune \
        --cloze-eval \
        --experiment-name ${EXPERIMENT_NAME} \

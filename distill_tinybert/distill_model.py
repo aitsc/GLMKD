@@ -34,6 +34,8 @@ class GLMStudent(torch.nn.Module):  # tinybert
             inter_vars, hook = (s_inter_vars, s_hook) if st == 's' else (t_inter_vars, t_hook)
             return [inter_vars[i[1][name]] for i in sorted(hook['transformer']['layers'].items())]
         outputs = 0.
+        layers_per_block = max(layers_per_block, 
+            int(len(t_hook['transformer']['layers']) / len(s_hook['transformer']['layers'])))
         # attentions
         student_reps = get_layer_f('s', 'attention_scores')
         teacher_reps = get_layer_f('t', 'attention_scores')

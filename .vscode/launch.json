@@ -53,7 +53,7 @@
                 "--lr-decay-iters=150000",
                 "--lr-decay-ratio=0.05",
                 "--warmup=.05",
-                "--train-iters=123456789",
+                "--train-iters=150000",
                 "--no-lazy-loader",
                 "--resume-dataloader",
                 // 微调

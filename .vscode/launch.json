@@ -25,7 +25,7 @@
             "args": [
                 // deepspeed
                 "--master_port=12161",
-                "--include=localhost:0",
+                "--include=localhost:1",
                 "distill_tinybert/pretrain.py",
                 "--deepspeed_config=config/config_block_tiny6.json",
                 "--deepspeed-activation-checkpointing",
@@ -50,7 +50,7 @@
                 "--split=949,50,1",
                 "--distributed-backend=nccl",
                 "--lr-decay-style=cosine",
-                "--lr-decay-iters=120000",
+                "--lr-decay-iters=150000",
                 "--lr-decay-ratio=0.05",
                 "--warmup=.05",
                 "--train-iters=123456789",

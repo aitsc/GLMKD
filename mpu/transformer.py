@@ -33,6 +33,7 @@ from .random import get_cuda_rng_tracker
 
 from .utils import divide
 from .utils import split_tensor_along_last_dim
+from .hook import hook_model, hook_add, hook_return
 
 
 class PositionalEmbedding(torch.nn.Module):
@@ -249,8 +250,8 @@ class ParallelSelfAttention(torch.nn.Module):
 
         return x
 
-    def forward(self, hidden_states, ltor_mask, position_embeddings=None, r_w_bias=None, r_r_bias=None, mem=None, is_distill=False):
-        inter_vars = {}
+    def forward(self, hidden_states, ltor_mask, position_embeddings=None, r_w_bias=None, r_r_bias=None, mem=None, hook=None):
+        inter_vars = []
         # hidden_states: [b, s, h]
         # ltor_mask: [1, 1, s, s]
 
@@ -274,9 +275,9 @@ class ParallelSelfAttention(torch.nn.Module):
         query_layer = self._transpose_for_scores(mixed_query_layer)
         key_layer = self._transpose_for_scores(mixed_key_layer)
         value_layer = self._transpose_for_scores(mixed_value_layer)
-        inter_vars['query_layer'] = query_layer
-        inter_vars['key_layer'] = key_layer
-        inter_vars['value_layer'] = value_layer
+        hook_add(hook, inter_vars, 'query_layer', query_layer)
+        hook_add(hook, inter_vars, 'key_layer', key_layer)
+        hook_add(hook, inter_vars, 'value_layer', value_layer)
         if self.relative_encoding:
             relative_layer = self.relative(position_embeddings)
             relative_layer = self._transpose_for_scores(relative_layer)  # 1 (bsz) x n_head x klen x d_head
@@ -309,10 +310,10 @@ class ParallelSelfAttention(torch.nn.Module):
         # if torch.distributed.get_rank() == 0:
         #     print(min_attention_scores, attention_scores.max().item())
         attention_scores = attention_scores + (-65504.0) * (1.0 - ltor_mask)
-        inter_vars['attention_scores'] = attention_scores
+        hook_add(hook, inter_vars, 'attention_scores', attention_scores)
         # Attention probabilities. [b, np, s, s]
         attention_probs = torch.nn.Softmax(dim=-1)(attention_scores)
-        inter_vars['attention_probs'] = attention_probs
+        hook_add(hook, inter_vars, 'attention_probs', attention_probs)
         # This is actually dropping out entire tokens to attend to, which might
         # seem a bit unusual, but is taken from the original Transformer paper.
         with get_cuda_rng_tracker().fork():
@@ -332,10 +333,7 @@ class ParallelSelfAttention(torch.nn.Module):
         output = self.dense(context_layer)
         output = self.output_dropout(output)
 
-        if is_distill:
-            return inter_vars, output
-
-        return output
+        return hook_return(hook, inter_vars, output)
 
 
 @torch.jit.script
@@ -569,20 +567,18 @@ class ParallelTransformerLayer(torch.nn.Module):
             init_method,
             output_layer_init_method=output_layer_init_method)
 
-    def forward(self, hidden_states, ltor_mask, position_embeddings=None, r_w_bias=None, r_r_bias=None, mem=None, is_distill=False):
-        inter_vars = {}
+    def forward(self, hidden_states, ltor_mask, position_embeddings=None, r_w_bias=None, r_r_bias=None, mem=None, hook=None):
+        inter_vars = []
         # hidden_states: [b, s, h]
         # ltor_mask: [1, 1, s, s]
 
         # Layer norm at the begining of the transformer layer.
         layernorm_output = self.input_layernorm(hidden_states)
-        inter_vars['layernorm_output'] = layernorm_output
+        hook_add(hook, inter_vars, 'layernorm_output', layernorm_output)
         mem = self.input_layernorm(mem) if mem is not None else None
         # Self attention.
-        attention_output = self.attention(layernorm_output, ltor_mask, position_embeddings, r_w_bias, r_r_bias, mem, is_distill=is_distill)
-        if is_distill:
-            inter_vars.update(attention_output[0])
-            attention_output = attention_output[1]
+        attention_output = hook_model(hook, inter_vars, self.attention,
+            layernorm_output, ltor_mask, position_embeddings, r_w_bias, r_r_bias, mem)
         # Residual connection.
         layernorm_input = hidden_states + attention_output
         # Layer norm post the self attention.
@@ -592,10 +588,7 @@ class ParallelTransformerLayer(torch.nn.Module):
         # Second residual connection.
         output = layernorm_input + mlp_output
 
-        if is_distill:
-            return inter_vars, output
-
-        return output
+        return hook_return(hook, inter_vars, output)
 
 
 def unscaled_init_method(sigma):
@@ -757,8 +750,8 @@ class GPT2ParallelTransformer(torch.nn.Module):
             checkpoint = deepspeed.checkpointing.checkpoint
 
     def forward(self, hidden_states, position_ids, attention_mask, memory_states=None, encoder_states=None,
-                return_memory=False, detach_memory=True, is_distill=False):
-        inter_vars = {}
+                return_memory=False, detach_memory=True, hook=None):
+        inter_vars = []
         batch_size, query_length = hidden_states.size()[:2]
         memory_length = memory_states[0].size(1) if memory_states else 0
         key_length = query_length + memory_length
@@ -807,7 +800,7 @@ class GPT2ParallelTransformer(torch.nn.Module):
             if self.block_position_encoding:
                 block_position_embeddings = self.block_position_embeddings(block_position_ids)
                 hidden_states = hidden_states + block_position_embeddings
-        inter_vars['embeddings'] = hidden_states
+        hook_add(hook, inter_vars, 'embeddings', hidden_states)
         hidden_states = self.embedding_dropout(hidden_states)
 
         def check_detach(_hidden_states):
@@ -819,8 +812,9 @@ class GPT2ParallelTransformer(torch.nn.Module):
             mem_layers = [check_detach(hidden_states)]
         else:
             mem_layers = []
-        def custom(start, end):
+        def custom(start, end, hook=None):
             def custom_forward(*inputs):
+                inter_vars = []
                 layers_ = self.layers[start:end]
                 x_, inputs = inputs[0], inputs[1:]
                 if self.relative_encoding:
@@ -829,15 +823,18 @@ class GPT2ParallelTransformer(torch.nn.Module):
                     inputs, mems_ = inputs[:1], inputs[1:]
                 for i, layer in enumerate(layers_):
                     mem_i_ = mems_[i] if mems_ else None
-                    x_ = layer(x_, *inputs, mem=mem_i_, is_distill=is_distill)  # is_distill → checkpoint_num_layers==1
+                    hook_ = None if hook is None else hook.setdefault(start + i, {})
+                    x_ = hook_model(hook_, inter_vars, layer, x_, *inputs, mem=mem_i_)
                     if self.max_memory_length > 0 or return_memory:
                         mem_layers.append(check_detach(x_))
+                if hook is not None:
+                    return len(inter_vars), *inter_vars, False, x_
                 return x_
 
             return custom_forward
 
 
-        inter_vars['layers'] = {}
+        hook_ = None if hook is None else hook.setdefault('layers', {})
         if self.checkpoint_activations:
             l = 0
             num_layers = len(self.layers)
@@ -850,10 +847,10 @@ class GPT2ParallelTransformer(torch.nn.Module):
                     args += [position_embeddings, self.r_w_bias, self.r_r_bias]
                 if memory_states:
                     args += memory_states[l: l + chunk_length]
-                hidden_states = checkpoint(custom(l, l + chunk_length), *args)
-                if is_distill:
-                    inter_vars['layers'][l] = hidden_states[0]
-                    hidden_states = hidden_states[1]
+                hidden_states = hook_model(
+                    hook_, inter_vars,
+                    lambda args, hook=None: checkpoint(custom(l, l + chunk_length, hook), *args),
+                    args)
                 l += chunk_length
         else:
             for i, layer in enumerate(self.layers):
@@ -863,23 +860,17 @@ class GPT2ParallelTransformer(torch.nn.Module):
                 if self.relative_encoding:
                     args += [position_embeddings, self.r_w_bias, self.r_r_bias]
                 mem_i = memory_states[i] if memory_states else None
-                hidden_states = layer(*args, mem=mem_i, is_distill=is_distill)
-                if is_distill:
-                    inter_vars['layers'][i] = hidden_states[0]
-                    hidden_states = hidden_states[1]
+                hidden_states = hook_model(hook_, inter_vars, layer, *args, mem=mem_i)
                 if self.max_memory_length > 0 or return_memory:
                     mem_layers.append(check_detach(hidden_states))
 
         # Final layer norm.
         output = self.final_layernorm(hidden_states)
-        inter_vars['output'] = output
+        hook_add(hook, inter_vars, 'output', output)
         if self.max_memory_length > 0 or return_memory:
             mem_layers = self.update_mems(mem_layers, memory_states, return_memory=return_memory)
         
-        if is_distill:
-            return inter_vars, (output, mem_layers)
-
-        return (output, mem_layers)
+        return hook_return(hook, inter_vars, (output, mem_layers))
 
     def update_mems(self, hiddens, mems, return_memory=False):
         memory_length = mems[0].size(1) if mems else 0

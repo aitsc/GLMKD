@@ -30,13 +30,6 @@ from tensorboardX import SummaryWriter
 SUMMARY_WRITER_DIR_NAME = 'runs'
 
 
-def get_inter_vars(output, inter_vars_: list, is_distill=True):
-    if type(output) in {list, tuple} and type(output[0])==dict and is_distill:
-        inter_vars_.append(output[0])
-        return output[1]
-    return output
-
-
 def get_log_dir(name, base):
     return os.path.join(base, SUMMARY_WRITER_DIR_NAME, name)
 

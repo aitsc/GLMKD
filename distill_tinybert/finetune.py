@@ -3,7 +3,7 @@ sys.path.append(os.getcwd())
 
 import json
 from tasks.data_utils import build_data_loader, FakeDataloader
-from utils import get_sample_writer, get_log_dir, print_and_save_args, get_inter_vars
+from utils import get_sample_writer, get_log_dir, print_and_save_args
 from distill_tinybert.teacher import get_args, get_teacher_model
 from filelock import FileLock
 import pretrain_glm
@@ -22,6 +22,7 @@ from train_utils import setup_model_and_optimizer, train_step, load_pretrained
 from utils import load_checkpoint, save_checkpoint
 from configure_data import make_data_loader
 from finetune_glm import _train, _build_train_valid_dataloaders, process_batch, mix_forward_step
+from mpu import hook_model
 
 tokenizer = None
 
@@ -53,16 +54,17 @@ def lm_forward_step_distill(data, model, args, timers, mems, eval_metric=None, t
         attention_mask = attention_mask.squeeze(1)
         position_ids = position_ids.squeeze(1)
 
+    s_hook, s_inter_vars = {}, []
+    t_hook, t_inter_vars = {}, []
     is_distill = teacher_model is not None
-    inter_vars_ = []
     # Forward model.
     m_in = [tokens, position_ids, attention_mask, *mems]
     m_kw = {'is_distill': is_distill}
     if args.continuous_prompt:
         m_kw['prompt_pos'] = data["prompt_pos"].long().cuda()
-    logits, *mems = get_inter_vars(model(*m_in, **m_kw), inter_vars_)
+    logits, *mems = hook_model(s_hook, s_inter_vars, model, *m_in, **m_kw)
     with torch.no_grad():
-        logits_t, *mems_t = get_inter_vars(teacher_model(*m_in, **m_kw), inter_vars_) if is_distill else (None,)
+        logits_t, *mems_t = hook_model(t_hook, t_inter_vars, teacher_model, *m_in, **m_kw) if is_distill else (None,)
         
     if eval_metric is None or eval_metric == 'loss':
         losses = mpu.vocab_parallel_cross_entropy(logits.contiguous().float(), labels)
@@ -88,8 +90,7 @@ def lm_forward_step_distill(data, model, args, timers, mems, eval_metric=None, t
             # loss = GLMStudent.pre_loss(logits, logits_t)
             ...
         else:
-            s_inter_vars, t_inter_vars = inter_vars_
-            loss = GLMStudent.inter_loss(s_inter_vars, t_inter_vars)
+            loss = GLMStudent.inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook)
 
     return loss, mems, 'bert'
 
@@ -106,8 +107,9 @@ def finetune_forward_step(batch, model, args, timers, mems, teacher_model=None):
     data = process_batch(batch_, args)
     timers('batch generator').stop()
 
+    s_hook, s_inter_vars = {}, []
+    t_hook, t_inter_vars = {}, []
     is_distill = teacher_model is not None
-    inter_vars_ = []
     # Forward model.
     if args.pretrained_bert:
         tokens, types, labels, attention_mask = data['text'], data['types'], data['label'], data['padding_mask']
@@ -118,13 +120,12 @@ def finetune_forward_step(batch, model, args, timers, mems, teacher_model=None):
 
         if not args.fast_decode:
             target_ids, logit_mask = data['target'], data['logit_mask']
-            m_in = [tokens, position_ids, attention_mask, target_ids, logit_mask]
-            m_kw = {'is_distill': is_distill}
+            m_in, m_kw = [tokens, position_ids, attention_mask, target_ids, logit_mask], {}
             if args.continuous_prompt:
                 m_kw['prompt_pos'] = data["prompt_pos"]
-            result = get_inter_vars(model(*m_in, **m_kw), inter_vars_)
+            result = hook_model(s_hook, s_inter_vars, model, *m_in, **m_kw)
             with torch.no_grad():
-                result_t = get_inter_vars(teacher_model(*m_in, **m_kw), inter_vars_) if is_distill else None
+                result_t = hook_model(t_hook, t_inter_vars, teacher_model, *m_in, **m_kw) if is_distill else None
             if not args.multi_token:
                 logits, lm_logits, *mems = result
                 logits_t, lm_logits_t, *mems_t = result_t if is_distill else (None, None,)
@@ -141,9 +142,9 @@ def finetune_forward_step(batch, model, args, timers, mems, teacher_model=None):
         tokens, labels, position_ids, attention_mask = data['text'], data['label'], data['position'], data['mask']
         m_in = [tokens, position_ids, attention_mask]
         m_kw = {'is_distill': is_distill}
-        logits, *mems = get_inter_vars(model(*m_in, **m_kw), inter_vars_)
+        logits, *mems = hook_model(s_hook, s_inter_vars, model, *m_in, **m_kw)
         with torch.no_grad():
-            logits_t, *mems_t = get_inter_vars(teacher_model(*m_in, **m_kw), inter_vars_) if is_distill else (None,)
+            logits_t, *mems_t = hook_model(t_hook, t_inter_vars, teacher_model, *m_in, **m_kw) if is_distill else (None,)
 
     if args.adapet:
         batch_size, num_classes = logits.size()[:2]
@@ -188,8 +189,7 @@ def finetune_forward_step(batch, model, args, timers, mems, teacher_model=None):
         if args.distill_pre:
             loss = GLMStudent.pre_loss(logits, logits_t)
         else:
-            s_inter_vars, t_inter_vars = inter_vars_
-            loss = GLMStudent.inter_loss(s_inter_vars, t_inter_vars)
+            loss = GLMStudent.inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook)
 
     return loss, mems, 'bert'
 

@@ -25,10 +25,11 @@ from utils import load_checkpoint
 from utils import report_memory
 from utils import print_and_save_args
 from utils import print_rank_0
-from utils import get_sample_writer, get_log_dir, get_hostname, get_inter_vars
+from utils import get_sample_writer, get_log_dir, get_hostname
 import torch.distributed as dist
 from pretrain_glm import get_batch, evaluate_and_print_results, initialize_distributed, set_random_seed, get_train_val_test_data, train
 from distill_tinybert.distill_model import GLMStudent
+from mpu import hook_model
 
 tokenizer = None
 
@@ -55,19 +56,19 @@ def forward_step(data_iterator, model, args, timers, mems, teacher_model=None):
     else:
         mode = 'bert'
 
-    is_distill = teacher_model is not None
-    inter_vars_ = []
-    logits, *mems = get_inter_vars(model(tokens, position_ids, attention_mask, *mems, is_distill=is_distill), inter_vars_)
+    s_inter_vars, s_hook = [], {}
+    logits, *mems = hook_model(s_hook, s_inter_vars, model, tokens, position_ids, attention_mask, *mems)
     losses = mpu.vocab_parallel_cross_entropy(logits.contiguous().float(), labels)
     loss_mask = loss_mask.view(-1)
     loss = torch.sum(losses.view(-1) * loss_mask)
     if loss_mask.sum().item() > 0:
         loss = loss / loss_mask.sum()
 
-    if is_distill:
+    if teacher_model is not None:
+        t_inter_vars, t_hook = [], {}
         with torch.no_grad():
-            t_inter_vars = teacher_model(tokens, position_ids, attention_mask, is_distill=is_distill)[0]
-        loss = GLMStudent.inter_loss(inter_vars_[0], t_inter_vars)
+            hook_model(t_hook, t_inter_vars, teacher_model, tokens, position_ids, attention_mask, *mems)
+        loss = GLMStudent.inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook)
 
     return loss, mems, mode
 

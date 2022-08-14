@@ -8,20 +8,18 @@ from train_utils import get_model
 
 def get_args():
     py_parser = argparse.ArgumentParser(add_help=False)
+    py_parser.add_argument('--student_model', type=str, default=None)
     # teacher
-    py_parser.add_argument('--teacher_num_attention_heads', type=int, default=16,
-                       help='num of transformer attention heads')
-    py_parser.add_argument('--teacher_hidden_size', type=int, default=1024,
-                       help='tansformer hidden size')
-    py_parser.add_argument('--teacher_num_layers', type=int, default=24,
-                       help='num decoder layers')
-    py_parser.add_argument('--teacher_max_position_embeddings', type=int, default=512,
-                       help='maximum number of position embeddings to use')
+    py_parser.add_argument('--teacher_num_attention_heads', type=int, default=16)
+    py_parser.add_argument('--teacher_hidden_size', type=int, default=1024)
+    py_parser.add_argument('--teacher_num_layers', type=int, default=24)
+    py_parser.add_argument('--teacher_max_position_embeddings', type=int, default=512)
     py_parser.add_argument('--teacher_load_pretrained', type=str, default=None)
     py_parser.add_argument('--teacher_fp16', action='store_true')
-    # other
-    py_parser.add_argument('--student_model', type=str, default=None)
-    py_parser.add_argument('--distill_pre', action='store_true', help="微调蒸馏是否只蒸馏预测层,预训练蒸馏该参数无效")
+    # tinybert
+    py_parser.add_argument('--tinybert_ft_pre', action='store_true', help="微调2次蒸馏用预测层")
+    py_parser.add_argument('--tinybert_ft_hard', action='store_true', help="微调2次蒸馏用硬标签")
+    py_parser.add_argument('--tinybert_inter_final', action='store_true', help="pt-inter: final layer")
     known, args_list = py_parser.parse_known_args()
 
     args = get_args_(args_list)

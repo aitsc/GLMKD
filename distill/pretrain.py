@@ -68,8 +68,9 @@ def forward_step(data_iterator, model, args, timers, mems, teacher_model=None):
         student_model = student_model_D[args.student_model]
         t_inter_vars, t_hook = [], {}
         with torch.no_grad():
-            hook_model(t_hook, t_inter_vars, teacher_model, tokens, position_ids, attention_mask, *mems)
-        loss = student_model.inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook)
+            logits_t, *mems_t = hook_model(t_hook, t_inter_vars, teacher_model, tokens, position_ids, attention_mask, *mems)
+        loss = student_model.inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, args)
+        loss += student_model.pre_loss(logits, logits_t, loss, args)
 
     return loss, mems, mode
 

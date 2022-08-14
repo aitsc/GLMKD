@@ -25,7 +25,7 @@
             "args": [
                 // deepspeed
                 "--master_port=12161",
-                "--include=localhost:1",
+                "--include=localhost:7",
                 "distill/pretrain.py",
                 "--deepspeed_config=config/config_block_tiny6.json",
                 "--deepspeed-activation-checkpointing",
@@ -38,7 +38,7 @@
                 "--max-position-embeddings=512",
                 "--tokenizer-model-type=bert-base-uncased",
                 "--tokenizer-type=BertWordPieceTokenizer",
-                // "--fp16",
+                "--fp16",
                 "--checkpoint-activations",
                 "--model-parallel-size=1",
                 "--save-interval=5000",
@@ -50,10 +50,10 @@
                 "--split=949,50,1",
                 "--distributed-backend=nccl",
                 "--lr-decay-style=cosine",
-                "--lr-decay-iters=160000",
+                "--lr-decay-iters=120000",
                 "--lr-decay-ratio=0.05",
                 "--warmup=.05",
-                "--train-iters=200000",
+                "--train-iters=150000",
                 "--no-lazy-loader",
                 "--resume-dataloader",
                 // 微调
@@ -78,21 +78,20 @@
                 // "--save-epoch=100000",
                 // 蒸馏
                 "--student_model=tinybert",
-                // "--distill_pre",
                 // 蒸馏 base
-                // "--teacher_load_pretrained=../GLM/data/checkpoints/pretrain/blocklm-base-blank",
+                "--teacher_load_pretrained=../GLM/data/checkpoints/pretrain/blocklm-base-blank",
                 // "--teacher_load_pretrained=../GLM/data/checkpoints/pretrain/blocklm-base-blank/finetune/COPA/blank-base-copa-07-29-09-10",
-                // "--teacher_num_layers=12",
-                // "--teacher_hidden_size=768",
-                // "--teacher_num_attention_heads=12",
-                // "--teacher_max_position_embeddings=512",
-                // "--teacher_fp16",
-                // 蒸馏 large
-                "--teacher_load_pretrained=../GLM/data/checkpoints/pretrain/blocklm-large-blank",
-                "--teacher_num_layers=24",
-                "--teacher_hidden_size=1024",
-                "--teacher_num_attention_heads=16",
+                "--teacher_num_layers=12",
+                "--teacher_hidden_size=768",
+                "--teacher_num_attention_heads=12",
                 "--teacher_max_position_embeddings=512",
+                "--teacher_fp16",
+                // 蒸馏 large
+                // "--teacher_load_pretrained=../GLM/data/checkpoints/pretrain/blocklm-large-blank",
+                // "--teacher_num_layers=24",
+                // "--teacher_hidden_size=1024",
+                // "--teacher_num_attention_heads=16",
+                // "--teacher_max_position_embeddings=512",
                 // "--teacher_fp16",
             ],
             "env": {

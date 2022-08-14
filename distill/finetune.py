@@ -59,7 +59,7 @@ def lm_forward_step_distill(data, model, args, timers, mems, eval_metric=None, t
     is_distill = teacher_model is not None
     # Forward model.
     m_in = [tokens, position_ids, attention_mask, *mems]
-    m_kw = {'is_distill': is_distill}
+    m_kw = {}
     if args.continuous_prompt:
         m_kw['prompt_pos'] = data["prompt_pos"].long().cuda()
     logits, *mems = hook_model(s_hook, s_inter_vars, model, *m_in, **m_kw)
@@ -139,7 +139,7 @@ def finetune_forward_step(batch, model, args, timers, mems, teacher_model=None):
     else:
         tokens, labels, position_ids, attention_mask = data['text'], data['label'], data['position'], data['mask']
         m_in = [tokens, position_ids, attention_mask]
-        m_kw = {'is_distill': is_distill}
+        m_kw = {}
         logits, *mems = hook_model(s_hook, s_inter_vars, model, *m_in, **m_kw)
         with torch.no_grad():
             logits_t, *mems_t = hook_model(t_hook, t_inter_vars, teacher_model, *m_in, **m_kw) if is_distill else (None,)

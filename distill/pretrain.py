@@ -16,7 +16,7 @@ from contextlib import ExitStack
 from configure_data import configure_data, prepare_tokenizer, build_multi_task_dataset
 import mpu
 import pathlib
-from distill_tinybert.teacher import get_args, get_teacher_model
+from distill.teacher import get_args, get_teacher_model
 
 from train_utils import setup_model_and_optimizer, train_step, load_pretrained
 from utils import Timers
@@ -28,7 +28,7 @@ from utils import print_rank_0
 from utils import get_sample_writer, get_log_dir, get_hostname
 import torch.distributed as dist
 from pretrain_glm import get_batch, evaluate_and_print_results, initialize_distributed, set_random_seed, get_train_val_test_data, train
-from distill_tinybert.distill_model import GLMStudent
+from distill.distill_model import student_model_D
 from mpu import hook_model
 
 tokenizer = None
@@ -65,10 +65,11 @@ def forward_step(data_iterator, model, args, timers, mems, teacher_model=None):
         loss = loss / loss_mask.sum()
 
     if teacher_model is not None:
+        student_model = student_model_D[args.student_model]
         t_inter_vars, t_hook = [], {}
         with torch.no_grad():
             hook_model(t_hook, t_inter_vars, teacher_model, tokens, position_ids, attention_mask, *mems)
-        loss = GLMStudent.inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook)
+        loss = student_model.inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook)
 
     return loss, mems, mode
 
@@ -105,7 +106,7 @@ def main():
         multi_train_data, multi_val_data = build_multi_task_dataset(args, tokenizer)
 
     # Model, optimizer, and learning rate.
-    glm_wrap = GLMStudent if args.teacher_load_pretrained else None
+    glm_wrap = student_model_D[args.student_model]
     model, optimizer, lr_scheduler = setup_model_and_optimizer(args, glm_wrap=glm_wrap)
 
     if args.load is not None:

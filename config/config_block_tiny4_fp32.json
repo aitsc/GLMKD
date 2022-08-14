@@ -4,7 +4,7 @@
     "steps_per_print": 100,
     "gradient_clipping": 1.0,
     "fp16": {
-      "enabled": true,
+      "enabled": false,
       "loss_scale": 0,
       "loss_scale_window": 1000,
       "hysteresis": 2,

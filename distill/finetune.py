@@ -4,7 +4,7 @@ sys.path.append(os.getcwd())
 import json
 from tasks.data_utils import build_data_loader, FakeDataloader
 from utils import get_sample_writer, get_log_dir, print_and_save_args
-from distill_tinybert.teacher import get_args, get_teacher_model
+from distill.teacher import get_args, get_teacher_model
 from filelock import FileLock
 import pretrain_glm
 from pretrain_glm import initialize_distributed, set_random_seed, get_batch
@@ -14,7 +14,7 @@ import mpu
 import torch
 import torch.utils.data
 from configure_data import prepare_tokenizer
-from distill_tinybert.distill_model import GLMStudent
+from distill.distill_model import student_model_D
 
 from utils import print_rank_0
 from utils import Timers
@@ -86,11 +86,12 @@ def lm_forward_step_distill(data, model, args, timers, mems, eval_metric=None, t
         raise NotImplementedError("Metric {} not implemented".format(eval_metric))
 
     if is_distill:
+        student_model = student_model_D[args.student_model]
         if args.distill_pre:
-            # loss = GLMStudent.pre_loss(logits, logits_t)
+            # loss = student_model.pre_loss(logits, logits_t)
             ...
         else:
-            loss = GLMStudent.inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook)
+            loss = student_model.inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook)
 
     return loss, mems, 'bert'
 
@@ -186,10 +187,11 @@ def finetune_forward_step(batch, model, args, timers, mems, teacher_model=None):
             raise NotImplementedError
 
     if is_distill:
+        student_model = student_model_D[args.student_model]
         if args.distill_pre:
-            loss = GLMStudent.pre_loss(logits, logits_t)
+            loss = student_model.pre_loss(logits, logits_t)
         else:
-            loss = GLMStudent.inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook)
+            loss = student_model.inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook)
 
     return loss, mems, 'bert'
 
@@ -256,7 +258,7 @@ def finetune(args, train_valid_datasets_provider, model_kwargs, forward_step=fin
 
     # Build model, optimizer and learning rate scheduler.
     timers('model and optimizer').start()
-    glm_wrap = GLMStudent if args.teacher_load_pretrained else None
+    glm_wrap = student_model_D[args.student_model]
     model, optimizer, lr_scheduler = setup_model_and_optimizer(args, **model_kwargs, glm_wrap=glm_wrap)
     timers('model and optimizer').stop()
 

@@ -54,6 +54,7 @@ class GLMStudent(torch.nn.Module):
 
 class TinyBERT(GLMStudent):
     show_hook = True
+    show_pre = True
     def __init__(self, language_model, args, **kwargs):
         super().__init__(language_model)
         self.fit_dense = torch.nn.Linear(args.hidden_size, args.teacher_hidden_size)
@@ -106,13 +107,20 @@ class TinyBERT(GLMStudent):
     @classmethod
     def pre_loss(cls, s_logits, t_logits, loss, args, temperature=1., **kwargs):
         loss_ = 0.
+        show_pre = 'pre_loss:'
         if args.finetune:
             if args.tinybert_ft_pre:
                 student_likelihood = F.log_softmax(s_logits / temperature, dim=-1)
                 targets_prob = F.softmax(t_logits / temperature, dim=-1)
                 loss_ += (- targets_prob * student_likelihood).mean()
+                show_pre += ' tinybert_ft_pre'
             if args.tinybert_ft_hard:
                 loss_ += loss
+                show_pre += ' tinybert_ft_hard'
+        # show
+        if cls.show_pre:
+            print_rank_0(show_pre)
+            cls.show_pre = False
         return loss_
 
 

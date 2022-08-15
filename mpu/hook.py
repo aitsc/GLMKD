@@ -22,7 +22,10 @@ def hook_model(hook: dict, inter_vars: list, model, *input, **kwargs):
     inter_vars += out[1: out[0] + 1]
     # check
     no_L = sorted(get_hook_no(hook))
-    assert 0 <= no_L[0] <= no_L[-1] < len(inter_vars), f'0 <= {no_L[0]} <= {no_L[-1]} < {len(inter_vars)}'
+    if no_L:
+        assert 0 <= no_L[0] <= no_L[-1] < len(inter_vars), f'0 <= {no_L[0]} <= {no_L[-1]} < {len(inter_vars)}'
+    else:
+        assert len(inter_vars) == 0, f'{len(inter_vars)} == 0'
     return tuple(out[out[0] + 2:]) if out[out[0] + 1] or len(out[out[0] + 2:]) > 1 else out[out[0] + 2]
 
 

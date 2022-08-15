@@ -62,7 +62,7 @@ def forward_step(data_iterator, model, args, timers, mems, teacher_model=None):
     if is_distill:
         t_hook, s_hook = student_model.get_teacher_hook(), student_model.get_student_hook()
     else:
-        t_hook, s_hook = {}, {}
+        t_hook = s_hook = None
     logits, *mems = hook_model(s_hook, s_inter_vars, model, tokens, position_ids, attention_mask, *mems)
     losses = mpu.vocab_parallel_cross_entropy(logits.contiguous().float(), labels)
     loss_mask = loss_mask.view(-1)

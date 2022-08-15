@@ -60,7 +60,7 @@ def lm_forward_step_distill(data, model, args, timers, mems, eval_metric=None, t
     if is_distill:
         t_hook, s_hook = student_model.get_teacher_hook(), student_model.get_student_hook()
     else:
-        t_hook, s_hook = {}, {}
+        t_hook = s_hook = None
     # Forward model.
     m_in = [tokens, position_ids, attention_mask, *mems]
     m_kw = {}
@@ -114,7 +114,7 @@ def finetune_forward_step(batch, model, args, timers, mems, teacher_model=None):
     if is_distill:
         t_hook, s_hook = student_model.get_teacher_hook(), student_model.get_student_hook()
     else:
-        t_hook, s_hook = {}, {}
+        t_hook = s_hook = None
     # Forward model.
     if args.pretrained_bert:
         tokens, types, labels, attention_mask = data['text'], data['types'], data['label'], data['padding_mask']

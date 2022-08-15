@@ -33,7 +33,7 @@ from .random import get_cuda_rng_tracker
 
 from .utils import divide
 from .utils import split_tensor_along_last_dim
-from .hook import hook_model, hook_add, hook_return
+from .hook import hook_model, hook_add, hook_return, hook_child
 
 
 class PositionalEmbedding(torch.nn.Module):
@@ -823,8 +823,7 @@ class GPT2ParallelTransformer(torch.nn.Module):
                     inputs, mems_ = inputs[:1], inputs[1:]
                 for i, layer in enumerate(layers_):
                     mem_i_ = mems_[i] if mems_ else None
-                    hook_ = None if hook is None else hook.setdefault(start + i, {})
-                    x_ = hook_model(hook_, inter_vars, layer, x_, *inputs, mem=mem_i_)
+                    x_ = hook_model(hook_child(hook, start + i), inter_vars, layer, x_, *inputs, mem=mem_i_)
                     if self.max_memory_length > 0 or return_memory:
                         mem_layers.append(check_detach(x_))
                 if hook is not None:
@@ -834,7 +833,6 @@ class GPT2ParallelTransformer(torch.nn.Module):
             return custom_forward
 
 
-        hook_ = None if hook is None else hook.setdefault('layers', {})
         if self.checkpoint_activations:
             l = 0
             num_layers = len(self.layers)
@@ -848,7 +846,7 @@ class GPT2ParallelTransformer(torch.nn.Module):
                 if memory_states:
                     args += memory_states[l: l + chunk_length]
                 hidden_states = hook_model(
-                    hook_, inter_vars,
+                    hook_child(hook, 'layers'), inter_vars,
                     lambda args, hook=None: checkpoint(custom(l, l + chunk_length, hook), *args),
                     args)
                 l += chunk_length
@@ -860,7 +858,7 @@ class GPT2ParallelTransformer(torch.nn.Module):
                 if self.relative_encoding:
                     args += [position_embeddings, self.r_w_bias, self.r_r_bias]
                 mem_i = memory_states[i] if memory_states else None
-                hidden_states = hook_model(hook_, inter_vars, layer, *args, mem=mem_i)
+                hidden_states = hook_model(hook_child(hook, 'layers'), inter_vars, layer, *args, mem=mem_i)
                 if self.max_memory_length > 0 or return_memory:
                     mem_layers.append(check_detach(hidden_states))
 

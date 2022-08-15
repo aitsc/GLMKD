@@ -14,7 +14,7 @@ import mpu
 import torch
 import torch.utils.data
 from configure_data import prepare_tokenizer
-from distill.distill_model import student_model_D
+from distill.distill_model import student_model_D, unpacking_student_model
 
 from utils import print_rank_0
 from utils import Timers
@@ -54,9 +54,13 @@ def lm_forward_step_distill(data, model, args, timers, mems, eval_metric=None, t
         attention_mask = attention_mask.squeeze(1)
         position_ids = position_ids.squeeze(1)
 
-    s_hook, s_inter_vars = {}, []
-    t_hook, t_inter_vars = {}, []
     is_distill = teacher_model is not None
+    student_model = unpacking_student_model(model)
+    s_inter_vars, t_inter_vars = [], []
+    if is_distill:
+        t_hook, s_hook = student_model.get_teacher_hook(), student_model.get_student_hook()
+    else:
+        t_hook, s_hook = {}, {}
     # Forward model.
     m_in = [tokens, position_ids, attention_mask, *mems]
     m_kw = {}
@@ -86,9 +90,8 @@ def lm_forward_step_distill(data, model, args, timers, mems, eval_metric=None, t
         raise NotImplementedError("Metric {} not implemented".format(eval_metric))
 
     if is_distill:
-        student_model = student_model_D[args.student_model]
-        loss = student_model.pre_loss(logits, logits_t, loss, args)
-        loss += student_model.inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, args)
+        loss = student_model.pre_loss(logits, logits_t, loss)
+        loss += student_model.inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook)
 
     return loss, mems, 'bert'
 
@@ -105,9 +108,13 @@ def finetune_forward_step(batch, model, args, timers, mems, teacher_model=None):
     data = process_batch(batch_, args)
     timers('batch generator').stop()
 
-    s_hook, s_inter_vars = {}, []
-    t_hook, t_inter_vars = {}, []
     is_distill = teacher_model is not None
+    student_model = unpacking_student_model(model)
+    s_inter_vars, t_inter_vars = [], []
+    if is_distill:
+        t_hook, s_hook = student_model.get_teacher_hook(), student_model.get_student_hook()
+    else:
+        t_hook, s_hook = {}, {}
     # Forward model.
     if args.pretrained_bert:
         tokens, types, labels, attention_mask = data['text'], data['types'], data['label'], data['padding_mask']
@@ -184,9 +191,8 @@ def finetune_forward_step(batch, model, args, timers, mems, teacher_model=None):
             raise NotImplementedError
 
     if is_distill:
-        student_model = student_model_D[args.student_model]
-        loss = student_model.pre_loss(logits, logits_t, loss, args)
-        loss += student_model.inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, args)
+        loss = student_model.pre_loss(logits, logits_t, loss)
+        loss += student_model.inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook)
 
     return loss, mems, 'bert'
 

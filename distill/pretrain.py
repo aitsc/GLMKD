@@ -28,7 +28,7 @@ from utils import print_rank_0
 from utils import get_sample_writer, get_log_dir, get_hostname
 import torch.distributed as dist
 from pretrain_glm import get_batch, evaluate_and_print_results, initialize_distributed, set_random_seed, get_train_val_test_data, train
-from distill.distill_model import student_model_D
+from distill.distill_model import student_model_D, unpacking_student_model
 from mpu import hook_model
 
 tokenizer = None
@@ -56,7 +56,13 @@ def forward_step(data_iterator, model, args, timers, mems, teacher_model=None):
     else:
         mode = 'bert'
 
-    s_inter_vars, s_hook = [], {}
+    is_distill = teacher_model is not None
+    student_model = unpacking_student_model(model)
+    s_inter_vars, t_inter_vars = [], []
+    if is_distill:
+        t_hook, s_hook = student_model.get_teacher_hook(), student_model.get_student_hook()
+    else:
+        t_hook, s_hook = {}, {}
     logits, *mems = hook_model(s_hook, s_inter_vars, model, tokens, position_ids, attention_mask, *mems)
     losses = mpu.vocab_parallel_cross_entropy(logits.contiguous().float(), labels)
     loss_mask = loss_mask.view(-1)
@@ -64,13 +70,11 @@ def forward_step(data_iterator, model, args, timers, mems, teacher_model=None):
     if loss_mask.sum().item() > 0:
         loss = loss / loss_mask.sum()
 
-    if teacher_model is not None:
-        student_model = student_model_D[args.student_model]
-        t_inter_vars, t_hook = [], {}
+    if is_distill:
         with torch.no_grad():
             logits_t, *mems_t = hook_model(t_hook, t_inter_vars, teacher_model, tokens, position_ids, attention_mask, *mems)
-        loss = student_model.pre_loss(logits, logits_t, loss, args)
-        loss += student_model.inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, args)
+        loss = student_model.pre_loss(logits, logits_t, loss)
+        loss += student_model.inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook)
 
     return loss, mems, mode
 

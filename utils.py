@@ -46,7 +46,7 @@ def get_sample_writer(log_dir, iteration=0, args=None):
 
 def print_rank_0(message):
     if isinstance(message, dict):
-        message = pformat(message, width=140)
+        message = pformat(message, width=150)
     if torch.distributed.is_initialized():
         if torch.distributed.get_rank() == 0:
             print(message, flush=True)

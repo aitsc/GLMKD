@@ -14,15 +14,19 @@ class GLMStudent(torch.nn.Module):
         super().__init__()
         self.origin_model = language_model
 
+    def get_teacher_hook(self, **kwargs):
+        return {}
+
+    def get_student_hook(self, **kwargs):
+        return {}
+
     def forward(self, *inputs, **kwargs):
         return self.origin_model(*inputs, **kwargs)
 
-    @classmethod
-    def inter_loss(cls, s_inter_vars, t_inter_vars, s_hook, t_hook, args, **kwargs):
+    def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, **kwargs):
         return 0.
 
-    @classmethod
-    def pre_loss(cls, s_logits, t_logits, loss, args, **kwargs):
+    def pre_loss(self, s_logits, t_logits, loss, **kwargs):
         return 0.
 
     def state_dict(self, destination=None, prefix='', keep_vars=False):
@@ -52,12 +56,44 @@ class GLMStudent(torch.nn.Module):
                 yield 'student.' + k, v
 
 
+def unpacking_student_model(model):
+    while True:
+        if hasattr(model, 'origin_model') and hasattr(model, 'get_teacher_hook'):
+            return model
+        if hasattr(model, 'module'):
+            model = model.module
+        elif hasattr(model, 'model'):
+            model = model.model
+        else:
+            return None
+
+
 class TinyBERT(GLMStudent):
-    show_hook = True
-    show_pre = True
     def __init__(self, language_model, args, **kwargs):
         super().__init__(language_model)
         self.fit_dense = torch.nn.Linear(args.hidden_size, args.teacher_hidden_size)
+        self.args = args
+        self.show_inter = True
+        self.show_pre = True
+
+    def get_teacher_hook(self, **kwargs):
+        layers_per_block = int(self.args.teacher_num_layers / self.args.num_layers)
+        layers = tuple(range(0, self.args.teacher_num_layers + 1, layers_per_block))
+        return {'transformer': {
+            'layers': {} if self.args.tinybert_inter_final else {
+                **{i: {'layernorm_output': None} for i in layers[:-1]},
+                **{i - 1: {'attention_scores': None} for i in layers[1:]},
+            },
+            'output': None,
+        }}
+
+    def get_student_hook(self, **kwargs):
+        return {'transformer': {
+            'layers': {} if self.args.tinybert_inter_final else {i: {
+                'layernorm_output': None, 'attention_scores': None,
+            } for i in range(self.args.num_layers)},
+            'output': None,
+        }}
 
     def forward(self, *inputs, hook=None, **kwargs):
         inter_vars = []
@@ -69,58 +105,51 @@ class TinyBERT(GLMStudent):
             inter_vars[hook['transformer']['output']] = self.fit_dense(inter_vars[hook['transformer']['output']])
         return hook_return(hook, inter_vars, outputs)
 
-    @classmethod
-    def inter_loss(cls, s_inter_vars, t_inter_vars, s_hook, t_hook, args, **kwargs):
+    def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, **kwargs):
         loss_ = 0.
-        if args.finetune and (args.tinybert_ft_pre or args.tinybert_ft_hard):
+        if self.args.finetune and (self.args.tinybert_ft_pre or self.args.tinybert_ft_hard):
             return loss_
         def get_layer_f(st, name):
             inter_vars, hook = (s_inter_vars, s_hook) if st == 's' else (t_inter_vars, t_hook)
-            return [inter_vars[i[1][name]] for i in sorted(hook['transformer']['layers'].items())]
+            return [inter_vars[i[1][name]] for i in sorted(hook['transformer']['layers'].items()) if name in i[1]]
 
-        layers_per_block = int(len(t_hook['transformer']['layers']) / len(s_hook['transformer']['layers']))
         # attentions
-        if not args.tinybert_inter_final:
+        if not self.args.tinybert_inter_final:
             student_reps = get_layer_f('s', 'attention_scores')
             teacher_reps = get_layer_f('t', 'attention_scores')
-            new_teacher_reps = [teacher_reps[(i + 1) * layers_per_block - 1] for i in range(len(student_reps))]
-            for student_rep, teacher_rep in zip(student_reps, new_teacher_reps):
+            for student_rep, teacher_rep in zip(student_reps, teacher_reps):
                 student_rep.distill = teacher_rep.distill = True
                 loss_ += F.mse_loss(student_rep, teacher_rep)
             mpu.reduce_from_model_parallel_region(loss_)
         # emb + hidden_states
         student_reps = get_layer_f('s', 'layernorm_output') + [s_inter_vars[s_hook['transformer']['output']]]
         teacher_reps = get_layer_f('t', 'layernorm_output') + [t_inter_vars[t_hook['transformer']['output']]]
-        new_teacher_reps = [teacher_reps[i * layers_per_block] for i in range(len(student_reps))]
-        if args.tinybert_inter_final:
-            student_reps, new_teacher_reps = [student_reps[-1]], [new_teacher_reps[-1]]
-        for student_rep, teacher_rep in zip(student_reps, new_teacher_reps):
+        for student_rep, teacher_rep in zip(student_reps, teacher_reps):
             student_rep.distill = teacher_rep.distill = True
             loss_ += F.mse_loss(student_rep, teacher_rep)
         # show
-        if cls.show_hook:
+        if self.show_inter:
             print_rank_0({'student': hook_reduce(s_hook, s_inter_vars, filter=None),
                           'teacher': hook_reduce(t_hook, t_inter_vars, filter=None),})
-            cls.show_hook = False
+            self.show_inter = False
         return loss_
 
-    @classmethod
-    def pre_loss(cls, s_logits, t_logits, loss, args, temperature=1., **kwargs):
+    def pre_loss(self, s_logits, t_logits, loss, temperature=1., **kwargs):
         loss_ = 0.
-        show_pre = 'pre_loss:'
-        if args.finetune:
-            if args.tinybert_ft_pre:
+        show_pre = 'pre_loss: 0'
+        if self.args.finetune:
+            if self.args.tinybert_ft_pre:
                 student_likelihood = F.log_softmax(s_logits / temperature, dim=-1)
                 targets_prob = F.softmax(t_logits / temperature, dim=-1)
                 loss_ += (- targets_prob * student_likelihood).mean()
                 show_pre += ' tinybert_ft_pre'
-            if args.tinybert_ft_hard:
+            if self.args.tinybert_ft_hard:
                 loss_ += loss
                 show_pre += ' tinybert_ft_hard'
         # show
-        if cls.show_pre:
+        if self.show_pre:
             print_rank_0(show_pre)
-            cls.show_pre = False
+            self.show_pre = False
         return loss_
 
 

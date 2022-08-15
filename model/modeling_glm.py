@@ -22,7 +22,7 @@ import torch.nn.functional as F
 import mpu
 from model.prompt import PromptSpell
 from utils import print_rank_0
-from mpu import hook_model, hook_return
+from mpu import hook_model, hook_return, hook_child
 
 
 def init_method_normal(std=0.02):
@@ -118,8 +118,7 @@ class GLMModel(torch.nn.Module):
             batch_index = torch.arange(batch_size, device=input_ids.device).unsqueeze(1)
             embeddings[batch_index, prompt_pos] = prompt_embeds
         # Transformer.
-        hook_ = None if hook is None else hook.setdefault('transformer', {})
-        transformer_output = hook_model(hook_, inter_vars, self.transformer,
+        transformer_output = hook_model(hook_child(hook, 'transformer'), inter_vars, self.transformer,
                                         embeddings, position_ids, attention_mask, mems,
                                         return_memory=return_memory, detach_memory=detach_memory)
         logits, hidden_layers = transformer_output

@@ -194,13 +194,13 @@ class ERDistill(GLMStudent):
     def get_teacher_hook(self, **kwargs):
         layers_per_block = int(self.args.teacher_num_layers / self.args.num_layers)
         layers = tuple(range(0, self.args.teacher_num_layers, layers_per_block))
-        return {'transformer': {'layers': {} if self.args.erdistill_inter else {
+        return {'transformer': {'layers': {} if not self.args.erdistill_inter else {
             i: {'layernorm_output': None}
         }  for i in layers},
         **({'logits_parallel': None} if self.args.erdistill_ft_logits else {})}
 
     def get_student_hook(self, **kwargs):
-        return {'transformer': {'layers': {} if self.args.erdistill_inter else {
+        return {'transformer': {'layers': {} if not self.args.erdistill_inter else {
             i: {'layernorm_output': None}
         }  for i in range(self.args.num_layers)}
         **({'logits_parallel': None} if self.args.erdistill_ft_logits else {})}

@@ -8,7 +8,13 @@ from train_utils import get_model
 
 def get_args():
     py_parser = argparse.ArgumentParser(add_help=False)
+    # generic
     py_parser.add_argument('--student_model', type=str, default=None)
+    py_parser.add_argument('--distill_ft_soft', action='store_true')
+    py_parser.add_argument('--distill_ft_hard', action='store_true')
+    py_parser.add_argument('--distill_pt_soft', action='store_true')
+    py_parser.add_argument('--distill_pt_hard', action='store_true')
+    py_parser.add_argument('--distill_temperature', type=float, default=1.)
     # teacher
     py_parser.add_argument('--teacher_num_attention_heads', type=int, default=16)
     py_parser.add_argument('--teacher_hidden_size', type=int, default=1024)
@@ -21,10 +27,14 @@ def get_args():
     py_parser.add_argument('--tinybert_ft_hard', action='store_true', help="微调2次蒸馏用硬标签")
     py_parser.add_argument('--tinybert_pt_hard', action='store_true')
     py_parser.add_argument('--tinybert_inter_final', action='store_true', help="pt-inter: final layer")
-    known, args_list = py_parser.parse_known_args()
 
+    known, args_list = py_parser.parse_known_args()
     args = get_args_(args_list)
     args = argparse.Namespace(**vars(args), **vars(known))
+    if args.student_model == 'tinybert':
+        args.distill_ft_soft = args.tinybert_ft_pre
+        args.distill_ft_hard = args.tinybert_ft_hard
+        args.distill_pt_hard = args.tinybert_pt_hard
     return args
     
 

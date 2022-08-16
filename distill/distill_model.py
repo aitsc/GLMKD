@@ -10,9 +10,12 @@ from utils import print_rank_0
 
 
 class GLMStudent(torch.nn.Module):
-    def __init__(self, language_model: GLMModel, **kwargs):
+    def __init__(self, language_model: GLMModel, args, **kwargs):
         super().__init__()
         self.origin_model = language_model
+        self.args = args
+        self.pre_loss_description = ''
+        self.show_pre = True
 
     def get_teacher_hook(self, **kwargs):
         return {}
@@ -27,7 +30,31 @@ class GLMStudent(torch.nn.Module):
         return 0.
 
     def pre_loss(self, s_logits, t_logits, loss, **kwargs):
-        return 0.
+        loss_ = 0.
+        self.pre_loss_description = 'pre_loss: 0'
+        if self.args.finetune:
+            if self.args.distill_ft_soft:
+                self.pre_loss_description += ' + distill_ft_soft'
+                student_likelihood = F.log_softmax(s_logits / self.args.distill_temperature, dim=-1)
+                targets_prob = F.softmax(t_logits / self.args.distill_temperature, dim=-1)
+                loss_ += (- targets_prob * student_likelihood).mean()
+            if self.args.distill_ft_hard:
+                self.pre_loss_description += ' + distill_ft_hard'
+                loss_ += loss
+        else:
+            if self.args.distill_pt_soft:
+                self.pre_loss_description += ' + distill_pt_soft'
+                student_likelihood = F.log_softmax(s_logits / self.args.distill_temperature, dim=-1)
+                targets_prob = F.softmax(t_logits / self.args.distill_temperature, dim=-1)
+                loss_ += (- targets_prob * student_likelihood).mean()
+            if self.args.distill_pt_hard:
+                self.pre_loss_description += ' + distill_pt_hard'
+                loss_ += loss
+        # show
+        if self.show_pre:
+            print_rank_0(self.pre_loss_description)
+            self.show_pre = False
+        return loss_
 
     def state_dict(self, destination=None, prefix='', keep_vars=False):
         state_dict = super().state_dict(destination, prefix, keep_vars)
@@ -70,11 +97,9 @@ def unpacking_student_model(model):
 
 class TinyBERT(GLMStudent):
     def __init__(self, language_model, args, **kwargs):
-        super().__init__(language_model)
+        super().__init__(language_model, args)
         self.fit_dense = torch.nn.Linear(args.hidden_size, args.teacher_hidden_size)
-        self.args = args
         self.show_inter = True
-        self.show_pre = True
 
     def get_teacher_hook(self, **kwargs):
         layers_per_block = int(self.args.teacher_num_layers / self.args.num_layers)
@@ -107,7 +132,7 @@ class TinyBERT(GLMStudent):
 
     def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, **kwargs):
         loss_ = 0.
-        if self.args.finetune and (self.args.tinybert_ft_pre or self.args.tinybert_ft_hard):
+        if self.args.finetune and (self.args.distill_ft_soft or self.args.distill_ft_hard):
             return loss_
         def get_layer_f(st, name):
             inter_vars, hook = (s_inter_vars, s_hook) if st == 's' else (t_inter_vars, t_hook)
@@ -132,27 +157,6 @@ class TinyBERT(GLMStudent):
             print_rank_0({'student': hook_reduce(s_hook, s_inter_vars, filter=None),
                           'teacher': hook_reduce(t_hook, t_inter_vars, filter=None),})
             self.show_inter = False
-        return loss_
-
-    def pre_loss(self, s_logits, t_logits, loss, temperature=1., **kwargs):
-        loss_ = 0.
-        show_pre = 'pre_loss: 0'
-        if self.args.finetune:
-            if self.args.tinybert_ft_pre:
-                student_likelihood = F.log_softmax(s_logits / temperature, dim=-1)
-                targets_prob = F.softmax(t_logits / temperature, dim=-1)
-                loss_ += (- targets_prob * student_likelihood).mean()
-                show_pre += ' + tinybert_ft_pre'
-            if self.args.tinybert_ft_hard:
-                loss_ += loss
-                show_pre += ' + tinybert_ft_hard'
-        elif self.args.tinybert_pt_hard:
-            loss_ += loss
-            show_pre += ' + tinybert_pt_hard'
-        # show
-        if self.show_pre:
-            print_rank_0(show_pre)
-            self.show_pre = False
         return loss_
 
 

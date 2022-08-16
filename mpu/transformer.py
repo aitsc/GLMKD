@@ -583,6 +583,7 @@ class ParallelTransformerLayer(torch.nn.Module):
         layernorm_input = hidden_states + attention_output
         # Layer norm post the self attention.
         layernorm_output = self.post_attention_layernorm(layernorm_input)
+        hook_add(hook, inter_vars, 'post_attention_layernorm', layernorm_output)
         # MLP.
         mlp_output = self.mlp(layernorm_output)
         # Second residual connection.

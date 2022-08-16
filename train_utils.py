@@ -21,7 +21,7 @@ def load_pretrained(model, checkpoint_path, args, task_tokens=None):
             torch.distributed.get_rank(), checkpoint_name))
     # Load the checkpoint.
     sd = torch.load(checkpoint_name, map_location='cpu')
-    if args.deepspeed:
+    if args.deepspeed and hasattr(model, "module"):
         model = model.module
     if isinstance(model, TorchDDP):
         model = model.module

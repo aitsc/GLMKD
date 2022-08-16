@@ -23,7 +23,7 @@
             "args": [
                 // deepspeed
                 "--master_port=11161",
-                "--include=localhost:7",
+                "--include=localhost:2",
                 "distill/pretrain.py",
                 "--deepspeed_config=config/config_block_tiny6.json",
                 "--deepspeed-activation-checkpointing",

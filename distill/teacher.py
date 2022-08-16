@@ -41,7 +41,7 @@ def get_teacher_model(args, **kwargs):
     args.max_position_embeddings = args.teacher_max_position_embeddings
     args.load_pretrained = args.teacher_load_pretrained
     args.fp16 = args.teacher_fp16
-    teacher_model = get_model(args, **kwargs)
+    teacher_model = get_model(args, **kwargs)  # without deepspeed.initialize
 
     args.num_layers = num_layers
     args.hidden_size = hidden_size

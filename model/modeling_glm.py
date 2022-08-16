@@ -22,7 +22,7 @@ import torch.nn.functional as F
 import mpu
 from model.prompt import PromptSpell
 from utils import print_rank_0
-from mpu import hook_model, hook_return, hook_child
+from mpu import hook_model, hook_return, hook_child, hook_add
 
 
 def init_method_normal(std=0.02):
@@ -129,6 +129,7 @@ class GLMModel(torch.nn.Module):
             logits_parallel = mpu.copy_to_model_parallel_region(
                 logits)
             logits_parallel = F.linear(logits_parallel, self.word_embeddings.weight)
+            hook_add(hook, inter_vars, 'logits_parallel', logits_parallel)
 
             if self.parallel_output:
                 ret = (logits_parallel, *outputs)

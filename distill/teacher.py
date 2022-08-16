@@ -27,6 +27,9 @@ def get_args():
     py_parser.add_argument('--tinybert_ft_hard', action='store_true', help="微调2次蒸馏用硬标签")
     py_parser.add_argument('--tinybert_pt_hard', action='store_true')
     py_parser.add_argument('--tinybert_inter_final', action='store_true', help="pt-inter: final layer")
+    # erdistill
+    py_parser.add_argument('--erdistill_inter', action='store_true')
+    py_parser.add_argument('--erdistill_ft_logits', action='store_true', help="首次微调蒸馏包括最后一层logits, 确保output_predict")
 
     known, args_list = py_parser.parse_known_args()
     args = get_args_(args_list)

@@ -46,7 +46,9 @@ class GLMStudent(torch.nn.Module):
                 self.pre_loss_description += ' + distill_pt_soft'
                 student_likelihood = F.log_softmax(s_logits / self.args.distill_temperature, dim=-1)
                 targets_prob = F.softmax(t_logits / self.args.distill_temperature, dim=-1)
-                loss_ += (- targets_prob * student_likelihood).mean()
+                ce_loss = (- targets_prob * student_likelihood).mean()
+                mpu.gather_from_model_parallel_region(ce_loss)  # 确保是 parallel_output
+                loss_ += ce_loss.mean()
             if self.args.distill_pt_hard:
                 self.pre_loss_description += ' + distill_pt_hard'
                 loss_ += loss
@@ -84,6 +86,7 @@ class GLMStudent(torch.nn.Module):
 
 
 def unpacking_student_model(model):
+    # 拆包 model 直到遇到 GLMStudent, 用于使用 GLMStudent 内部的函数
     while True:
         if hasattr(model, 'origin_model') and hasattr(model, 'get_teacher_hook'):
             return model
@@ -91,6 +94,29 @@ def unpacking_student_model(model):
             model = model.module
         elif hasattr(model, 'model'):
             model = model.model
+        else:
+            return None
+
+
+def find_model_inter_var(model, name):
+    # 找到模型内部的某个参数, 找不到会一直拆包
+    name_L = name.split('.')
+    while True:
+        has_find, m = False, model
+        for i, n in enumerate(name_L):
+            if hasattr(m, n):
+                m = getattr(m, n)
+                has_find = True if i == len(name_L) - 1 else False
+            else:
+                break
+        if has_find:
+            return m
+        if hasattr(model, 'module'):
+            model = model.module
+        elif hasattr(model, 'model'):
+            model = model.model
+        elif hasattr(model, 'origin_model'):
+            model = model.origin_model
         else:
             return None
 
@@ -160,7 +186,70 @@ class TinyBERT(GLMStudent):
         return loss_
 
 
+class ERDistill(GLMStudent):
+    def __init__(self, language_model, args, **kwargs):
+        super().__init__(language_model, args)
+        self.show_inter = True
+
+    def get_teacher_hook(self, **kwargs):
+        layers_per_block = int(self.args.teacher_num_layers / self.args.num_layers)
+        layers = tuple(range(0, self.args.teacher_num_layers, layers_per_block))
+        return {'transformer': {'layers': {} if self.args.erdistill_inter else {
+            i: {'layernorm_output': None}
+        }  for i in layers},
+        **({'logits_parallel': None} if self.args.erdistill_ft_logits else {})}
+
+    def get_student_hook(self, **kwargs):
+        return {'transformer': {'layers': {} if self.args.erdistill_inter else {
+            i: {'layernorm_output': None}
+        }  for i in range(self.args.num_layers)}
+        **({'logits_parallel': None} if self.args.erdistill_ft_logits else {})}
+
+    def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, t_model=None, **kwargs):
+        loss_ = 0.
+        if self.args.finetune and (self.args.distill_ft_soft or self.args.distill_ft_hard):
+            return loss_
+        def get_layer_f(st, name):
+            inter_vars, hook = (s_inter_vars, s_hook) if st == 's' else (t_inter_vars, t_hook)
+            return [
+                inter_vars[i[1][name]] for i in sorted(hook['transformer']['layers'].items()) if name in i[1]
+            ] + ([hook['logits_parallel']] if 'logits_parallel' in hook else [])
+
+        t_emb_w = find_model_inter_var(t_model, 'word_embeddings.weight')
+        s_emb_w = find_model_inter_var(self, 'word_embeddings.weight')
+        # ER
+        student_reps = get_layer_f('s', 'layernorm_output')
+        teacher_reps = get_layer_f('t', 'layernorm_output')
+        for student_rep, teacher_rep in zip(student_reps, teacher_reps):
+            student_rep.distill = teacher_rep.distill = True
+            mpu.copy_to_model_parallel_region(student_rep)
+            mpu.copy_to_model_parallel_region(teacher_rep)
+            s_logits = F.linear(student_rep, s_emb_w)
+            t_logits = F.linear(teacher_reps, t_emb_w)
+            student_likelihood = F.log_softmax(s_logits / self.args.distill_temperature, dim=-1)
+            targets_prob = F.softmax(t_logits / self.args.distill_temperature, dim=-1)
+            ce_loss = (- targets_prob * student_likelihood).mean()
+            mpu.gather_from_model_parallel_region(ce_loss)
+            loss_ += ce_loss.mean()
+        if 'logits_parallel' in s_hook:
+            s_logits = s_hook['logits_parallel']
+            t_logits = t_hook['logits_parallel']
+            s_logits.distill = t_logits.distill = True
+            student_likelihood = F.log_softmax(s_logits / self.args.distill_temperature, dim=-1)
+            targets_prob = F.softmax(t_logits / self.args.distill_temperature, dim=-1)
+            ce_loss = (- targets_prob * student_likelihood).mean()
+            mpu.gather_from_model_parallel_region(ce_loss)
+            loss_ += ce_loss.mean()
+        # show
+        if self.show_inter:
+            print_rank_0({'student': hook_reduce(s_hook, s_inter_vars, filter=None),
+                          'teacher': hook_reduce(t_hook, t_inter_vars, filter=None),})
+            self.show_inter = False
+        return loss_
+
+
 student_model_D = {
     None: None,
     'tinybert': TinyBERT,
+    'erdistill': ERDistill,
 }

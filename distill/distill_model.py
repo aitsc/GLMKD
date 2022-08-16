@@ -190,6 +190,7 @@ class ERDistill(GLMStudent):
     def __init__(self, language_model, args, **kwargs):
         super().__init__(language_model, args)
         self.show_inter = True
+        self.erdistill_ft_logits = self.args.erdistill_ft_logits and self.args.finetune
 
     def get_teacher_hook(self, **kwargs):
         layers_per_block = int(self.args.teacher_num_layers / self.args.num_layers)
@@ -197,13 +198,13 @@ class ERDistill(GLMStudent):
         return {'transformer': {'layers': {} if not self.args.erdistill_inter else {
             i: {'layernorm_output': None}
         }  for i in layers},
-        **({'logits_parallel': None} if self.args.erdistill_ft_logits else {})}
+        **({'logits_parallel': None} if self.erdistill_ft_logits else {})}
 
     def get_student_hook(self, **kwargs):
         return {'transformer': {'layers': {} if not self.args.erdistill_inter else {
             i: {'layernorm_output': None}
         }  for i in range(self.args.num_layers)}
-        **({'logits_parallel': None} if self.args.erdistill_ft_logits else {})}
+        **({'logits_parallel': None} if self.erdistill_ft_logits else {})}
 
     def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, t_model=None, **kwargs):
         loss_ = 0.

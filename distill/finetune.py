@@ -91,7 +91,7 @@ def lm_forward_step_distill(data, model, args, timers, mems, eval_metric=None, t
 
     if is_distill:
         loss = student_model.pre_loss(logits, logits_t, loss)
-        loss += student_model.inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook)
+        loss += student_model.inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, t_model=teacher_model)
 
     return loss, mems, 'bert'
 
@@ -192,7 +192,7 @@ def finetune_forward_step(batch, model, args, timers, mems, teacher_model=None):
 
     if is_distill:
         loss = student_model.pre_loss(logits, logits_t, loss)
-        loss += student_model.inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook)
+        loss += student_model.inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, t_model=teacher_model)
 
     return loss, mems, 'bert'
 

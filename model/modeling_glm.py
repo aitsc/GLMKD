@@ -111,6 +111,7 @@ class GLMModel(torch.nn.Module):
         # Embeddings.
         batch_size = input_ids.size(0)
         words_embeddings = self.word_embeddings(input_ids)
+        hook_add(hook, inter_vars, 'words_embeddings', words_embeddings)
         embeddings = words_embeddings
         if prompt_pos is not None:
             embeddings = embeddings.clone()

@@ -19,6 +19,7 @@ def get_args():
     # tinybert
     py_parser.add_argument('--tinybert_ft_pre', action='store_true', help="微调2次蒸馏用预测层")
     py_parser.add_argument('--tinybert_ft_hard', action='store_true', help="微调2次蒸馏用硬标签")
+    py_parser.add_argument('--tinybert_pt_hard', action='store_true')
     py_parser.add_argument('--tinybert_inter_final', action='store_true', help="pt-inter: final layer")
     known, args_list = py_parser.parse_known_args()
 

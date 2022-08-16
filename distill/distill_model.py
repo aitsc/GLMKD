@@ -142,10 +142,13 @@ class TinyBERT(GLMStudent):
                 student_likelihood = F.log_softmax(s_logits / temperature, dim=-1)
                 targets_prob = F.softmax(t_logits / temperature, dim=-1)
                 loss_ += (- targets_prob * student_likelihood).mean()
-                show_pre += ' tinybert_ft_pre'
+                show_pre += ' + tinybert_ft_pre'
             if self.args.tinybert_ft_hard:
                 loss_ += loss
-                show_pre += ' tinybert_ft_hard'
+                show_pre += ' + tinybert_ft_hard'
+        elif self.args.tinybert_pt_hard:
+            loss_ += loss
+            show_pre += ' + tinybert_pt_hard'
         # show
         if self.show_pre:
             print_rank_0(show_pre)

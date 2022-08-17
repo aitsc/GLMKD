@@ -17,6 +17,7 @@ class GLMStudent(torch.nn.Module):
         self.args = args
         self.pre_loss_description = ''
         self.show_pre = True
+        self.show_inter = True
 
     def get_teacher_hook(self, **kwargs):
         return {}
@@ -28,6 +29,11 @@ class GLMStudent(torch.nn.Module):
         return self.origin_model(*inputs, **kwargs)
 
     def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, **kwargs):
+        # show
+        if self.show_inter:
+            print_rank_0({'student': hook_reduce(s_hook, s_inter_vars, filter=None),
+                          'teacher': hook_reduce(t_hook, t_inter_vars, filter=None),})
+            self.show_inter = False
         return 0.
 
     def pre_loss(self, s_logits, t_logits, loss, **kwargs):
@@ -100,7 +106,6 @@ class TinyBERT(GLMStudent):
     def __init__(self, language_model, args, **kwargs):
         super().__init__(language_model, args)
         self.fit_dense = torch.nn.Linear(args.hidden_size, args.teacher_hidden_size)
-        self.show_inter = True
 
     def get_teacher_hook(self, **kwargs):
         layers_per_block = int(self.args.teacher_num_layers / self.args.num_layers)
@@ -153,18 +158,13 @@ class TinyBERT(GLMStudent):
         for student_rep, teacher_rep in zip(student_reps, teacher_reps):
             student_rep.distill = teacher_rep.distill = True
             loss_ += F.mse_loss(student_rep, teacher_rep)
-        # show
-        if self.show_inter:
-            print_rank_0({'student': hook_reduce(s_hook, s_inter_vars, filter=None),
-                          'teacher': hook_reduce(t_hook, t_inter_vars, filter=None),})
-            self.show_inter = False
+        super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook)
         return loss_
 
 
 class MiniLMv2(GLMStudent):
     def __init__(self, language_model, args, **kwargs):
         super().__init__(language_model, args)
-        self.show_inter = True
 
     def get_teacher_hook(self, **kwargs):
         return {'transformer': {'layers': {self.args.minilmv2_teacher_layer - 1: {
@@ -191,14 +191,42 @@ class MiniLMv2(GLMStudent):
             t_rep = t_rep.view(*t_rep.size()[:-1], n_heads, -1).permute(0, 2, 1, 3)
             t_rep = torch.matmul(t_rep, t_rep.transpose(-1,-2)) / math.sqrt(t_rep.size(-1))
             kl_loss = F.kl_div(F.log_softmax(s_rep, dim=-1), F.softmax(t_rep, dim=-1), reduction="sum")
-            kl_loss = kl_loss / t_rep.size(0) / t_rep.size(1)
+            kl_loss = kl_loss / t_rep.size(0) / t_rep.size(1) / t_rep.size(2)
             mpu.gather_from_model_parallel_region(kl_loss)
             loss_ += kl_loss.mean()
-        # show
-        if self.show_inter:
-            print_rank_0({'student': hook_reduce(s_hook, s_inter_vars, filter=None),
-                          'teacher': hook_reduce(t_hook, t_inter_vars, filter=None),})
-            self.show_inter = False
+        super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook)
+        return loss_
+
+
+class MiniLM(GLMStudent):
+    def __init__(self, language_model, args, **kwargs):
+        super().__init__(language_model, args)
+
+    def get_teacher_hook(self, **kwargs):
+        return {'transformer': {'layers': {self.args.teacher_num_layers - 1: {
+                'attention_probs': None, 'value_layer': None
+        }}}}
+
+    def get_student_hook(self, **kwargs):
+        return {'transformer': {'layers': {self.args.num_layers - 1: {
+                'attention_probs': None, 'value_layer': None
+        }}}}
+
+    def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, **kwargs):
+        loss_ = 0.
+        s_a = s_inter_vars[s_hook['transformer']['layers'][self.args.num_layers - 1]['attention_probs']]
+        s_v = s_inter_vars[s_hook['transformer']['layers'][self.args.num_layers - 1]['value_layer']]
+        t_a = t_inter_vars[t_hook['transformer']['layers'][self.args.teacher_num_layers - 1]['attention_probs']]
+        t_v = t_inter_vars[t_hook['transformer']['layers'][self.args.teacher_num_layers - 1]['value_layer']]
+        s_a.distill = s_v.distill = t_a.distill = t_v.distill = True
+        s_v2 = torch.matmul(s_v, s_v.transpose(-1,-2)) / math.sqrt(s_v.size(-1))
+        t_v2 = torch.matmul(t_v, t_v.transpose(-1,-2)) / math.sqrt(t_v.size(-1))
+        kl_loss = F.kl_div(F.log_softmax(s_a, dim=-1), F.softmax(t_a, dim=-1), reduction="sum")
+        kl_loss += F.kl_div(F.log_softmax(s_v2, dim=-1), F.softmax(t_v2, dim=-1), reduction="sum")
+        kl_loss = kl_loss / s_a.size(0) / s_a.size(1) / s_a.size(2)
+        mpu.gather_from_model_parallel_region(kl_loss)
+        loss_ += kl_loss.mean()
+        super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook)
         return loss_
 
 
@@ -206,4 +234,5 @@ student_model_D = {
     None: None,
     'tinybert': TinyBERT,
     'minilmv2': MiniLMv2,
+    'minilm': MiniLM,
 }

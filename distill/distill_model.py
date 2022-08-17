@@ -7,6 +7,7 @@ import mpu
 import torch.nn.functional as F
 from mpu import hook_model, hook_return, hook_reduce
 from utils import print_rank_0
+import math
 
 
 class GLMStudent(torch.nn.Module):
@@ -160,7 +161,49 @@ class TinyBERT(GLMStudent):
         return loss_
 
 
+class MiniLMv2(GLMStudent):
+    def __init__(self, language_model, args, **kwargs):
+        super().__init__(language_model, args)
+        self.show_inter = True
+
+    def get_teacher_hook(self, **kwargs):
+        return {'transformer': {'layers': {self.args.minilmv2_teacher_layer - 1: {
+                'mixed_query_layer': None, 'mixed_key_layer': None, 'mixed_value_layer': None
+        }}}}
+
+    def get_student_hook(self, **kwargs):
+        return {'transformer': {'layers': {self.args.num_layers - 1: {
+                'mixed_query_layer': None, 'mixed_key_layer': None, 'mixed_value_layer': None
+        }}}}
+
+    def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, **kwargs):
+        loss_ = 0.
+        s_qkv, t_qkv = [], []
+        for i in ['mixed_query_layer', 'mixed_key_layer', 'mixed_value_layer']:
+            s_qkv.append(s_inter_vars[s_hook['transformer']['layers'][self.args.num_layers - 1][i]])
+            t_qkv.append(t_inter_vars[t_hook['transformer']['layers'][self.args.minilmv2_teacher_layer - 1][i]])
+        n_heads = int(self.args.minilmv2_relation_heads / mpu.get_model_parallel_world_size())
+        # q k v
+        for s_rep, t_rep in zip(s_qkv, t_qkv):
+            s_rep.distill = t_rep.distill = True
+            s_rep = s_rep.view(*s_rep.size()[:-1], n_heads, -1).permute(0, 2, 1, 3)
+            s_rep = torch.matmul(s_rep, s_rep.transpose(-1,-2)) / math.sqrt(s_rep.size(-1))
+            t_rep = t_rep.view(*t_rep.size()[:-1], n_heads, -1).permute(0, 2, 1, 3)
+            t_rep = torch.matmul(t_rep, t_rep.transpose(-1,-2)) / math.sqrt(t_rep.size(-1))
+            kl_loss = F.kl_div(F.log_softmax(s_rep, dim=-1), F.softmax(t_rep, dim=-1), reduction="sum")
+            kl_loss = kl_loss / t_rep.size(0) / t_rep.size(1)
+            mpu.gather_from_model_parallel_region(kl_loss)
+            loss_ += kl_loss.mean()
+        # show
+        if self.show_inter:
+            print_rank_0({'student': hook_reduce(s_hook, s_inter_vars, filter=None),
+                          'teacher': hook_reduce(t_hook, t_inter_vars, filter=None),})
+            self.show_inter = False
+        return loss_
+
+
 student_model_D = {
     None: None,
     'tinybert': TinyBERT,
+    'minilmv2': MiniLMv2,
 }

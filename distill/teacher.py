@@ -26,7 +26,10 @@ def get_args():
     py_parser.add_argument('--tinybert_ft_pre', action='store_true', help="微调2次蒸馏用预测层")
     py_parser.add_argument('--tinybert_ft_hard', action='store_true', help="微调2次蒸馏用硬标签")
     py_parser.add_argument('--tinybert_pt_hard', action='store_true')
-    py_parser.add_argument('--tinybert_inter_final', action='store_true', help="pt-inter: final layer")
+    py_parser.add_argument('--tinybert_inter_final', action='store_true', help="inter: final layer")
+    # minilmv2
+    py_parser.add_argument('--minilmv2_relation_heads', type=int, default=48, help="base=48,large=64")
+    py_parser.add_argument('--minilmv2_teacher_layer', type=int, default=12, help="start at one")
 
     known, args_list = py_parser.parse_known_args()
     args = get_args_(args_list)
@@ -35,6 +38,8 @@ def get_args():
         args.distill_ft_soft = args.tinybert_ft_pre
         args.distill_ft_hard = args.tinybert_ft_hard
         args.distill_pt_hard = args.tinybert_pt_hard
+    if args.teacher_num_layers < args.minilmv2_teacher_layer:
+        args.minilmv2_teacher_layer = args.teacher_num_layers
     return args
     
 

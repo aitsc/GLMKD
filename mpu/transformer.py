@@ -271,6 +271,9 @@ class ParallelSelfAttention(torch.nn.Module):
              mixed_value_layer) = split_tensor_along_last_dim(mixed_x_layer, 3)
             mixed_query_layer = mixed_query_layer[:, -query_length:]
 
+        hook_add(hook, inter_vars, 'mixed_query_layer', mixed_query_layer)
+        hook_add(hook, inter_vars, 'mixed_key_layer', mixed_key_layer)
+        hook_add(hook, inter_vars, 'mixed_value_layer', mixed_value_layer)
         # Reshape and transpose [b, np, s, hn]
         query_layer = self._transpose_for_scores(mixed_query_layer)
         key_layer = self._transpose_for_scores(mixed_key_layer)

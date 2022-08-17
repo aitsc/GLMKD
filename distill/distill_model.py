@@ -113,7 +113,7 @@ class TinyBERT(GLMStudent):
     def get_teacher_hook(self, **kwargs):
         layers_per_block = int(self.args.teacher_num_layers / self.args.num_layers)
         layers = tuple(range(0, self.args.teacher_num_layers + 1, layers_per_block))
-        return {'transformer': {
+        return {} if self.args.tinybert_wo_inter else {'transformer': {
             'layers': {} if self.args.tinybert_inter_final else {
                 **{i: {'layernorm_output': None} for i in layers[:-1]},
                 **{i - 1: {'attention_scores': None} for i in layers[1:]},
@@ -122,7 +122,7 @@ class TinyBERT(GLMStudent):
         }}
 
     def get_student_hook(self, **kwargs):
-        return {'transformer': {
+        return {} if self.args.tinybert_wo_inter else {'transformer': {
             'layers': {} if self.args.tinybert_inter_final else {i: {
                 'layernorm_output': None, 'attention_scores': None,
             } for i in range(self.args.num_layers)},
@@ -141,7 +141,7 @@ class TinyBERT(GLMStudent):
 
     def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, **kwargs):
         loss_ = 0.
-        if self.args.finetune and (self.args.distill_ft_soft or self.args.distill_ft_hard):
+        if self.args.tinybert_wo_inter:
             return loss_
         def get_layer_f(st, name):
             inter_vars, hook = (s_inter_vars, s_hook) if st == 's' else (t_inter_vars, t_hook)

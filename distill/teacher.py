@@ -30,6 +30,7 @@ def get_args():
     # erdistill
     py_parser.add_argument('--erdistill_inter', action='store_true')
     py_parser.add_argument('--erdistill_ft_logits', action='store_true', help="首次微调蒸馏包括最后一层logits, 确保output_predict")
+    py_parser.add_argument('--erdistill_temperature', type=float, default=10.)
     # minilmv2
     py_parser.add_argument('--minilmv2_relation_heads', type=int, default=48, help="base=48,large=64")
     py_parser.add_argument('--minilmv2_teacher_layer', type=int, default=12, help="start at one")

@@ -54,8 +54,7 @@ class GLMStudent(torch.nn.Module):
                 student_likelihood = F.log_softmax(s_logits / self.args.distill_temperature, dim=-1)
                 targets_prob = F.softmax(t_logits / self.args.distill_temperature, dim=-1)
                 ce_loss = (- targets_prob * student_likelihood).mean()
-                mpu.gather_from_model_parallel_region(ce_loss)  # 确保是 parallel_output
-                loss_ += ce_loss.mean()
+                loss_ += mpu.gather_from_model_parallel_region(ce_loss).mean()  # 确保是 parallel_output
             if self.args.distill_pt_hard:
                 self.pre_loss_description += ' + distill_pt_hard'
                 loss_ += loss
@@ -307,7 +306,6 @@ class DistilBERT(GLMStudent):
 class ERDistill(GLMStudent):
     def __init__(self, language_model, args, **kwargs):
         super().__init__(language_model, args)
-        self.show_inter = True
         self.erdistill_ft_logits = self.args.erdistill_ft_logits and self.args.finetune
 
     def get_teacher_hook(self, **kwargs):
@@ -339,31 +337,24 @@ class ERDistill(GLMStudent):
         # ER
         student_reps = get_layer_f('s', 'layernorm_output')
         teacher_reps = get_layer_f('t', 'layernorm_output')
+        T = self.args.erdistill_temperature
         for student_rep, teacher_rep in zip(student_reps, teacher_reps):
             student_rep.distill = teacher_rep.distill = True
-            mpu.copy_to_model_parallel_region(student_rep)
-            mpu.copy_to_model_parallel_region(teacher_rep)
-            s_logits = F.linear(student_rep, s_emb_w)
-            t_logits = F.linear(teacher_reps, t_emb_w)
-            student_likelihood = F.log_softmax(s_logits / self.args.distill_temperature, dim=-1)
-            targets_prob = F.softmax(t_logits / self.args.distill_temperature, dim=-1)
-            ce_loss = (- targets_prob * student_likelihood).mean()
-            mpu.gather_from_model_parallel_region(ce_loss)
-            loss_ += ce_loss.mean()
+            student_rep = mpu.copy_to_model_parallel_region(student_rep)
+            teacher_rep = mpu.copy_to_model_parallel_region(teacher_rep)
+            s_logits = F.linear(student_rep, s_emb_w) / T
+            t_logits = F.linear(teacher_reps, t_emb_w) / T
+            kl_loss = F.kl_div(F.log_softmax(s_logits, dim=-1), F.softmax(t_logits, dim=-1), reduction="sum")
+            kl_loss = kl_loss / s_logits.size(0) / s_logits.size(1) * T ** 2
+            loss_ += mpu.gather_from_model_parallel_region(kl_loss).mean()
         if 'logits_parallel' in s_hook:
             s_logits = s_hook['logits_parallel']
             t_logits = t_hook['logits_parallel']
             s_logits.distill = t_logits.distill = True
-            student_likelihood = F.log_softmax(s_logits / self.args.distill_temperature, dim=-1)
-            targets_prob = F.softmax(t_logits / self.args.distill_temperature, dim=-1)
-            ce_loss = (- targets_prob * student_likelihood).mean()
-            mpu.gather_from_model_parallel_region(ce_loss)
-            loss_ += ce_loss.mean()
-        # show
-        if self.show_inter:
-            print_rank_0({'student': hook_reduce(s_hook, s_inter_vars, filter=None),
-                          'teacher': hook_reduce(t_hook, t_inter_vars, filter=None),})
-            self.show_inter = False
+            kl_loss = F.kl_div(F.log_softmax(s_logits / T, dim=-1), F.softmax(t_logits / T, dim=-1), reduction="sum")
+            kl_loss = kl_loss / s_logits.size(0) / s_logits.size(1) * T ** 2
+            loss_ += mpu.gather_from_model_parallel_region(kl_loss).mean()
+        super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook)
         return loss_
 
 

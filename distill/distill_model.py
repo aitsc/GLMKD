@@ -326,8 +326,6 @@ class ERDistill(GLMStudent):
 
     def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, t_model=None, **kwargs):
         loss_ = 0.
-        if self.args.finetune and (self.args.distill_ft_soft or self.args.distill_ft_hard):
-            return loss_
         def get_layer_f(st, name):
             inter_vars, hook = (s_inter_vars, s_hook) if st == 's' else (t_inter_vars, t_hook)
             return [
@@ -339,7 +337,7 @@ class ERDistill(GLMStudent):
         # ER
         student_reps = get_layer_f('s', 'layernorm_output')
         teacher_reps = get_layer_f('t', 'layernorm_output')
-        T = self.args.erdistill_temperature
+        T = self.args.distill_temperature
         for student_rep, teacher_rep in zip(student_reps, teacher_reps):
             student_rep.distill = teacher_rep.distill = True
             student_rep = mpu.copy_to_model_parallel_region(student_rep)

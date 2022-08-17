@@ -12,3 +12,8 @@ pretrain: ... --student_model=minilm
 
 ## DistilBERT
 pretrain: ... --student_model=distilbert --distill_temperature=10. --distilbert_alpha_ce=0.33 --distilbert_alpha_mlm=0.33 --distilbert_alpha_cos=0.33
+
+## ERDistill
+1. pretrain: ... --student_model=erdistill --erdistill_inter --distill_temperature=10. --distill_pt_soft --distill_pt_hard
+2. finetune: ... --student_model=erdistill --erdistill_inter --erdistill_ft_logits --distill_temperature=10.
+3. finetune: ... --student_model=erdistill --distill_ft_soft --distill_ft_hard

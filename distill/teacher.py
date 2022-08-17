@@ -22,16 +22,15 @@ def get_args():
     py_parser.add_argument('--teacher_max_position_embeddings', type=int, default=512)
     py_parser.add_argument('--teacher_load_pretrained', type=str, default=None)
     py_parser.add_argument('--teacher_fp16', action='store_true')
-    # tinybert: ft+/distill_ft_soft
+    # tinybert
     py_parser.add_argument('--tinybert_inter_final', action='store_true', help="inter: final layer")
     # erdistill
     py_parser.add_argument('--erdistill_inter', action='store_true')
-    py_parser.add_argument('--erdistill_ft_logits', action='store_true', help="首次微调蒸馏包括最后一层logits, 确保output_predict")
-    py_parser.add_argument('--erdistill_temperature', type=float, default=10.)
+    py_parser.add_argument('--erdistill_ft_logits', action='store_true', help="首次微调蒸馏包括最后一层logits")
     # minilmv2
     py_parser.add_argument('--minilmv2_relation_heads', type=int, default=48, help="base=48,large=64")
     py_parser.add_argument('--minilmv2_teacher_layer', type=int, default=12, help="start at one")
-    # distilbert: pt+distill_temperature
+    # distilbert
     py_parser.add_argument('--distilbert_alpha_ce', type=float, default=0.33, help="类似 distill_pt_soft")
     py_parser.add_argument('--distilbert_alpha_mlm', type=float, default=0.33, help="类似 distill_pt_hard")
     py_parser.add_argument('--distilbert_alpha_cos', type=float, default=0.33)

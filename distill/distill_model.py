@@ -283,6 +283,7 @@ class DistilBERT(GLMStudent):
 
 student_model_D = {
     None: None,
+    'kd': GLMStudent,
     'tinybert': TinyBERT,
     'minilmv2': MiniLMv2,
     'minilm': MiniLM,

@@ -1,4 +1,7 @@
 # 蒸馏命令
+## KD
+finetune: ... --student_model=kd --distill_ft_soft --distill_ft_hard --distill_temperature=10.
+
 ## TinyBERT
 1. pretrain-inter: ... --student_model=tinybert
 2. finetune-inter: ... --student_model=tinybert

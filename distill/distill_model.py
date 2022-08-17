@@ -343,7 +343,7 @@ class ERDistill(GLMStudent):
             student_rep = mpu.copy_to_model_parallel_region(student_rep)
             teacher_rep = mpu.copy_to_model_parallel_region(teacher_rep)
             s_logits = F.linear(student_rep, s_emb_w) / T
-            t_logits = F.linear(teacher_reps, t_emb_w) / T
+            t_logits = F.linear(teacher_rep, t_emb_w) / T
             kl_loss = F.kl_div(F.log_softmax(s_logits, dim=-1), F.softmax(t_logits, dim=-1), reduction="sum")
             kl_loss = kl_loss / s_logits.size(0) / s_logits.size(1) * T ** 2
             loss_ += mpu.gather_from_model_parallel_region(kl_loss).mean()

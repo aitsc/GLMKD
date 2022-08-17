@@ -22,10 +22,7 @@ def get_args():
     py_parser.add_argument('--teacher_max_position_embeddings', type=int, default=512)
     py_parser.add_argument('--teacher_load_pretrained', type=str, default=None)
     py_parser.add_argument('--teacher_fp16', action='store_true')
-    # tinybert
-    py_parser.add_argument('--tinybert_ft_pre', action='store_true', help="微调2次蒸馏用预测层")
-    py_parser.add_argument('--tinybert_ft_hard', action='store_true', help="微调2次蒸馏用硬标签")
-    py_parser.add_argument('--tinybert_pt_hard', action='store_true')
+    # tinybert: ft+/distill_ft_soft
     py_parser.add_argument('--tinybert_inter_final', action='store_true', help="inter: final layer")
     # erdistill
     py_parser.add_argument('--erdistill_inter', action='store_true')
@@ -34,21 +31,14 @@ def get_args():
     # minilmv2
     py_parser.add_argument('--minilmv2_relation_heads', type=int, default=48, help="base=48,large=64")
     py_parser.add_argument('--minilmv2_teacher_layer', type=int, default=12, help="start at one")
-    # distilbert
-    py_parser.add_argument('--distilbert_alpha_ce', type=float, default=0.33)
-    py_parser.add_argument('--distilbert_alpha_mlm', type=float, default=0.33)
+    # distilbert: pt+distill_temperature
+    py_parser.add_argument('--distilbert_alpha_ce', type=float, default=0.33, help="类似 distill_pt_soft")
+    py_parser.add_argument('--distilbert_alpha_mlm', type=float, default=0.33, help="类似 distill_pt_hard")
     py_parser.add_argument('--distilbert_alpha_cos', type=float, default=0.33)
-    py_parser.add_argument('--distilbert_temperature', type=float, default=10.)
 
     known, args_list = py_parser.parse_known_args()
     args = get_args_(args_list)
     args = argparse.Namespace(**vars(args), **vars(known))
-    if args.student_model == 'tinybert':
-        args.distill_ft_soft = args.tinybert_ft_pre
-        args.distill_ft_hard = args.tinybert_ft_hard
-        args.distill_pt_hard = args.tinybert_pt_hard
-    if args.teacher_num_layers < args.minilmv2_teacher_layer:
-        args.minilmv2_teacher_layer = args.teacher_num_layers
     return args
     
 

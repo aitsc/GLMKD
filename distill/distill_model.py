@@ -36,14 +36,15 @@ class GLMStudent(torch.nn.Module):
             self.show_inter = False
         return 0.
 
-    def pre_loss(self, s_logits, t_logits, loss, **kwargs):
+    def pre_loss(self, s_logits, t_logits, loss, loss_mask=None, **kwargs):
         loss_ = 0.
         self.pre_loss_description = 'pre_loss: 0'
+        T = self.args.distill_temperature
         if self.args.finetune:
             if self.args.distill_ft_soft:
                 self.pre_loss_description += ' + distill_ft_soft'
-                student_likelihood = F.log_softmax(s_logits / self.args.distill_temperature, dim=-1)
-                targets_prob = F.softmax(t_logits / self.args.distill_temperature, dim=-1)
+                student_likelihood = F.log_softmax(s_logits / T, dim=-1)
+                targets_prob = F.softmax(t_logits / T, dim=-1)
                 loss_ += (- targets_prob * student_likelihood).mean()
             if self.args.distill_ft_hard:
                 self.pre_loss_description += ' + distill_ft_hard'
@@ -51,10 +52,11 @@ class GLMStudent(torch.nn.Module):
         else:
             if self.args.distill_pt_soft:
                 self.pre_loss_description += ' + distill_pt_soft'
-                student_likelihood = F.log_softmax(s_logits / self.args.distill_temperature, dim=-1)
-                targets_prob = F.softmax(t_logits / self.args.distill_temperature, dim=-1)
-                ce_loss = (- targets_prob * student_likelihood).mean()
-                loss_ += mpu.gather_from_model_parallel_region(ce_loss).mean()  # 确保是 parallel_output
+                loss_mask = 1. if loss_mask is None else loss_mask.view(*loss_mask.size(), 1)
+                s_logits = (s_logits * loss_mask / T).view(-1, s_logits.size(-1))
+                t_logits = (t_logits * loss_mask / T).view(-1, t_logits.size(-1))
+                kl_loss = F.kl_div(F.log_softmax(s_logits, dim=-1), F.softmax(t_logits, dim=-1), reduction="batchmean")
+                loss_ += mpu.gather_from_model_parallel_region(kl_loss).mean() * T ** 2
             if self.args.distill_pt_hard:
                 self.pre_loss_description += ' + distill_pt_hard'
                 loss_ += loss
@@ -287,7 +289,7 @@ class DistilBERT(GLMStudent):
         if self.args.distilbert_alpha_ce > 0:
             self.pre_loss_description += ' + distilbert_alpha_ce'
             loss_mask = loss_mask.view(*loss_mask.size(), 1)
-            T = self.args.distilbert_temperature
+            T = self.args.distill_temperature
             s_logits = (s_logits * loss_mask / T).view(-1, s_logits.size(-1))
             t_logits = (t_logits * loss_mask / T).view(-1, t_logits.size(-1))
             kl_loss = F.kl_div(F.log_softmax(s_logits, dim=-1), F.softmax(t_logits, dim=-1), reduction="batchmean")

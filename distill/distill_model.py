@@ -53,7 +53,8 @@ class GLMStudent(torch.nn.Module):
                 self.pre_loss_description += ' + distill_pt_soft'
                 student_likelihood = F.log_softmax(s_logits / self.args.distill_temperature, dim=-1)
                 targets_prob = F.softmax(t_logits / self.args.distill_temperature, dim=-1)
-                loss_ += (- targets_prob * student_likelihood).mean()
+                ce_loss = (- targets_prob * student_likelihood).mean()
+                loss_ += mpu.gather_from_model_parallel_region(ce_loss).mean()  # 确保是 parallel_output
             if self.args.distill_pt_hard:
                 self.pre_loss_description += ' + distill_pt_hard'
                 loss_ += loss

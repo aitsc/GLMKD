@@ -151,7 +151,7 @@ class TinyBERT(GLMStudent):
             for student_rep, teacher_rep in zip(student_reps, teacher_reps):
                 student_rep.distill = teacher_rep.distill = True
                 loss_ += F.mse_loss(student_rep, teacher_rep)
-            mpu.reduce_from_model_parallel_region(loss_)
+            loss_ = mpu.reduce_from_model_parallel_region(loss_)
         # emb + hidden_states
         student_reps = get_layer_f('s', 'layernorm_output') + [s_inter_vars[s_hook['transformer']['output']]]
         teacher_reps = get_layer_f('t', 'layernorm_output') + [t_inter_vars[t_hook['transformer']['output']]]
@@ -192,8 +192,7 @@ class MiniLMv2(GLMStudent):
             t_rep = torch.matmul(t_rep, t_rep.transpose(-1,-2)) / math.sqrt(t_rep.size(-1))
             kl_loss = F.kl_div(F.log_softmax(s_rep, dim=-1), F.softmax(t_rep, dim=-1), reduction="sum")
             kl_loss = kl_loss / t_rep.size(0) / t_rep.size(1) / t_rep.size(2)
-            mpu.gather_from_model_parallel_region(kl_loss)
-            loss_ += kl_loss.mean()
+            loss_ += mpu.gather_from_model_parallel_region(kl_loss).mean()
         super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook)
         return loss_
 
@@ -224,8 +223,7 @@ class MiniLM(GLMStudent):
         kl_loss = F.kl_div(F.log_softmax(s_a, dim=-1), F.softmax(t_a, dim=-1), reduction="sum")
         kl_loss += F.kl_div(F.log_softmax(s_v2, dim=-1), F.softmax(t_v2, dim=-1), reduction="sum")
         kl_loss = kl_loss / s_a.size(0) / s_a.size(1) / s_a.size(2)
-        mpu.gather_from_model_parallel_region(kl_loss)
-        loss_ += kl_loss.mean()
+        loss_ += mpu.gather_from_model_parallel_region(kl_loss).mean()
         super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook)
         return loss_
 
@@ -246,7 +244,9 @@ class DistilBERT(GLMStudent):
             return loss_
         s_o = s_inter_vars[s_hook['transformer']['output']]
         t_o = t_inter_vars[t_hook['transformer']['output']]
+        assert s_o.size() == t_o.size(), f'{s_o.size()} == {t_o.size()}'
         s_o.distill = t_o.distill = True
+        loss_mask = loss_mask.view(*loss_mask.size(), 1)
         s_o = (s_o * loss_mask).view(-1, s_o.size(-1))
         t_o = (t_o * loss_mask).view(-1, t_o.size(-1))
         target = s_o.new(s_o.size(0)).fill_(1)
@@ -266,7 +266,7 @@ class DistilBERT(GLMStudent):
             s_logits = (s_logits * loss_mask / T).view(-1, s_logits.size(-1))
             t_logits = (t_logits * loss_mask / T).view(-1, t_logits.size(-1))
             kl_loss = F.kl_div(F.log_softmax(s_logits, dim=-1), F.softmax(t_logits, dim=-1), reduction="batchmean")
-            mpu.gather_from_model_parallel_region(kl_loss)
+            kl_loss = mpu.gather_from_model_parallel_region(kl_loss)
             loss_ += kl_loss.mean() * T ** 2 * self.args.distilbert_alpha_ce
         if self.args.distilbert_alpha_mlm > 0:
             self.pre_loss_description += ' + distilbert_alpha_mlm'

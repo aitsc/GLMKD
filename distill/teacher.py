@@ -30,6 +30,11 @@ def get_args():
     # minilmv2
     py_parser.add_argument('--minilmv2_relation_heads', type=int, default=48, help="base=48,large=64")
     py_parser.add_argument('--minilmv2_teacher_layer', type=int, default=12, help="start at one")
+    # distilbert
+    py_parser.add_argument('--distilbert_alpha_ce', type=float, default=0.33)
+    py_parser.add_argument('--distilbert_alpha_mlm', type=float, default=0.33)
+    py_parser.add_argument('--distilbert_alpha_cos', type=float, default=0.33)
+    py_parser.add_argument('--distilbert_temperature', type=float, default=10.)
 
     known, args_list = py_parser.parse_known_args()
     args = get_args_(args_list)

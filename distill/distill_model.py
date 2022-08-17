@@ -230,9 +230,58 @@ class MiniLM(GLMStudent):
         return loss_
 
 
+class DistilBERT(GLMStudent):
+    def __init__(self, language_model, args, **kwargs):
+        super().__init__(language_model, args)
+
+    def get_teacher_hook(self, **kwargs):
+        return {'transformer': {'output': None}}
+
+    def get_student_hook(self, **kwargs):
+        return {'transformer': {'output': None}}
+
+    def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, loss_mask=None, **kwargs):
+        loss_ = 0.
+        if self.args.distilbert_alpha_cos <= 0.:
+            return loss_
+        s_o = s_inter_vars[s_hook['transformer']['output']]
+        t_o = t_inter_vars[t_hook['transformer']['output']]
+        s_o.distill = t_o.distill = True
+        s_o = (s_o * loss_mask).view(-1, s_o.size(-1))
+        t_o = (t_o * loss_mask).view(-1, t_o.size(-1))
+        target = s_o.new(s_o.size(0)).fill_(1)
+        loss_ += F.cosine_embedding_loss(s_o, t_o, target) * self.args.distilbert_alpha_cos
+        super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook)
+        return loss_
+
+    def pre_loss(self, s_logits, t_logits, loss, loss_mask=None, **kwargs):
+        loss_ = 0.
+        self.pre_loss_description = 'pre_loss: 0'
+        if self.args.finetune:
+            raise NameError('DistilBERT has no finetune distillation!')
+        if self.args.distilbert_alpha_ce > 0:
+            self.pre_loss_description += ' + distilbert_alpha_ce'
+            loss_mask = loss_mask.view(*loss_mask.size(), 1)
+            T = self.args.distilbert_temperature
+            s_logits = (s_logits * loss_mask / T).view(-1, s_logits.size(-1))
+            t_logits = (t_logits * loss_mask / T).view(-1, t_logits.size(-1))
+            kl_loss = F.kl_div(F.log_softmax(s_logits, dim=-1), F.softmax(t_logits, dim=-1), reduction="batchmean")
+            mpu.gather_from_model_parallel_region(kl_loss)
+            loss_ += kl_loss.mean() * T ** 2 * self.args.distilbert_alpha_ce
+        if self.args.distilbert_alpha_mlm > 0:
+            self.pre_loss_description += ' + distilbert_alpha_mlm'
+            loss_ += loss * self.args.distilbert_alpha_mlm
+        # show
+        if self.show_pre:
+            print_rank_0(self.pre_loss_description)
+            self.show_pre = False
+        return loss_
+
+
 student_model_D = {
     None: None,
     'tinybert': TinyBERT,
     'minilmv2': MiniLMv2,
     'minilm': MiniLM,
+    'distilbert': DistilBERT,
 }

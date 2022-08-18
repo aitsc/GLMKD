@@ -25,13 +25,16 @@ def get_args():
     # tinybert
     py_parser.add_argument('--tinybert_inter_final', action='store_true', help="inter: final layer")
     py_parser.add_argument('--tinybert_wo_inter', action='store_true', help="不使用中间层,用于二次微调")
+    py_parser.add_argument('--tinybert_temperature', type=float, default=None, help="若存在则优先级高于distill_temperature,可用于MixBaseline")
     # minilmv2
     py_parser.add_argument('--minilmv2_relation_heads', type=int, default=48, help="base=48,large=64")
     py_parser.add_argument('--minilmv2_teacher_layer', type=int, default=12, help="start at one")
     # distilbert
-    py_parser.add_argument('--distilbert_alpha_ce', type=float, default=0.33, help="类似 distill_pt_soft")
-    py_parser.add_argument('--distilbert_alpha_mlm', type=float, default=0.33, help="类似 distill_pt_hard")
-    py_parser.add_argument('--distilbert_alpha_cos', type=float, default=0.33)
+    py_parser.add_argument('--distilbert_alpha_ce', type=float, default=1., help="类似 distill_pt_soft")
+    py_parser.add_argument('--distilbert_alpha_mlm', type=float, default=1., help="类似 distill_pt_hard")
+    py_parser.add_argument('--distilbert_alpha_cos', type=float, default=1.)
+    # mixbaseline
+    py_parser.add_argument('--mixbaseline_wo_inter', action='store_true', help="不使用中间层,用于二次微调")
 
     known, args_list = py_parser.parse_known_args()
     args = get_args_(args_list)

@@ -19,6 +19,7 @@ class GLMStudent(torch.nn.Module):
         self.pre_loss_description = ''
         self.show_pre = show_pre
         self.show_inter = show_inter
+        self.summary_writer = None
 
     def get_teacher_hook(self, **kwargs):
         return {}
@@ -93,6 +94,16 @@ class GLMStudent(torch.nn.Module):
             else:
                 yield 'student.' + k, v
 
+    def add_summary(self, name, value):
+        if self.summary_writer is None:
+            return False
+        if self.args.iteration % self.args.log_interval == 0:
+            value = value.item() if hasattr(value, 'item') else value
+            self.summary_writer.add_scalar(name, value, self.args.iteration)
+            return True
+        else:
+            return False
+
 
 def unpacking_student_model(model):
     while True:
@@ -163,14 +174,6 @@ class TinyBERT(GLMStudent):
             student_rep.distill = teacher_rep.distill = True
             loss_ += F.mse_loss(student_rep, teacher_rep)
         super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook)
-        return loss_
-
-    def pre_loss(self, **kwargs):
-        distill_temperature = self.args.distill_temperature
-        if self.args.tinybert_temperature is not None:
-            self.args.distill_temperature = self.args.tinybert_temperature
-        loss_ = super().pre_loss(**kwargs)
-        self.args.distill_temperature = distill_temperature
         return loss_
 
 
@@ -300,8 +303,10 @@ class MixBaseline(GLMStudent):
     def __init__(self, language_model, args, **kwargs):
         super().__init__(language_model, args)
         self.inter_bl = ['TinyBERT', 'MiniLMv2', 'MiniLM', 'DistilBERT']
-        self.pre_bl_soft = ['TinyBERT']  # 默认包含 KD(super())
-        self.baselines = set(self.inter_bl + self.pre_bl_soft)
+        # 支持 pre_loss hard 的模型必须放在最后, 保证只算一次
+        self.pre_bl_pretrain_soft = ['DistilBERT', 'TinyBERT']  # 重复的预训练软标签构建方式不需要
+        self.pre_bl_finetune_soft = ['TinyBERT']  # 默认包含 KD(super())
+        self.baselines = set(self.inter_bl + self.pre_bl_pretrain_soft + self.pre_bl_finetune_soft)
         for c in self.baselines:
             setattr(self, c, eval(c)(language_model, args, show_pre=False, show_inter=False))
 
@@ -328,7 +333,13 @@ class MixBaseline(GLMStudent):
         if len(s_inter_vars) == 0:
             return loss_
         for c in self.inter_bl:
-            loss_ += getattr(self, c).inter_loss(s_inter_vars, **kwargs)
+            distill_temperature = self.args.distill_temperature
+            if hasattr(self.args, f'mixbaseline_{c.lower()}_t'):
+                self.args.distill_temperature = getattr(self.args, f'mixbaseline_{c.lower()}_t')
+            l = getattr(self, c).inter_loss(s_inter_vars, **kwargs)
+            super().add_summary(f'MixBaseline/inter_loss.{c}', l)
+            loss_ += l
+            self.args.distill_temperature = distill_temperature
         super().inter_loss(s_inter_vars, **kwargs)
         return loss_
 
@@ -339,13 +350,25 @@ class MixBaseline(GLMStudent):
         distill_ft_hard, distill_pt_hard = self.args.distill_ft_hard, self.args.distill_pt_hard
         self.args.distill_ft_hard = self.args.distill_pt_hard = False  # 硬标签只需要算一次
         pre_loss_description = ['all pre_loss:']
-        for c in self.pre_bl_soft:
-            loss_ += getattr(self, c).pre_loss(**kwargs)
-            pre_loss_description.append(f'\t{c} - {self.pre_loss_description}')
         # KD pre_loss
-        self.args.distill_ft_hard, self.args.distill_pt_hard = distill_ft_hard, distill_pt_hard
-        loss_ += super().pre_loss(**kwargs)
-        pre_loss_description.append(f'\tKD - {self.pre_loss_description}')
+        if self.args.finetune:
+            l += super().pre_loss(**kwargs)
+            super().add_summary(f'MixBaseline/pre_loss.KD', l)
+            loss_ += l
+            pre_loss_description.append(f'\tKD - {self.pre_loss_description}')
+        # other pre_loss
+        pre_bl = self.pre_bl_finetune_soft if self.args.finetune else self.pre_bl_pretrain_soft
+        for i, c in enumerate(pre_bl):
+            if i == len(pre_bl) - 1:
+                self.args.distill_ft_hard, self.args.distill_pt_hard = distill_ft_hard, distill_pt_hard
+            distill_temperature = self.args.distill_temperature
+            if hasattr(self.args, f'mixbaseline_{c.lower()}_t'):
+                self.args.distill_temperature = getattr(self.args, f'mixbaseline_{c.lower()}_t')
+            l = getattr(self, c).pre_loss(**kwargs)
+            super().add_summary(f'MixBaseline/pre_loss.{c}', l)
+            loss_ += l
+            pre_loss_description.append(f'\t{c} - {self.pre_loss_description}')
+            self.args.distill_temperature = distill_temperature
         # show
         if show_pre:
             print_rank_0('\n'.join(pre_loss_description))

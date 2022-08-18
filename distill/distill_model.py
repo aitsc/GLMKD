@@ -42,7 +42,7 @@ class GLMStudent(torch.nn.Module):
         T = self.args.distill_temperature
         if self.args.finetune:
             if self.args.distill_ft_soft:
-                self.pre_loss_description += ' + distill_ft_soft'
+                self.pre_loss_description += ' + distill_ft_soft(T%s)'%T
                 student_likelihood = F.log_softmax(s_logits / T, dim=-1)
                 targets_prob = F.softmax(t_logits / T, dim=-1)
                 loss_ += (- targets_prob * student_likelihood).mean()
@@ -51,7 +51,7 @@ class GLMStudent(torch.nn.Module):
                 loss_ += loss
         else:
             if self.args.distill_pt_soft:
-                self.pre_loss_description += ' + distill_pt_soft'
+                self.pre_loss_description += ' + distill_pt_soft(T%s)'%T
                 loss_mask = 1. if loss_mask is None else loss_mask.view(*loss_mask.size(), 1)
                 s_logits = (s_logits * loss_mask / T).view(-1, s_logits.size(-1))
                 t_logits = (t_logits * loss_mask / T).view(-1, t_logits.size(-1))
@@ -137,7 +137,7 @@ class TinyBERT(GLMStudent):
     def get_teacher_hook(self, **kwargs):
         layers_per_block = int(self.args.teacher_num_layers / self.args.num_layers)
         layers = tuple(range(0, self.args.teacher_num_layers + 1, layers_per_block))
-        return {'transformer': {
+        return {} if self.args.tinybert_wo_inter else {'transformer': {
             'layers': {} if self.args.tinybert_inter_final else {
                 **{i: {'layernorm_output': None} for i in layers[:-1]},
                 **{i - 1: {'attention_scores': None} for i in layers[1:]},
@@ -146,7 +146,7 @@ class TinyBERT(GLMStudent):
         }}
 
     def get_student_hook(self, **kwargs):
-        return {'transformer': {
+        return {} if self.args.tinybert_wo_inter else {'transformer': {
             'layers': {} if self.args.tinybert_inter_final else {i: {
                 'layernorm_output': None, 'attention_scores': None,
             } for i in range(self.args.num_layers)},
@@ -156,7 +156,7 @@ class TinyBERT(GLMStudent):
     def forward(self, *inputs, hook=None, **kwargs):
         inter_vars = []
         outputs = hook_model(hook, inter_vars, self.origin_model, *inputs, **kwargs)
-        if hook is not None:
+        if hook is not None and not self.args.tinybert_wo_inter:
             # {'transformer': {'layers':{0:{'layernorm_output':,'attention_scores':},..},'output':,..},..}
             for v in hook['transformer']['layers'].values():
                 inter_vars[v['layernorm_output']] = self.fit_dense(inter_vars[v['layernorm_output']])
@@ -165,7 +165,7 @@ class TinyBERT(GLMStudent):
 
     def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, **kwargs):
         loss_ = 0.
-        if self.args.finetune and (self.args.distill_ft_soft or self.args.distill_ft_hard):
+        if self.args.tinybert_wo_inter:
             return loss_
         def get_layer_f(st, name):
             inter_vars, hook = (s_inter_vars, s_hook) if st == 's' else (t_inter_vars, t_hook)
@@ -178,7 +178,7 @@ class TinyBERT(GLMStudent):
             for student_rep, teacher_rep in zip(student_reps, teacher_reps):
                 student_rep.distill = teacher_rep.distill = True
                 loss_ += F.mse_loss(student_rep, teacher_rep)
-            loss_ = mpu.reduce_from_model_parallel_region(loss_)
+            loss_ += mpu.reduce_from_model_parallel_region(loss_)
         # emb + hidden_states
         student_reps = get_layer_f('s', 'layernorm_output') + [s_inter_vars[s_hook['transformer']['output']]]
         teacher_reps = get_layer_f('t', 'layernorm_output') + [t_inter_vars[t_hook['transformer']['output']]]
@@ -360,6 +360,7 @@ class ERDistill(GLMStudent):
 
 student_model_D = {
     None: None,
+    'kd': GLMStudent,
     'tinybert': TinyBERT,
     'erdistill': ERDistill,
     'minilmv2': MiniLMv2,

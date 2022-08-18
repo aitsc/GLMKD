@@ -42,7 +42,7 @@ class GLMStudent(torch.nn.Module):
         T = self.args.distill_temperature
         if self.args.finetune:
             if self.args.distill_ft_soft:
-                self.pre_loss_description += ' + distill_ft_soft'
+                self.pre_loss_description += ' + distill_ft_soft(T%s)'%T
                 student_likelihood = F.log_softmax(s_logits / T, dim=-1)
                 targets_prob = F.softmax(t_logits / T, dim=-1)
                 loss_ += (- targets_prob * student_likelihood).mean()
@@ -51,7 +51,7 @@ class GLMStudent(torch.nn.Module):
                 loss_ += loss
         else:
             if self.args.distill_pt_soft:
-                self.pre_loss_description += ' + distill_pt_soft'
+                self.pre_loss_description += ' + distill_pt_soft(T%s)'%T
                 loss_mask = 1. if loss_mask is None else loss_mask.view(*loss_mask.size(), 1)
                 s_logits = (s_logits * loss_mask / T).view(-1, s_logits.size(-1))
                 t_logits = (t_logits * loss_mask / T).view(-1, t_logits.size(-1))
@@ -132,7 +132,7 @@ class TinyBERT(GLMStudent):
     def forward(self, *inputs, hook=None, **kwargs):
         inter_vars = []
         outputs = hook_model(hook, inter_vars, self.origin_model, *inputs, **kwargs)
-        if hook is not None:
+        if hook is not None and not self.args.tinybert_wo_inter:
             # {'transformer': {'layers':{0:{'layernorm_output':,'attention_scores':},..},'output':,..},..}
             for v in hook['transformer']['layers'].values():
                 inter_vars[v['layernorm_output']] = self.fit_dense(inter_vars[v['layernorm_output']])
@@ -154,7 +154,7 @@ class TinyBERT(GLMStudent):
             for student_rep, teacher_rep in zip(student_reps, teacher_reps):
                 student_rep.distill = teacher_rep.distill = True
                 loss_ += F.mse_loss(student_rep, teacher_rep)
-            loss_ = mpu.reduce_from_model_parallel_region(loss_)
+            loss_ += mpu.reduce_from_model_parallel_region(loss_)
         # emb + hidden_states
         student_reps = get_layer_f('s', 'layernorm_output') + [s_inter_vars[s_hook['transformer']['output']]]
         teacher_reps = get_layer_f('t', 'layernorm_output') + [t_inter_vars[t_hook['transformer']['output']]]

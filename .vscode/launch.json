@@ -55,7 +55,7 @@
                 "--no-lazy-loader",
                 "--resume-dataloader",
                 // 蒸馏
-                "--student_model=distilbert",
+                "--student_model=tinybert",
                 // 蒸馏 base
                 "--teacher_load_pretrained=../GLM/data/checkpoints/pretrain/blocklm-base-blank",
                 "--teacher_num_layers=12",

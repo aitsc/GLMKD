@@ -8,16 +8,18 @@ import torch.nn.functional as F
 from mpu import hook_model, hook_return, hook_reduce
 from utils import print_rank_0
 import math
+from tsc_base import merge_dict
 
 
 class GLMStudent(torch.nn.Module):
-    def __init__(self, language_model: GLMModel, args, **kwargs):
+    def __init__(self, language_model: GLMModel, args, show_pre=True, show_inter=True, **kwargs):
         super().__init__()
         self.origin_model = language_model
         self.args = args
         self.pre_loss_description = ''
-        self.show_pre = True
-        self.show_inter = True
+        self.show_pre = show_pre
+        self.show_inter = show_inter
+        self.summary_writer = None
 
     def get_teacher_hook(self, **kwargs):
         return {}
@@ -92,6 +94,16 @@ class GLMStudent(torch.nn.Module):
             else:
                 yield 'student.' + k, v
 
+    def add_summary(self, name, value):
+        if self.summary_writer is None:
+            return False
+        if self.args.iteration % self.args.log_interval == 0:
+            value = value.item() if hasattr(value, 'item') else value
+            self.summary_writer.add_scalar(name, value, self.args.iteration)
+            return True
+        else:
+            return False
+
 
 def unpacking_student_model(model):
     # 拆包 model 直到遇到 GLMStudent, 用于使用 GLMStudent 内部的函数
@@ -165,7 +177,7 @@ class TinyBERT(GLMStudent):
 
     def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, **kwargs):
         loss_ = 0.
-        if self.args.tinybert_wo_inter:
+        if self.args.tinybert_wo_inter or len(s_inter_vars) == 0:
             return loss_
         def get_layer_f(st, name):
             inter_vars, hook = (s_inter_vars, s_hook) if st == 's' else (t_inter_vars, t_hook)
@@ -205,6 +217,8 @@ class MiniLMv2(GLMStudent):
 
     def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, **kwargs):
         loss_ = 0.
+        if len(s_inter_vars) == 0:
+            return loss_
         s_qkv, t_qkv = [], []
         for i in ['mixed_query_layer', 'mixed_key_layer', 'mixed_value_layer']:
             s_qkv.append(s_inter_vars[s_hook['transformer']['layers'][self.args.num_layers - 1][i]])
@@ -240,6 +254,8 @@ class MiniLM(GLMStudent):
 
     def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, **kwargs):
         loss_ = 0.
+        if len(s_inter_vars) == 0:
+            return loss_
         s_a = s_inter_vars[s_hook['transformer']['layers'][self.args.num_layers - 1]['attention_probs']]
         s_v = s_inter_vars[s_hook['transformer']['layers'][self.args.num_layers - 1]['value_layer']]
         t_a = t_inter_vars[t_hook['transformer']['layers'][self.args.teacher_num_layers - 1]['attention_probs']]
@@ -267,6 +283,8 @@ class DistilBERT(GLMStudent):
 
     def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, loss_mask=None, **kwargs):
         loss_ = 0.
+        if len(s_inter_vars) == 0:
+            return loss_
         if self.args.distilbert_alpha_cos <= 0.:
             return loss_
         s_o = s_inter_vars[s_hook['transformer']['output']]
@@ -283,9 +301,9 @@ class DistilBERT(GLMStudent):
 
     def pre_loss(self, s_logits, t_logits, loss, loss_mask=None, **kwargs):
         loss_ = 0.
-        self.pre_loss_description = 'pre_loss: 0'
         if self.args.finetune:
-            raise NameError('DistilBERT has no finetune distillation!')
+            return super().pre_loss(s_logits, t_logits, loss)
+        self.pre_loss_description = 'pre_loss: 0'
         if self.args.distilbert_alpha_ce > 0:
             self.pre_loss_description += ' + distilbert_alpha_ce'
             loss_mask = loss_mask.view(*loss_mask.size(), 1)
@@ -355,6 +373,81 @@ class ERDistill(GLMStudent):
             kl_loss = kl_loss / s_logits.size(0) / s_logits.size(1) * T ** 2
             loss_ += mpu.gather_from_model_parallel_region(kl_loss).mean()
         super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook)
+
+
+class MixBaseline(GLMStudent):
+    def __init__(self, language_model, args, **kwargs):
+        super().__init__(language_model, args)
+        self.inter_bl = ['TinyBERT', 'MiniLMv2', 'MiniLM', 'DistilBERT']
+        # 支持 pre_loss hard 的模型必须放在最后, 保证只算一次
+        self.pre_bl_pretrain_soft = ['DistilBERT', 'TinyBERT']  # 重复的预训练软标签构建方式不需要
+        self.pre_bl_finetune_soft = ['TinyBERT']  # 默认包含 KD(super())
+        self.baselines = set(self.inter_bl + self.pre_bl_pretrain_soft + self.pre_bl_finetune_soft)
+        for c in self.baselines:
+            setattr(self, c, eval(c)(language_model, args, show_pre=False, show_inter=False))
+
+    def get_teacher_hook(self, **kwargs):
+        if self.args.mixbaseline_wo_inter:
+            return {}
+        hooks = [getattr(self, c).get_teacher_hook() for c in self.inter_bl]
+        return merge_dict(hooks)
+
+    def get_student_hook(self, **kwargs):
+        if self.args.mixbaseline_wo_inter:
+            return {}
+        hooks = [getattr(self, c).get_student_hook() for c in self.inter_bl]
+        return merge_dict(hooks)
+
+    def forward(self, *inputs, **kwargs):
+        if 'TinyBERT' in self.baselines:
+            return self.TinyBERT(*inputs, **kwargs)
+        else:
+            return super().forward(*inputs, **kwargs)
+
+    def inter_loss(self, s_inter_vars, **kwargs):
+        loss_ = 0.
+        if len(s_inter_vars) == 0:
+            return loss_
+        for c in self.inter_bl:
+            distill_temperature = self.args.distill_temperature
+            if hasattr(self.args, f'mixbaseline_{c.lower()}_t'):
+                self.args.distill_temperature = getattr(self.args, f'mixbaseline_{c.lower()}_t')
+            l = getattr(self, c).inter_loss(s_inter_vars, **kwargs)
+            super().add_summary(f'MixBaseline/inter_loss.{c}', l)
+            loss_ += l
+            self.args.distill_temperature = distill_temperature
+        super().inter_loss(s_inter_vars, **kwargs)
+        return loss_
+
+    def pre_loss(self, **kwargs):
+        loss_ = 0.
+        show_pre = self.show_pre
+        self.show_pre = False
+        distill_ft_hard, distill_pt_hard = self.args.distill_ft_hard, self.args.distill_pt_hard
+        self.args.distill_ft_hard = self.args.distill_pt_hard = False  # 硬标签只需要算一次
+        pre_loss_description = ['all pre_loss:']
+        # KD pre_loss
+        if self.args.finetune:
+            l += super().pre_loss(**kwargs)
+            super().add_summary(f'MixBaseline/pre_loss.KD', l)
+            loss_ += l
+            pre_loss_description.append(f'\tKD - {self.pre_loss_description}')
+        # other pre_loss
+        pre_bl = self.pre_bl_finetune_soft if self.args.finetune else self.pre_bl_pretrain_soft
+        for i, c in enumerate(pre_bl):
+            if i == len(pre_bl) - 1:
+                self.args.distill_ft_hard, self.args.distill_pt_hard = distill_ft_hard, distill_pt_hard
+            distill_temperature = self.args.distill_temperature
+            if hasattr(self.args, f'mixbaseline_{c.lower()}_t'):
+                self.args.distill_temperature = getattr(self.args, f'mixbaseline_{c.lower()}_t')
+            l = getattr(self, c).pre_loss(**kwargs)
+            super().add_summary(f'MixBaseline/pre_loss.{c}', l)
+            loss_ += l
+            pre_loss_description.append(f'\t{c} - {self.pre_loss_description}')
+            self.args.distill_temperature = distill_temperature
+        # show
+        if show_pre:
+            print_rank_0('\n'.join(pre_loss_description))
         return loss_
 
 
@@ -366,4 +459,5 @@ student_model_D = {
     'minilmv2': MiniLMv2,
     'minilm': MiniLM,
     'distilbert': DistilBERT,
+    'mixbaseline': MixBaseline,
 }

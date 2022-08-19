@@ -28,7 +28,7 @@ import torch
 
 import deepspeed
 from contextlib import ExitStack
-from arguments import get_args
+from arguments import get_args, get_random_port
 from configure_data import configure_data, prepare_tokenizer, build_multi_task_dataset
 import mpu
 import pathlib
@@ -489,7 +489,7 @@ def initialize_distributed(args):
     # Call the init process
     init_method = 'tcp://'
     args.master_ip = os.getenv('MASTER_ADDR', 'localhost')
-    args.master_port = os.getenv('MASTER_PORT', str(random.randint(7000, 40000)))
+    args.master_port = os.getenv('MASTER_PORT', str(get_random_port()))
     init_method += args.master_ip + ':' + args.master_port
     torch.distributed.init_process_group(
         backend=args.distributed_backend,

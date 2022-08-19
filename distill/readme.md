@@ -21,7 +21,7 @@ pretrain: ... --student_model=distilbert --distill_temperature=10. --distilbert_
 2. finetune: ... --student_model=erdistill --erdistill_inter --erdistill_ft_logits --distill_temperature=10.
 3. finetune: ... --student_model=erdistill --distill_ft_soft --distill_ft_hard
 
-## MixBaseline
-1. pretrain: ... --student_model=mixbaseline --distill_temperature=10.
-2. finetune: ... --student_model=mixbaseline --distill_temperature=10.
+## MixBaseline (KD + TinyBERT + MiniLMv2 + MiniLM + DistilBERT)
+1. pretrain: ... --student_model=mixbaseline --distill_temperature=10. --minilmv2_relation_heads=48 --minilmv2_teacher_layer=12
+2. finetune: ... --student_model=mixbaseline --distill_temperature=10. --minilmv2_relation_heads=48 --minilmv2_teacher_layer=12
 3. finetune: ... --student_model=mixbaseline --mixbaseline_wo_inter --tinybert_wo_inter --distill_ft_soft --distill_ft_hard --distill_temperature=10. --mixbaseline_tinybert_t=1.

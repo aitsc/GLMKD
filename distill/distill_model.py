@@ -12,7 +12,7 @@ from tsc_base import merge_dict
 
 
 class GLMStudent(torch.nn.Module):
-    def __init__(self, language_model: GLMModel, args, show_pre=True, show_inter=True, **kwargs):
+    def __init__(self, language_model: GLMModel, args, show_pre=True, show_inter=True, summary_loss=False, **kwargs):
         super().__init__()
         self.origin_model = language_model
         self.args = args
@@ -20,6 +20,7 @@ class GLMStudent(torch.nn.Module):
         self.show_pre = show_pre
         self.show_inter = show_inter
         self.summary_writer = None
+        self.summary_loss = summary_loss
 
     def get_teacher_hook(self, **kwargs):
         return {}
@@ -47,9 +48,12 @@ class GLMStudent(torch.nn.Module):
                 self.pre_loss_description += ' + distill_ft_soft(T%s)'%T
                 student_likelihood = F.log_softmax(s_logits / T, dim=-1)
                 targets_prob = F.softmax(t_logits / T, dim=-1)
-                loss_ += (- targets_prob * student_likelihood).mean()
+                l = (- targets_prob * student_likelihood).mean()
+                self.add_summary('KD_pre_loss/ft_soft', l)
+                loss_ += l
             if self.args.distill_ft_hard:
                 self.pre_loss_description += ' + distill_ft_hard'
+                self.add_summary('KD_pre_loss/ft_hard', loss)
                 loss_ += loss
         else:
             if self.args.distill_pt_soft:
@@ -58,9 +62,12 @@ class GLMStudent(torch.nn.Module):
                 s_logits = (s_logits * loss_mask / T).view(-1, s_logits.size(-1))
                 t_logits = (t_logits * loss_mask / T).view(-1, t_logits.size(-1))
                 kl_loss = F.kl_div(F.log_softmax(s_logits, dim=-1), F.softmax(t_logits, dim=-1), reduction="batchmean")
-                loss_ += mpu.gather_from_model_parallel_region(kl_loss).mean() * T ** 2
+                l += mpu.gather_from_model_parallel_region(kl_loss).mean() * T ** 2
+                self.add_summary('KD_pre_loss/pt_soft', l)
+                loss_ += l
             if self.args.distill_pt_hard:
                 self.pre_loss_description += ' + distill_pt_hard'
+                self.add_summary('KD_pre_loss/pt_hard', loss)
                 loss_ += loss
         # show
         if self.show_pre:
@@ -95,7 +102,7 @@ class GLMStudent(torch.nn.Module):
                 yield 'student.' + k, v
 
     def add_summary(self, name, value):
-        if self.summary_writer is None:
+        if self.summary_writer is None or not self.summary_loss:
             return False
         if self.args.iteration % self.args.log_interval == 0:
             value = value.item() if hasattr(value, 'item') else value
@@ -325,54 +332,83 @@ class DistilBERT(GLMStudent):
 
 class ERDistill(GLMStudent):
     def __init__(self, language_model, args, **kwargs):
-        super().__init__(language_model, args)
-        self.erdistill_ft_logits = self.args.erdistill_ft_logits and self.args.finetune
+        super().__init__(language_model, args, **kwargs)
+        self.summary_loss = True
+
+    def get_inter_hook(self, layers, st='s'):
+        # erdistill_inter: all / one / two / 1plus /
+        all = [(i, {'layernorm_output': None}) for i in layers]
+        if self.args.erdistill_inter in {'one', '', None}:
+            all = []
+        elif self.args.erdistill_inter in {'two'}:
+            all = all[-1:]
+        elif self.args.erdistill_inter in {'1plus'}:
+            all = all[-1:] if st=='s' else []
+        return {'transformer': {'layers': dict(all), 
+            **({'output': None} if self.args.erdistill_inter else {})}}
 
     def get_teacher_hook(self, **kwargs):
         layers_per_block = int(self.args.teacher_num_layers / self.args.num_layers)
         layers = tuple(range(0, self.args.teacher_num_layers, layers_per_block))
-        return {'transformer': {'layers': {} if not self.args.erdistill_inter else {
-            i: {'layernorm_output': None}
-        }  for i in layers},
-        **({'logits_parallel': None} if self.erdistill_ft_logits else {})}
+        return self.get_inter_hook(layers, st='t')
 
     def get_student_hook(self, **kwargs):
-        return {'transformer': {'layers': {} if not self.args.erdistill_inter else {
-            i: {'layernorm_output': None}
-        }  for i in range(self.args.num_layers)}
-        **({'logits_parallel': None} if self.erdistill_ft_logits else {})}
+        layers = tuple(i for i in self.args.num_layers)
+        return self.get_inter_hook(layers, st='s')
 
     def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, t_model=None, **kwargs):
         loss_ = 0.
+        if len(s_inter_vars) == 0:
+            return loss_
         def get_layer_f(st, name):
             inter_vars, hook = (s_inter_vars, s_hook) if st == 's' else (t_inter_vars, t_hook)
-            return [
-                inter_vars[i[1][name]] for i in sorted(hook['transformer']['layers'].items()) if name in i[1]
-            ] + ([hook['logits_parallel']] if 'logits_parallel' in hook else [])
+            return [inter_vars[i[1][name]] for i in sorted(hook['transformer']['layers'].items()) if name in i[1]]
 
+        student_reps = get_layer_f('s', 'layernorm_output') + [s_inter_vars[s_hook['transformer']['output']]]
+        teacher_reps = get_layer_f('t', 'layernorm_output') + [t_inter_vars[s_hook['transformer']['output']]]
+        # 局部相似
+        t_reps = []
+        for t_rep in teacher_reps:
+            t_rep.distill = True
+            t_rep = torch.matmul(t_rep, t_rep.transpose(-1,-2)) / math.sqrt(t_rep.size(-1))
+            t_rep = t_rep if self.args.erdistill_inter_mse else F.softmax(t_rep, dim=-1)
+            t_reps.append(t_rep)
+        if self.args.erdistill_inter in {'1plus'}:
+            t_reps += t_reps
+        for i, (s_rep, t_rep) in enumerate(zip(student_reps, t_reps)):
+            s_rep.distill = True
+            s_rep = torch.matmul(s_rep, s_rep.transpose(-1,-2)) / math.sqrt(s_rep.size(-1))
+            if self.args.erdistill_inter_mse:
+                l = F.mse_loss(s_rep, t_rep)
+            else:
+                l = F.kl_div(F.log_softmax(s_rep, dim=-1), F.softmax(t_rep, dim=-1), reduction="sum")
+                l = l / t_rep.size(0) / t_rep.size(1) / t_rep.size(2)
+            super().add_summary(f'inter_loss/local.{i}', l)
+            loss_ += l
+        # 全局相似
         t_emb_w = find_model_inter_var(t_model, 'word_embeddings.weight')
         s_emb_w = find_model_inter_var(self, 'word_embeddings.weight')
-        # ER
-        student_reps = get_layer_f('s', 'layernorm_output')
-        teacher_reps = get_layer_f('t', 'layernorm_output')
-        T = self.args.distill_temperature
-        for student_rep, teacher_rep in zip(student_reps, teacher_reps):
-            student_rep.distill = teacher_rep.distill = True
-            student_rep = mpu.copy_to_model_parallel_region(student_rep)
-            teacher_rep = mpu.copy_to_model_parallel_region(teacher_rep)
-            s_logits = F.linear(student_rep, s_emb_w) / T
-            t_logits = F.linear(teacher_rep, t_emb_w) / T
-            kl_loss = F.kl_div(F.log_softmax(s_logits, dim=-1), F.softmax(t_logits, dim=-1), reduction="sum")
-            kl_loss = kl_loss / s_logits.size(0) / s_logits.size(1) * T ** 2
-            loss_ += mpu.gather_from_model_parallel_region(kl_loss).mean()
-        if 'logits_parallel' in s_hook:
-            s_logits = s_hook['logits_parallel']
-            t_logits = t_hook['logits_parallel']
-            s_logits.distill = t_logits.distill = True
-            kl_loss = F.kl_div(F.log_softmax(s_logits / T, dim=-1), F.softmax(t_logits / T, dim=-1), reduction="sum")
-            kl_loss = kl_loss / s_logits.size(0) / s_logits.size(1) * T ** 2
-            loss_ += mpu.gather_from_model_parallel_region(kl_loss).mean()
+        t_reps = []
+        for i, t_rep in enumerate(teacher_reps):
+            t_rep = mpu.copy_to_model_parallel_region(t_rep)
+            t_rep = F.linear(t_rep, t_emb_w)
+            t_rep = t_rep if self.args.erdistill_inter_mse else F.softmax(t_rep, dim=-1)
+            t_reps.append(t_rep)
+        if self.args.erdistill_inter in {'1plus'}:
+            t_reps += t_reps
+        for i, (s_rep, t_rep) in enumerate(zip(student_reps, t_reps)):
+            s_rep = mpu.copy_to_model_parallel_region(s_rep)
+            s_logits = F.linear(s_rep, s_emb_w)
+            if self.args.erdistill_inter_mse:
+                l = F.mse_loss(s_rep, t_rep)
+            else:
+                l = F.kl_div(F.log_softmax(s_logits, dim=-1), t_rep, reduction="sum")
+                l = l / t_rep.size(0) / t_rep.size(1) / t_rep.size(2)
+            l = mpu.gather_from_model_parallel_region(l).mean()
+            super().add_summary(f'inter_loss/global.{i}', l)
+            loss_ += l
         super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook)
+        return loss_
 
 
 class MixBaseline(GLMStudent):
@@ -385,6 +421,7 @@ class MixBaseline(GLMStudent):
         self.baselines = set(self.inter_bl + self.pre_bl_pretrain_soft + self.pre_bl_finetune_soft)
         for c in self.baselines:
             setattr(self, c, eval(c)(language_model, args, show_pre=False, show_inter=False))
+        self.summary_loss = True
 
     def get_teacher_hook(self, **kwargs):
         if self.args.mixbaseline_wo_inter:
@@ -413,7 +450,7 @@ class MixBaseline(GLMStudent):
             if hasattr(self.args, f'mixbaseline_{c.lower()}_t'):
                 self.args.distill_temperature = getattr(self.args, f'mixbaseline_{c.lower()}_t')
             l = getattr(self, c).inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, **kwargs)
-            super().add_summary(f'MixBaseline/inter_loss.{c}', l)
+            super().add_summary(f'inter_loss/{c}', l)
             loss_ += l
             self.args.distill_temperature = distill_temperature
         super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, **kwargs)
@@ -429,7 +466,7 @@ class MixBaseline(GLMStudent):
         # KD pre_loss
         if self.args.finetune:
             l += super().pre_loss(s_logits, t_logits, loss, **kwargs)
-            super().add_summary(f'MixBaseline/pre_loss.KD', l)
+            super().add_summary(f'pre_loss/KD', l)
             loss_ += l
             pre_loss_description.append(f'\tKD - {self.pre_loss_description}')
         # other pre_loss
@@ -441,7 +478,7 @@ class MixBaseline(GLMStudent):
             if hasattr(self.args, f'mixbaseline_{c.lower()}_t'):
                 self.args.distill_temperature = getattr(self.args, f'mixbaseline_{c.lower()}_t')
             l = getattr(self, c).pre_loss(s_logits, t_logits, loss, **kwargs)
-            super().add_summary(f'MixBaseline/pre_loss.{c}', l)
+            super().add_summary(f'pre_loss/{c}', l)
             loss_ += l
             pre_loss_description.append(f'\t{c} - {self.pre_loss_description}')
             self.args.distill_temperature = distill_temperature

@@ -331,6 +331,7 @@ class ParallelSelfAttention(torch.nn.Module):
                                   (self.hidden_size_per_partition,)
         # [b, s, hp]
         context_layer = context_layer.view(*new_context_layer_shape)
+        hook_add(hook, inter_vars, 'context_layer', context_layer)
 
         # Output. [b, s, h]
         output = self.dense(context_layer)

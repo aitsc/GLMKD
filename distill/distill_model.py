@@ -12,7 +12,7 @@ from tsc_base import merge_dict
 
 
 class GLMStudent(torch.nn.Module):
-    def __init__(self, language_model: GLMModel, args, show_pre=True, show_inter=True, **kwargs):
+    def __init__(self, language_model: GLMModel, args, show_pre=True, show_inter=True, summary_loss=False, **kwargs):
         super().__init__()
         self.origin_model = language_model
         self.args = args
@@ -20,6 +20,7 @@ class GLMStudent(torch.nn.Module):
         self.show_pre = show_pre
         self.show_inter = show_inter
         self.summary_writer = None
+        self.summary_loss = summary_loss
 
     def get_teacher_hook(self, **kwargs):
         return {}
@@ -47,9 +48,12 @@ class GLMStudent(torch.nn.Module):
                 self.pre_loss_description += ' + distill_ft_soft(T%s)'%T
                 student_likelihood = F.log_softmax(s_logits / T, dim=-1)
                 targets_prob = F.softmax(t_logits / T, dim=-1)
-                loss_ += (- targets_prob * student_likelihood).mean()
+                l = (- targets_prob * student_likelihood).mean()
+                self.add_summary('KD_pre_loss/ft_soft', l)
+                loss_ += l
             if self.args.distill_ft_hard:
                 self.pre_loss_description += ' + distill_ft_hard'
+                self.add_summary('KD_pre_loss/ft_hard', loss)
                 loss_ += loss
         else:
             if self.args.distill_pt_soft:
@@ -58,9 +62,12 @@ class GLMStudent(torch.nn.Module):
                 s_logits = (s_logits * loss_mask / T).view(-1, s_logits.size(-1))
                 t_logits = (t_logits * loss_mask / T).view(-1, t_logits.size(-1))
                 kl_loss = F.kl_div(F.log_softmax(s_logits, dim=-1), F.softmax(t_logits, dim=-1), reduction="batchmean")
-                loss_ += mpu.gather_from_model_parallel_region(kl_loss).mean() * T ** 2
+                l += mpu.gather_from_model_parallel_region(kl_loss).mean() * T ** 2
+                self.add_summary('KD_pre_loss/pt_soft', l)
+                loss_ += l
             if self.args.distill_pt_hard:
                 self.pre_loss_description += ' + distill_pt_hard'
+                self.add_summary('KD_pre_loss/pt_hard', loss)
                 loss_ += loss
         # show
         if self.show_pre:
@@ -95,7 +102,7 @@ class GLMStudent(torch.nn.Module):
                 yield 'student.' + k, v
 
     def add_summary(self, name, value):
-        if self.summary_writer is None:
+        if self.summary_writer is None or not self.summary_loss:
             return False
         if self.args.iteration % self.args.log_interval == 0:
             value = value.item() if hasattr(value, 'item') else value
@@ -309,6 +316,7 @@ class MixBaseline(GLMStudent):
         self.baselines = set(self.inter_bl + self.pre_bl_pretrain_soft + self.pre_bl_finetune_soft)
         for c in self.baselines:
             setattr(self, c, eval(c)(language_model, args, show_pre=False, show_inter=False))
+        self.summary_loss = True
 
     def get_teacher_hook(self, **kwargs):
         if self.args.mixbaseline_wo_inter:
@@ -337,7 +345,7 @@ class MixBaseline(GLMStudent):
             if hasattr(self.args, f'mixbaseline_{c.lower()}_t'):
                 self.args.distill_temperature = getattr(self.args, f'mixbaseline_{c.lower()}_t')
             l = getattr(self, c).inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, **kwargs)
-            super().add_summary(f'MixBaseline/inter_loss.{c}', l)
+            super().add_summary(f'inter_loss/{c}', l)
             loss_ += l
             self.args.distill_temperature = distill_temperature
         super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, **kwargs)
@@ -353,7 +361,7 @@ class MixBaseline(GLMStudent):
         # KD pre_loss
         if self.args.finetune:
             l += super().pre_loss(s_logits, t_logits, loss, **kwargs)
-            super().add_summary(f'MixBaseline/pre_loss.KD', l)
+            super().add_summary(f'pre_loss/KD', l)
             loss_ += l
             pre_loss_description.append(f'\tKD - {self.pre_loss_description}')
         # other pre_loss
@@ -365,7 +373,7 @@ class MixBaseline(GLMStudent):
             if hasattr(self.args, f'mixbaseline_{c.lower()}_t'):
                 self.args.distill_temperature = getattr(self.args, f'mixbaseline_{c.lower()}_t')
             l = getattr(self, c).pre_loss(s_logits, t_logits, loss, **kwargs)
-            super().add_summary(f'MixBaseline/pre_loss.{c}', l)
+            super().add_summary(f'pre_loss/{c}', l)
             loss_ += l
             pre_loss_description.append(f'\t{c} - {self.pre_loss_description}')
             self.args.distill_temperature = distill_temperature

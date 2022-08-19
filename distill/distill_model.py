@@ -9,6 +9,7 @@ from mpu import hook_model, hook_return, hook_reduce
 from utils import print_rank_0
 import math
 from tsc_base import merge_dict
+from fp16 import fp32_to_fp16, fp16_to_fp32
 
 
 class GLMStudent(torch.nn.Module):
@@ -353,7 +354,7 @@ class ERDistill(GLMStudent):
         return self.get_inter_hook(layers, st='t')
 
     def get_student_hook(self, **kwargs):
-        layers = tuple(i for i in self.args.num_layers)
+        layers = tuple(i for i in range(self.args.num_layers))
         return self.get_inter_hook(layers, st='s')
 
     def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, t_model=None, **kwargs):
@@ -391,6 +392,7 @@ class ERDistill(GLMStudent):
         t_reps = []
         for i, t_rep in enumerate(teacher_reps):
             t_rep = mpu.copy_to_model_parallel_region(t_rep)
+            t_rep = fp32_to_fp16(t_rep) if self.args.fp16 else t_rep
             t_rep = F.linear(t_rep, t_emb_w)
             t_rep = t_rep if self.args.erdistill_inter_mse else F.softmax(t_rep, dim=-1)
             t_reps.append(t_rep)
@@ -398,6 +400,7 @@ class ERDistill(GLMStudent):
             t_reps += t_reps
         for i, (s_rep, t_rep) in enumerate(zip(student_reps, t_reps)):
             s_rep = mpu.copy_to_model_parallel_region(s_rep)
+            s_rep = fp32_to_fp16(s_rep) if self.args.fp16 else s_rep
             s_logits = F.linear(s_rep, s_emb_w)
             if self.args.erdistill_inter_mse:
                 l = F.mse_loss(s_rep, t_rep)
@@ -406,7 +409,7 @@ class ERDistill(GLMStudent):
                 l = l / t_rep.size(0) / t_rep.size(1) / t_rep.size(2)
             l = mpu.gather_from_model_parallel_region(l).mean()
             super().add_summary(f'inter_loss/global.{i}', l)
-            loss_ += l
+            loss_ += fp16_to_fp32(l)
         super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook)
         return loss_
 

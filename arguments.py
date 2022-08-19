@@ -22,6 +22,7 @@ import deepspeed
 import json
 from utils import get_hostname
 import random
+import socket
 
 
 def add_model_config_args(parser):
@@ -395,9 +396,27 @@ def add_finetune_config_args(parser):
     return parser
 
 
+def get_random_port():
+    def net_is_used(port,ip='127.0.0.1'):
+        s = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+        try:
+            s.connect((ip,port))
+            s.shutdown(2)
+            return True
+        except:
+            return False
+    while True:
+        port = random.randint(10000,65535)
+        if net_is_used(port):
+            continue
+        else:
+            break
+    return port
+
+
 def add_custom_args(parser: argparse.ArgumentParser):
     group = parser.add_argument_group('custom', 'custom configurations')
-    group.add_argument('--spare_port', type=int, default=random.randint(10000,65535))
+    group.add_argument('--spare_port', type=int, default=get_random_port())
     group.add_argument('--custom_tmp_result', type=str, default=None)
     return parser
 

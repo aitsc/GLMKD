@@ -92,7 +92,7 @@ def hook_reduce(hook: dict, inter_vars: list, offset=0, filter=lambda t: t, root
         filter = lambda t: (
             list(t.shape), t.type(), str(type(t.grad_fn)).split("'")[1], '%e'%t.mean().item()
         ) if hasattr(t, 'distill') and t.distill else None
-    for k, v in list(hook.items()):
+    for k, v in list(hook_vars.items()):
         if type(v) in {dict, OrderedDict}:
             ret = hook_reduce(v, inter_vars, offset, filter, False)
             if len(ret) == 0:

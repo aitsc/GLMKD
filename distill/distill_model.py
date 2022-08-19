@@ -119,7 +119,7 @@ def unpacking_student_model(model):
 
 class TinyBERT(GLMStudent):
     def __init__(self, language_model, args, **kwargs):
-        super().__init__(language_model, args)
+        super().__init__(language_model, args, **kwargs)
         self.fit_dense = torch.nn.Linear(args.hidden_size, args.teacher_hidden_size)
 
     def get_teacher_hook(self, **kwargs):
@@ -179,7 +179,7 @@ class TinyBERT(GLMStudent):
 
 class MiniLMv2(GLMStudent):
     def __init__(self, language_model, args, **kwargs):
-        super().__init__(language_model, args)
+        super().__init__(language_model, args, **kwargs)
 
     def get_teacher_hook(self, **kwargs):
         return {'transformer': {'layers': {self.args.minilmv2_teacher_layer - 1: {
@@ -216,7 +216,7 @@ class MiniLMv2(GLMStudent):
 
 class MiniLM(GLMStudent):
     def __init__(self, language_model, args, **kwargs):
-        super().__init__(language_model, args)
+        super().__init__(language_model, args, **kwargs)
 
     def get_teacher_hook(self, **kwargs):
         return {'transformer': {'layers': {self.args.teacher_num_layers - 1: {
@@ -249,7 +249,7 @@ class MiniLM(GLMStudent):
 
 class DistilBERT(GLMStudent):
     def __init__(self, language_model, args, **kwargs):
-        super().__init__(language_model, args)
+        super().__init__(language_model, args, **kwargs)
 
     def get_teacher_hook(self, **kwargs):
         return {'transformer': {'output': None}}
@@ -301,7 +301,7 @@ class DistilBERT(GLMStudent):
 
 class MixBaseline(GLMStudent):
     def __init__(self, language_model, args, **kwargs):
-        super().__init__(language_model, args)
+        super().__init__(language_model, args, **kwargs)
         self.inter_bl = ['TinyBERT', 'MiniLMv2', 'MiniLM', 'DistilBERT']
         # 支持 pre_loss hard 的模型必须放在最后, 保证只算一次
         self.pre_bl_pretrain_soft = ['DistilBERT', 'TinyBERT']  # 重复的预训练软标签构建方式不需要
@@ -328,7 +328,7 @@ class MixBaseline(GLMStudent):
         else:
             return super().forward(*inputs, **kwargs)
 
-    def inter_loss(self, s_inter_vars, **kwargs):
+    def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, **kwargs):
         loss_ = 0.
         if len(s_inter_vars) == 0:
             return loss_
@@ -336,14 +336,14 @@ class MixBaseline(GLMStudent):
             distill_temperature = self.args.distill_temperature
             if hasattr(self.args, f'mixbaseline_{c.lower()}_t'):
                 self.args.distill_temperature = getattr(self.args, f'mixbaseline_{c.lower()}_t')
-            l = getattr(self, c).inter_loss(s_inter_vars, **kwargs)
+            l = getattr(self, c).inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, **kwargs)
             super().add_summary(f'MixBaseline/inter_loss.{c}', l)
             loss_ += l
             self.args.distill_temperature = distill_temperature
-        super().inter_loss(s_inter_vars, **kwargs)
+        super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, **kwargs)
         return loss_
 
-    def pre_loss(self, **kwargs):
+    def pre_loss(self, s_logits, t_logits, loss, **kwargs):
         loss_ = 0.
         show_pre = self.show_pre
         self.show_pre = False
@@ -352,7 +352,7 @@ class MixBaseline(GLMStudent):
         pre_loss_description = ['all pre_loss:']
         # KD pre_loss
         if self.args.finetune:
-            l += super().pre_loss(**kwargs)
+            l += super().pre_loss(s_logits, t_logits, loss, **kwargs)
             super().add_summary(f'MixBaseline/pre_loss.KD', l)
             loss_ += l
             pre_loss_description.append(f'\tKD - {self.pre_loss_description}')
@@ -364,7 +364,7 @@ class MixBaseline(GLMStudent):
             distill_temperature = self.args.distill_temperature
             if hasattr(self.args, f'mixbaseline_{c.lower()}_t'):
                 self.args.distill_temperature = getattr(self.args, f'mixbaseline_{c.lower()}_t')
-            l = getattr(self, c).pre_loss(**kwargs)
+            l = getattr(self, c).pre_loss(s_logits, t_logits, loss, **kwargs)
             super().add_summary(f'MixBaseline/pre_loss.{c}', l)
             loss_ += l
             pre_loss_description.append(f'\t{c} - {self.pre_loss_description}')

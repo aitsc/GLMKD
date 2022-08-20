@@ -62,7 +62,7 @@ class GLMStudent(torch.nn.Module):
                 s_logits = (s_logits * loss_mask / T).view(-1, s_logits.size(-1))
                 t_logits = (t_logits * loss_mask / T).view(-1, t_logits.size(-1))
                 kl_loss = F.kl_div(F.log_softmax(s_logits, dim=-1), F.softmax(t_logits, dim=-1), reduction="batchmean")
-                l += mpu.gather_from_model_parallel_region(kl_loss).mean() * T ** 2
+                l = mpu.gather_from_model_parallel_region(kl_loss).mean() * T ** 2
                 self.add_summary('pre_loss/pt_soft', l)
                 loss_ += l
             if self.args.distill_pt_hard:

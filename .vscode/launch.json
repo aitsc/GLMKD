@@ -90,7 +90,7 @@
             "args": [
                 // deepspeed
                 "--master_port=14161",
-                "--include=localhost:2",
+                "--include=localhost:0",
                 "distill/finetune.py",
                 "--deepspeed_config=config/config_block_tiny6.json",
                 "--deepspeed-activation-checkpointing",
@@ -108,12 +108,12 @@
                 "--model-parallel-size=1",
                 "--save-interval=5000",
                 // 微调
-                // "--task=COPA",
-                // "--data-dir=../GLM/data/english_data/superglue/COPA",
-                // "--seq-length=256",
-                "--task=ReCoRD",
-                "--data-dir=../GLM/data/english_data/superglue/ReCoRD",
-                "--seq-length=512",
+                "--task=COPA",
+                "--data-dir=../GLM/data/english_data/superglue/COPA",
+                "--seq-length=256",
+                // "--task=ReCoRD",
+                // "--data-dir=../GLM/data/english_data/superglue/ReCoRD",
+                // "--seq-length=512",
                 "--pattern-id=0",
                 "--batch-size=16",
                 "--epochs=50",
@@ -129,12 +129,16 @@
                 "--save-epoch=100000",
                 "--save=../GLM/data/checkpoints/finetune_checkpoints",
                 "--experiment-name=finetune_debug", // date +"%y%m%d_%H%M%S"
-                "--load-pretrained=../GLM/data/checkpoints/distill/tiny6/pre-distill6+wikibook19G-new",
+                "--load-pretrained=../GLM/data/checkpoints/distill/tiny6/distill12-6.576+wikibook19G",
                 // 蒸馏
-                "--student_model=tinybert",
+                "--student_model=mixbaseline",
+                "--distill_temperature=10.",
+                "--minilmv2_relation_heads=48",
+                "--minilmv2_teacher_layer=12",
+                "--hidden-size=576",
                 // 蒸馏 base
-                // "--teacher_load_pretrained=../GLM/data/checkpoints/pretrain/blocklm-base-blank/finetune/COPA/blank-base-COPA-220813_064749",
-                "--teacher_load_pretrained=../GLM/data/checkpoints/pretrain/blocklm-base-blank/finetune/ReCoRD/blank-base-ReCoRD-220813_083745",
+                "--teacher_load_pretrained=../GLM/data/checkpoints/pretrain/blocklm-base-blank/finetune/COPA/blank-base-COPA-220813_064749",
+                // "--teacher_load_pretrained=../GLM/data/checkpoints/pretrain/blocklm-base-blank/finetune/ReCoRD/blank-base-ReCoRD-220813_083745",
                 "--teacher_num_layers=12",
                 "--teacher_hidden_size=768",
                 "--teacher_num_attention_heads=12",

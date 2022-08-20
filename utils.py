@@ -251,7 +251,7 @@ def save_checkpoint(iteration, model, optimizer, lr_scheduler, args, tag=None, b
                 requires_grad_dict = {}
                 for name, parameter in model.named_parameters():
                     requires_grad_dict[name] = parameter.requires_grad
-                state_dict = {key: value for key, value in state_dict.items() if requires_grad_dict[key]}
+                state_dict = {key: value for key, value in state_dict.items() if key in requires_grad_dict and requires_grad_dict[key]}
             sd['module'] = state_dict
 
             # Optimizer stuff.

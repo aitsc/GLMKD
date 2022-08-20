@@ -266,7 +266,7 @@ class DistilBERT(GLMStudent):
 
     def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, loss_mask=None, **kwargs):
         loss_ = 0.
-        if len(s_inter_vars) == 0:
+        if len(s_inter_vars) == 0 or loss_mask is None:
             return loss_
         if self.args.distilbert_alpha_cos <= 0.:
             return loss_
@@ -360,7 +360,7 @@ class MixBaseline(GLMStudent):
         pre_loss_description = ['all pre_loss:']
         # KD pre_loss
         if self.args.finetune:
-            l += super().pre_loss(s_logits, t_logits, loss, **kwargs)
+            l = super().pre_loss(s_logits, t_logits, loss, **kwargs)
             super().add_summary(f'pre_loss/KD', l)
             loss_ += l
             pre_loss_description.append(f'\tKD - {self.pre_loss_description}')

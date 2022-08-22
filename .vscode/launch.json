@@ -23,7 +23,7 @@
             "args": [
                 // deepspeed
                 "--master_port=10161",
-                "--include=localhost:5",
+                "--include=localhost:2",
                 "distill/pretrain.py",
                 "--deepspeed_config=config/config_block_tiny6.json",
                 "--deepspeed-activation-checkpointing",
@@ -55,7 +55,10 @@
                 "--no-lazy-loader",
                 "--resume-dataloader",
                 // 蒸馏
-                "--student_model=tinybert",
+                "--student_model=erdistill",
+                "--distill_pt_hard",
+                "--erdistill_inter_mse",
+                "--erdistill_inter=one",
                 // 蒸馏 base
                 "--teacher_load_pretrained=../GLM/data/checkpoints/pretrain/blocklm-base-blank",
                 "--teacher_num_layers=12",

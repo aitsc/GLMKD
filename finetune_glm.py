@@ -211,6 +211,25 @@ def _train(model, optimizer, lr_scheduler, forward_step,
     for epoch in range(start_epoch, args.epochs):
         print_rank_0('working on epoch {} ...'.format(epoch))
 
+        # 上来先评估
+        if end_of_epoch_callback is not None and epoch == start_epoch:
+            score_dict = end_of_epoch_callback(model, epoch, summary_writer=summary_writer)
+            if score_dict:
+                validation_metric = args.validation_metric if args.validation_metric else list(score_dict.keys())[0]
+                validation_score = score_dict[validation_metric]
+                if best_iteration is None or validation_score > best_score:
+                    best_iteration = args.iteration
+                    best_score = validation_score
+                    print_rank_0(f"Found best {validation_metric} {best_score} at {best_iteration}")
+                    save_checkpoint(args.iteration, model, optimizer, lr_scheduler, args, tag="best", barrier=False,
+                                    only_changed_parameters=True, no_deepspeed=True, no_save_optim=True)
+                    if torch.distributed.get_rank() == 0:
+                        score_dict.update({"type": "validation", "epoch": epoch})
+                        with open(os.path.join(args.log_dir, "results.json"), "w") as output:
+                            output.write(json.dumps(score_dict) + "\n")
+                        with open(os.path.join(args.save, "best_checkpointed_iteration.txt"), "w") as output:
+                            output.write(str(best_iteration))
+
         # Set the data loader epoch to shuffle the index iterator.
         if mpu.get_model_parallel_rank() == 0:
             train_dataloader[0].sampler.set_epoch(args.seed + epoch)

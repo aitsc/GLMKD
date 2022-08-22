@@ -28,6 +28,8 @@ def get_args():
     # erdistill
     py_parser.add_argument('--erdistill_inter', type=str, default='')
     py_parser.add_argument('--erdistill_inter_mse', action='store_true')
+    py_parser.add_argument('--erdistill_wo_global', action='store_true')
+    py_parser.add_argument('--erdistill_wo_local', action='store_true')
     # minilmv2
     py_parser.add_argument('--minilmv2_relation_heads', type=int, default=48, help="base=48,large=64")
     py_parser.add_argument('--minilmv2_teacher_layer', type=int, default=12, help="start at one")

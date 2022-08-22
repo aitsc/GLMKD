@@ -371,6 +371,7 @@ def load_checkpoint(model, optimizer, lr_scheduler, args, no_deepspeed=False, no
         missing_keys, unexpected_keys = model.load_state_dict(sd['module'], strict=False)
         if missing_keys or unexpected_keys:
             print_rank_0(f"Missing keys {missing_keys}, unexpected keys {unexpected_keys}")
+            time.sleep(3)
 
         # Optimizer.
         if not release and not args.finetune and not args.no_load_optim and not no_load_optim:

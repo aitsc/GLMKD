@@ -50,11 +50,11 @@ class GLMStudent(torch.nn.Module):
                 student_likelihood = F.log_softmax(s_logits / T, dim=-1)
                 targets_prob = F.softmax(t_logits / T, dim=-1)
                 l = (- targets_prob * student_likelihood).mean()
-                self.add_summary('KD_pre_loss/ft_soft', l)
+                self.add_summary('pre_loss/ft_soft', l)
                 loss_ += l
             if self.args.distill_ft_hard:
                 self.pre_loss_description += ' + distill_ft_hard'
-                self.add_summary('KD_pre_loss/ft_hard', loss)
+                self.add_summary('pre_loss/ft_hard', loss)
                 loss_ += loss
         else:
             if self.args.distill_pt_soft:
@@ -63,12 +63,12 @@ class GLMStudent(torch.nn.Module):
                 s_logits = (s_logits * loss_mask / T).view(-1, s_logits.size(-1))
                 t_logits = (t_logits * loss_mask / T).view(-1, t_logits.size(-1))
                 kl_loss = F.kl_div(F.log_softmax(s_logits, dim=-1), F.softmax(t_logits, dim=-1), reduction="batchmean")
-                l += mpu.gather_from_model_parallel_region(kl_loss).mean() * T ** 2
-                self.add_summary('KD_pre_loss/pt_soft', l)
+                l = mpu.gather_from_model_parallel_region(kl_loss).mean() * T ** 2
+                self.add_summary('pre_loss/pt_soft', l)
                 loss_ += l
             if self.args.distill_pt_hard:
                 self.pre_loss_description += ' + distill_pt_hard'
-                self.add_summary('KD_pre_loss/pt_hard', loss)
+                self.add_summary('pre_loss/pt_hard', loss)
                 loss_ += loss
         # show
         if self.show_pre:
@@ -359,57 +359,66 @@ class ERDistill(GLMStudent):
 
     def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, t_model=None, **kwargs):
         loss_ = 0.
-        if len(s_inter_vars) == 0:
+        if len(s_inter_vars) == 0 or self.args.erdistill_inter in {'', None}:
             return loss_
         def get_layer_f(st, name):
             inter_vars, hook = (s_inter_vars, s_hook) if st == 's' else (t_inter_vars, t_hook)
             return [inter_vars[i[1][name]] for i in sorted(hook['transformer']['layers'].items()) if name in i[1]]
 
         student_reps = get_layer_f('s', 'layernorm_output') + [s_inter_vars[s_hook['transformer']['output']]]
-        teacher_reps = get_layer_f('t', 'layernorm_output') + [t_inter_vars[s_hook['transformer']['output']]]
+        teacher_reps = get_layer_f('t', 'layernorm_output') + [t_inter_vars[t_hook['transformer']['output']]]
         # 局部相似
-        t_reps = []
-        for t_rep in teacher_reps:
-            t_rep.distill = True
-            t_rep = torch.matmul(t_rep, t_rep.transpose(-1,-2)) / math.sqrt(t_rep.size(-1))
-            t_rep = t_rep if self.args.erdistill_inter_mse else F.softmax(t_rep, dim=-1)
-            t_reps.append(t_rep)
-        if self.args.erdistill_inter in {'1plus'}:
-            t_reps += t_reps
-        for i, (s_rep, t_rep) in enumerate(zip(student_reps, t_reps)):
-            s_rep.distill = True
-            s_rep = torch.matmul(s_rep, s_rep.transpose(-1,-2)) / math.sqrt(s_rep.size(-1))
-            if self.args.erdistill_inter_mse:
-                l = F.mse_loss(s_rep, t_rep)
-            else:
-                l = F.kl_div(F.log_softmax(s_rep, dim=-1), F.softmax(t_rep, dim=-1), reduction="sum")
-                l = l / t_rep.size(0) / t_rep.size(1) / t_rep.size(2)
-            super().add_summary(f'inter_loss/local.{i}', l)
-            loss_ += l
+        if not self.args.erdistill_wo_local:
+            t_reps = []
+            for t_rep in teacher_reps:
+                t_rep.distill = True
+                t_rep = torch.matmul(t_rep, t_rep.transpose(-1,-2))
+                if self.args.erdistill_inter_mse:
+                    t_rep = t_rep / t_rep.size(-1)
+                else:
+                    t_rep = F.softmax(t_rep / math.sqrt(t_rep.size(-1)), dim=-1)
+                t_reps.append(t_rep)
+            if self.args.erdistill_inter in {'1plus'}:
+                t_reps += t_reps
+            for i, (s_rep, t_rep) in enumerate(zip(student_reps, t_reps)):
+                s_rep.distill = True
+                s_rep = torch.matmul(s_rep, s_rep.transpose(-1,-2))
+                if self.args.erdistill_inter_mse:
+                    l = F.mse_loss(s_rep / s_rep.size(-1), t_rep)
+                else:
+                    l = F.kl_div(F.log_softmax(s_rep / math.sqrt(s_rep.size(-1)), dim=-1), t_rep, reduction="sum")
+                    l = l / t_rep.size(0) / t_rep.size(1) / t_rep.size(2)
+                super().add_summary(f'inter_loss/local.{i}', l)
+                l = l * 0.1 if i == 0 and self.args.erdistill_inter in {'1plus'} else l
+                loss_ += l
         # 全局相似
-        t_emb_w = find_model_inter_var(t_model, 'word_embeddings.weight')
-        s_emb_w = find_model_inter_var(self, 'word_embeddings.weight')
-        t_reps = []
-        for i, t_rep in enumerate(teacher_reps):
-            t_rep = mpu.copy_to_model_parallel_region(t_rep)
-            t_rep = fp32_to_fp16(t_rep) if self.args.fp16 else t_rep
-            t_rep = F.linear(t_rep, t_emb_w)
-            t_rep = t_rep if self.args.erdistill_inter_mse else F.softmax(t_rep, dim=-1)
-            t_reps.append(t_rep)
-        if self.args.erdistill_inter in {'1plus'}:
-            t_reps += t_reps
-        for i, (s_rep, t_rep) in enumerate(zip(student_reps, t_reps)):
-            s_rep = mpu.copy_to_model_parallel_region(s_rep)
-            s_rep = fp32_to_fp16(s_rep) if self.args.fp16 else s_rep
-            s_logits = F.linear(s_rep, s_emb_w)
-            if self.args.erdistill_inter_mse:
-                l = F.mse_loss(s_rep, t_rep)
-            else:
-                l = F.kl_div(F.log_softmax(s_logits, dim=-1), t_rep, reduction="sum")
-                l = l / t_rep.size(0) / t_rep.size(1) / t_rep.size(2)
-            l = mpu.gather_from_model_parallel_region(l).mean()
-            super().add_summary(f'inter_loss/global.{i}', l)
-            loss_ += fp16_to_fp32(l)
+        if not self.args.erdistill_wo_global:
+            t_emb_w = find_model_inter_var(t_model, 'word_embeddings.weight')
+            s_emb_w = find_model_inter_var(self, 'word_embeddings.weight')
+            t_reps = []
+            for i, t_rep in enumerate(teacher_reps):
+                t_rep.distill = True
+                t_rep = mpu.copy_to_model_parallel_region(t_rep)
+                t_rep = fp32_to_fp16(t_rep) if self.args.fp16 else t_rep
+                t_rep = F.linear(t_rep, t_emb_w)
+                t_rep = t_rep if self.args.erdistill_inter_mse else F.softmax(t_rep, dim=-1)
+                t_reps.append(t_rep)
+            if self.args.erdistill_inter in {'1plus'}:
+                t_reps += t_reps
+            for i, (s_rep, t_rep) in enumerate(zip(student_reps, t_reps)):
+                s_rep.distill = True
+                s_rep = mpu.copy_to_model_parallel_region(s_rep)
+                s_rep = fp32_to_fp16(s_rep) if self.args.fp16 else s_rep
+                s_rep = F.linear(s_rep, s_emb_w)
+                if self.args.erdistill_inter_mse:
+                    l = F.mse_loss(s_rep, t_rep)
+                else:
+                    l = F.kl_div(F.log_softmax(s_rep, dim=-1), t_rep, reduction="sum")
+                    l = l / t_rep.size(0) / t_rep.size(1) / t_rep.size(2)
+                l = mpu.gather_from_model_parallel_region(l).mean()
+                super().add_summary(f'inter_loss/global.{i}', l)
+                l = l * 0.1 if i == 0 and self.args.erdistill_inter in {'1plus'} else l
+                loss_ += fp16_to_fp32(l)
         super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook)
         return loss_
 

@@ -11,6 +11,7 @@ from model import GLMForMultiTokenCloze, GLMForMultiTokenClozeFast, GLMForSingle
 from model import PyTorchDistributedDataParallel as TorchDDP, DistributedDataParallel as LocalDDP
 from model.modeling_bert import BertForMultipleChoice, BertForSequenceClassification
 from utils import print_rank_0, get_checkpoint_name, get_checkpoint_iteration
+import time
 
 
 def load_pretrained(model, checkpoint_path, args, task_tokens=None):
@@ -55,6 +56,7 @@ def load_pretrained(model, checkpoint_path, args, task_tokens=None):
     missing_keys, unexpected_keys = model.load_state_dict(sd['module'], strict=False)
     if missing_keys or unexpected_keys:
         print_rank_0(f"Missing keys {missing_keys}, unexpected keys {unexpected_keys}")
+        time.sleep(3)
     if args.continuous_prompt and args.prompt_init:
         model.prompt_spell.init_embedding(model.word_embeddings.weight.data, task_tokens)
 

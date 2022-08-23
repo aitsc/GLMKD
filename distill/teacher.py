@@ -15,6 +15,7 @@ def get_args():
     py_parser.add_argument('--distill_pt_soft', action='store_true')
     py_parser.add_argument('--distill_pt_hard', action='store_true')
     py_parser.add_argument('--distill_temperature', type=float, default=1.)
+    py_parser.add_argument('--distill_wo_loss_mask', action='store_true')
     # teacher
     py_parser.add_argument('--teacher_num_attention_heads', type=int, default=16)
     py_parser.add_argument('--teacher_hidden_size', type=int, default=1024)

@@ -43,6 +43,8 @@ class GLMStudent(torch.nn.Module):
         loss_ = 0.
         self.pre_loss_description = 'pre_loss: 0'
         T = self.args.distill_temperature
+        if self.args.distill_wo_loss_mask:
+            loss_mask = None
         if self.args.finetune:
             if self.args.distill_ft_soft:
                 self.pre_loss_description += ' + distill_ft_soft(T%s)'%T
@@ -289,7 +291,7 @@ class DistilBERT(GLMStudent):
         self.pre_loss_description = 'pre_loss: 0'
         if self.args.distilbert_alpha_ce > 0:
             self.pre_loss_description += ' + distilbert_alpha_ce'
-            loss_mask = loss_mask.view(*loss_mask.size(), 1)
+            loss_mask = 1. if self.args.distill_wo_loss_mask else loss_mask.view(*loss_mask.size(), 1)
             T = self.args.distill_temperature
             s_logits = (s_logits * loss_mask / T).view(-1, s_logits.size(-1))
             t_logits = (t_logits * loss_mask / T).view(-1, t_logits.size(-1))

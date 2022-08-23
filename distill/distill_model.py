@@ -290,9 +290,9 @@ class DistilBERT(GLMStudent):
             return super().pre_loss(s_logits, t_logits, loss)
         self.pre_loss_description = 'pre_loss: 0'
         if self.args.distilbert_alpha_ce > 0:
-            self.pre_loss_description += ' + distilbert_alpha_ce'
-            loss_mask = 1. if self.args.distill_wo_loss_mask else loss_mask.view(*loss_mask.size(), 1)
             T = self.args.distill_temperature
+            self.pre_loss_description += ' + distilbert_alpha_ce(T%s)'%T
+            loss_mask = 1. if self.args.distill_wo_loss_mask else loss_mask.view(*loss_mask.size(), 1)
             s_logits = (s_logits * loss_mask / T).view(-1, s_logits.size(-1))
             t_logits = (t_logits * loss_mask / T).view(-1, t_logits.size(-1))
             kl_loss = F.kl_div(F.log_softmax(s_logits, dim=-1), F.softmax(t_logits, dim=-1), reduction="batchmean")

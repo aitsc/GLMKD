@@ -39,24 +39,30 @@ class GLMStudent(torch.nn.Module):
             self.show_inter = False
         return 0.
 
-    def pre_loss(self, s_logits, t_logits, loss, loss_mask=None, **kwargs):
+    def pre_loss(self, s_logits, t_logits, loss, loss_mask=None, return_dict=False, **kwargs):
         loss_ = 0.
         self.pre_loss_description = 'pre_loss: 0'
         T = self.args.distill_temperature
         if self.args.distill_wo_loss_mask:
             loss_mask = None
+        loss_D = {}
         if self.args.finetune:
             if self.args.distill_ft_soft:
                 self.pre_loss_description += ' + distill_ft_soft(T%s)'%T
                 student_likelihood = F.log_softmax(s_logits / T, dim=-1)
                 targets_prob = F.softmax(t_logits / T, dim=-1)
-                l = (- targets_prob * student_likelihood).mean()
+                if self.args.distill_ft_soft_kl:
+                    l = F.kl_div(student_likelihood, targets_prob, reduction="mean") * T ** 2
+                else:
+                    l = (- targets_prob * student_likelihood).mean()
                 self.add_summary('pre_loss/ft_soft', l)
                 loss_ += l
+                loss_D['soft'] = l
             if self.args.distill_ft_hard:
                 self.pre_loss_description += ' + distill_ft_hard'
                 self.add_summary('pre_loss/ft_hard', loss)
                 loss_ += loss
+                loss_D['hard'] = l
         else:
             if self.args.distill_pt_soft:
                 self.pre_loss_description += ' + distill_pt_soft(T%s)'%T
@@ -67,14 +73,19 @@ class GLMStudent(torch.nn.Module):
                 l = mpu.gather_from_model_parallel_region(kl_loss).mean() * T ** 2
                 self.add_summary('pre_loss/pt_soft', l)
                 loss_ += l
+                loss_D['soft'] = l
             if self.args.distill_pt_hard:
                 self.pre_loss_description += ' + distill_pt_hard'
                 self.add_summary('pre_loss/pt_hard', loss)
                 loss_ += loss
+                loss_D['hard'] = l
+        loss_D['loss'] = loss_
         # show
         if self.show_pre:
             print_rank_0(self.pre_loss_description)
             self.show_pre = False
+        if return_dict:
+            return loss_D
         return loss_
 
     def state_dict(self, destination=None, prefix='', keep_vars=False):
@@ -385,6 +396,49 @@ class MixBaseline(GLMStudent):
         return loss_
 
 
+class PKD(GLMStudent):
+    def __init__(self, language_model, args, **kwargs):
+        super().__init__(language_model, args, **kwargs)
+
+    def get_teacher_hook(self, **kwargs):
+        layers_per_block = int(self.args.teacher_num_layers / self.args.num_layers)
+        layers = tuple(range(0, self.args.teacher_num_layers + 1, layers_per_block))
+        return {'transformer': {
+            'layers': {i: {'layernorm_output': None} for i in layers[1: -1]},
+            'output': None,
+        }}
+
+    def get_student_hook(self, **kwargs):
+        return {'transformer': {
+            'layers': {i: {'layernorm_output': None} for i in range(1, self.args.num_layers)},
+            'output': None,
+        }}
+
+    def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, **kwargs):
+        loss_ = 0.
+        if len(s_inter_vars) == 0:
+            return loss_
+        def get_layer_f(st, name):
+            inter_vars, hook = (s_inter_vars, s_hook) if st == 's' else (t_inter_vars, t_hook)
+            return [inter_vars[i[1][name]] for i in sorted(hook['transformer']['layers'].items()) if name in i[1]]
+
+        student_reps = get_layer_f('s', 'layernorm_output') + [s_inter_vars[s_hook['transformer']['output']]]
+        teacher_reps = get_layer_f('t', 'layernorm_output') + [t_inter_vars[t_hook['transformer']['output']]]
+        for student_rep, teacher_rep in zip(student_reps, teacher_reps):
+            student_rep.distill = teacher_rep.distill = True
+            if self.args.pkd_normalized_patience:
+                student_rep = F.normalize(student_rep, p=2, dim=-1)
+                teacher_rep = F.normalize(teacher_rep, p=2, dim=-1)
+            loss_ += F.mse_loss(student_rep, teacher_rep)
+        super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook)
+        return loss_ * self.args.pkd_beta
+
+    def pre_loss(self, s_logits, t_logits, loss, **kwargs):
+        loss_D = super().pre_loss(s_logits, t_logits, loss, return_dict=True, **kwargs)
+        loss_ = (1 - self.args.pkd_alpha) * loss_D['hard'] + self.args.pkd_alpha * loss_D['soft']
+        return loss_
+
+
 student_model_D = {
     None: None,
     'kd': GLMStudent,
@@ -393,4 +447,5 @@ student_model_D = {
     'minilm': MiniLM,
     'distilbert': DistilBERT,
     'mixbaseline': MixBaseline,
+    'pkd': PKD,
 }

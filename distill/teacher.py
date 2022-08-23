@@ -16,6 +16,7 @@ def get_args():
     py_parser.add_argument('--distill_pt_hard', action='store_true')
     py_parser.add_argument('--distill_temperature', type=float, default=1.)
     py_parser.add_argument('--distill_wo_loss_mask', action='store_true')
+    py_parser.add_argument('--distill_ft_soft_kl', action='store_true', help="使用kl散度计算ft_soft")
     # teacher
     py_parser.add_argument('--teacher_num_attention_heads', type=int, default=16)
     py_parser.add_argument('--teacher_hidden_size', type=int, default=1024)
@@ -36,6 +37,10 @@ def get_args():
     # mixbaseline
     py_parser.add_argument('--mixbaseline_wo_inter', action='store_true', help="不使用中间层,用于二次微调")
     py_parser.add_argument('--mixbaseline_tinybert_t', type=float, default=1., help="专用的temperature")
+    # pkd
+    py_parser.add_argument('--pkd_normalized_patience', action='store_true')
+    py_parser.add_argument('--pkd_alpha', type=float, default=0.5, help="soft权重")
+    py_parser.add_argument('--pkd_beta', type=float, default=100., help="中间层权重")
 
     known, args_list = py_parser.parse_known_args()
     args = get_args_(args_list)

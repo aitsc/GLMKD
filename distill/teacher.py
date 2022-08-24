@@ -4,6 +4,7 @@ sys.path.append(os.getcwd())
 from arguments import get_args as get_args_
 import argparse
 from train_utils import get_model
+from utils import print_rank_0
 
 
 def get_args():
@@ -17,6 +18,7 @@ def get_args():
     py_parser.add_argument('--distill_temperature', type=float, default=1.)
     py_parser.add_argument('--distill_wo_loss_mask', action='store_true')
     py_parser.add_argument('--distill_ft_soft_kl', action='store_true', help="使用kl散度计算ft_soft")
+    py_parser.add_argument('--distill_pt_soft_ce', action='store_true', help="使用交叉熵计算pt_soft")
     # teacher
     py_parser.add_argument('--teacher_num_attention_heads', type=int, default=16)
     py_parser.add_argument('--teacher_hidden_size', type=int, default=1024)
@@ -55,6 +57,9 @@ def get_teacher_model(args, **kwargs):
     max_position_embeddings = args.max_position_embeddings
     load_pretrained = args.load_pretrained
     fp16 = args.fp16
+    if max_position_embeddings > args.teacher_max_position_embeddings:
+        args.teacher_max_position_embeddings = max_position_embeddings
+        print_rank_0('teacher_max_position_embeddings was modified to %d'%max_position_embeddings)
 
     args.num_layers = args.teacher_num_layers
     args.hidden_size = args.teacher_hidden_size

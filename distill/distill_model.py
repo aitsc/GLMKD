@@ -49,12 +49,18 @@ class GLMStudent(torch.nn.Module):
         if self.args.finetune:
             if self.args.distill_ft_soft:
                 self.pre_loss_description += ' + distill_ft_soft(T%s)'%T
-                student_likelihood = F.log_softmax(s_logits / T, dim=-1)
-                targets_prob = F.softmax(t_logits / T, dim=-1)
+                if loss_mask is None:
+                    loss_mask = 1.
+                else:  # 可用于 seq2seq_forward_step
+                    loss_mask = loss_mask.view(*loss_mask.size(), 1)
+                    self.pre_loss_description += '/mask'
+                student_likelihood = F.log_softmax(s_logits * loss_mask / T, dim=-1).view(-1, s_logits.size(-1))
+                targets_prob = F.softmax(t_logits * loss_mask / T, dim=-1).view(-1, t_logits.size(-1))
                 if self.args.distill_ft_soft_kl:
-                    l = F.kl_div(student_likelihood, targets_prob, reduction="mean") * T ** 2
+                    l = F.kl_div(student_likelihood, targets_prob, reduction="batchmean") * T ** 2
                 else:
                     l = (- targets_prob * student_likelihood).mean()
+                l = mpu.gather_from_model_parallel_region(l).mean()
                 self.add_summary('pre_loss/ft_soft', l)
                 loss_ += l
                 loss_D['soft'] = l
@@ -66,11 +72,18 @@ class GLMStudent(torch.nn.Module):
         else:
             if self.args.distill_pt_soft:
                 self.pre_loss_description += ' + distill_pt_soft(T%s)'%T
-                loss_mask = 1. if loss_mask is None else loss_mask.view(*loss_mask.size(), 1)
-                s_logits = (s_logits * loss_mask / T).view(-1, s_logits.size(-1))
-                t_logits = (t_logits * loss_mask / T).view(-1, t_logits.size(-1))
-                kl_loss = F.kl_div(F.log_softmax(s_logits, dim=-1), F.softmax(t_logits, dim=-1), reduction="batchmean")
-                l = mpu.gather_from_model_parallel_region(kl_loss).mean() * T ** 2
+                if loss_mask is None:
+                    loss_mask = 1.
+                else:
+                    loss_mask = loss_mask.view(*loss_mask.size(), 1)
+                    self.pre_loss_description += '/mask'
+                student_likelihood = F.log_softmax(s_logits * loss_mask / T, dim=-1).view(-1, s_logits.size(-1))
+                targets_prob = F.softmax(t_logits * loss_mask / T, dim=-1).view(-1, t_logits.size(-1))
+                if self.args.distill_pt_soft_ce:
+                    l = (- targets_prob * student_likelihood).mean()
+                else:
+                    l = F.kl_div(student_likelihood, targets_prob, reduction="batchmean") * T ** 2
+                l = mpu.gather_from_model_parallel_region(l).mean()
                 self.add_summary('pre_loss/pt_soft', l)
                 loss_ += l
                 loss_D['soft'] = l

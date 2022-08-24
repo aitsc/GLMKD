@@ -212,7 +212,7 @@ def _train(model, optimizer, lr_scheduler, forward_step,
         print_rank_0('working on epoch {} ...'.format(epoch))
 
         # 上来先评估
-        if end_of_epoch_callback is not None and epoch == start_epoch:
+        if end_of_epoch_callback is not None and epoch == start_epoch and args.custom_first_eval:
             score_dict = end_of_epoch_callback(model, epoch, summary_writer=summary_writer)
             if score_dict:
                 validation_metric = args.validation_metric if args.validation_metric else list(score_dict.keys())[0]

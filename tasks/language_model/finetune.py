@@ -26,11 +26,13 @@ from tasks.data_utils import build_data_loader
 from tasks.language_model.dataset import build_lambada_dataset, build_wikitext103_dataset, build_lm_dataset
 from pretrain_glm import get_batch
 from finetune_glm import finetune
+from mpu import hook_model
+from distill.distill_model import unpacking_student_model
 
 global_tokenizer = None
 
 
-def lm_forward_step(data, model, args, timers, mems, eval_metric=None):
+def lm_forward_step(data, model, args, timers, mems, eval_metric=None, teacher_model=None):
     """Forward step."""
     # Get the batch.
     if timers is not None:
@@ -88,12 +90,21 @@ def lm_forward_step(data, model, args, timers, mems, eval_metric=None):
                   global_tokenizer.DecodeIds(labels[batch_id, last_index:].tolist()))
             print(position_ids_[batch_id, last_index:].tolist(), block_position_ids[batch_id, last_index:].tolist())
 
-    # Forward model.
-    if args.continuous_prompt:
-        prompt_pos = data["prompt_pos"].long().cuda()
-        logits, *mems = model(tokens, position_ids, attention_mask, *mems, prompt_pos=prompt_pos)
+    is_distill = teacher_model is not None
+    student_model = unpacking_student_model(model)
+    s_inter_vars, t_inter_vars = [], []
+    if is_distill:
+        t_hook, s_hook = student_model.get_teacher_hook(), student_model.get_student_hook()
     else:
-        logits, *mems = model(tokens, position_ids, attention_mask, *mems)
+        t_hook = s_hook = None
+    # Forward model.
+    m_in = [tokens, position_ids, attention_mask, *mems]
+    m_kw = {}
+    if args.continuous_prompt:
+        m_kw['prompt_pos'] = data["prompt_pos"].long().cuda()
+    logits, *mems = hook_model(s_hook, s_inter_vars, model, *m_in, **m_kw)
+    with torch.no_grad():
+        logits_t, *mems_t = hook_model(t_hook, t_inter_vars, teacher_model, *m_in, **m_kw) if is_distill else (None,)
         
     if eval_metric is None or eval_metric == 'loss':
         losses = mpu.vocab_parallel_cross_entropy(logits.contiguous().float(), labels)
@@ -102,7 +113,6 @@ def lm_forward_step(data, model, args, timers, mems, eval_metric=None):
         loss = torch.sum(losses.view(-1) * loss_mask)
         if eval_metric is None:
             loss = loss / loss_mask.sum()
-        return loss, mems, 'bert'
     elif eval_metric == 'accuracy' or eval_metric == 'classify':
         logits = mpu.gather_from_model_parallel_region(logits)
         outputs = torch.argmax(logits, -1)
@@ -111,9 +121,15 @@ def lm_forward_step(data, model, args, timers, mems, eval_metric=None):
         correct = correct.prod(-1)
         if eval_metric == 'accuracy':
             correct = correct.sum()
-        return correct, mems, 'bert'
+        loss = correct
     else:
         raise NotImplementedError("Metric {} not implemented".format(eval_metric))
+
+    if is_distill:
+        loss = student_model.pre_loss(logits, logits_t, loss)
+        loss += student_model.inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, t_model=teacher_model)
+
+    return loss, mems, 'bert'
 
 
 def classify_evaluate(model, dataloader, example_dict, args):
@@ -230,6 +246,6 @@ def metrics_func_provider(args, tokenizer, is_test):
     return metrics_func
 
 
-def main(args):
+def main(args, ft=finetune):
     """Main program."""
-    finetune(args, None, {}, end_of_epoch_callback_provider=metrics_func_provider, forward_step=lm_forward_step)
+    ft(args, None, {}, end_of_epoch_callback_provider=metrics_func_provider, forward_step=lm_forward_step)

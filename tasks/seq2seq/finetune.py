@@ -25,11 +25,13 @@ from collections import OrderedDict
 from tasks.seq2seq.dataset import Seq2SeqDataset, BlankLMDataset, ExtractionDataset
 from tasks.seq2seq.evaluate import rouge_metric, DecoderEvaluater, BlankLMEvaluater
 from tasks.superglue.evaluate import squad_exact_match, squad_f1
+from mpu import hook_model
+from distill.distill_model import unpacking_student_model
 
 global_tokenizer = None
 
 
-def seq2seq_forward_step(data, model, args, timers, mems):
+def seq2seq_forward_step(data, model, args, timers, mems, teacher_model=None):
     """Forward step."""
 
     # Get the batch.
@@ -38,8 +40,18 @@ def seq2seq_forward_step(data, model, args, timers, mems):
     tokens, labels, loss_mask, attention_mask, position_ids = get_batch(data, args)
     if timers is not None:
         timers('batch generator').stop()
+
+    is_distill = teacher_model is not None
+    student_model = unpacking_student_model(model)
+    s_inter_vars, t_inter_vars = [], []
+    if is_distill:
+        t_hook, s_hook = student_model.get_teacher_hook(), student_model.get_student_hook()
+    else:
+        t_hook = s_hook = None
     # Forward model.
-    logits, *mems = model(tokens, position_ids, attention_mask, *mems)
+    logits, *mems = hook_model(s_hook, s_inter_vars, model, tokens, position_ids, attention_mask, *mems)
+    with torch.no_grad():
+        logits_t, *mems_t = hook_model(t_hook, t_inter_vars, teacher_model, tokens, position_ids, attention_mask, *mems) if is_distill else (None,)
     # logits, loss_mask = logits[:, args.src_seq_length:], loss_mask[:, args.src_seq_length:]
     # target_ids = target_ids[:, args.src_seq_length:]
     losses = mpu.vocab_parallel_cross_entropy(logits.contiguous().float(), labels)
@@ -47,9 +59,14 @@ def seq2seq_forward_step(data, model, args, timers, mems):
         epsilon = args.label_smoothing
         smooth_loss = -torch.nn.functional.log_softmax(logits, dim=-1).mean(dim=-1)
         losses = (1 - epsilon) * losses + epsilon * smooth_loss
+    loss_mask_ = loss_mask
     loss_mask = loss_mask.reshape(-1)
     # The loss is not normalized for fair comparison
     loss = torch.sum(losses.reshape(-1) * loss_mask) / loss_mask.sum()
+
+    if is_distill:
+        loss = student_model.pre_loss(logits, logits_t, loss, loss_mask=loss_mask_)
+        loss += student_model.inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, t_model=teacher_model, loss_mask=loss_mask_)
     return loss, mems, 'bert'
 
 
@@ -134,12 +151,12 @@ def metrics_func_provider(args, tokenizer, is_test):
                                   output_func=output_func, only_rank0=False)
 
 
-def main(args):
+def main(args, ft=finetune):
     if args.src_seq_length > args.max_position_embeddings:
         args.max_position_embeddings = args.src_seq_length
     if args.task.lower() in ['cnn_dm', 'cnn_dm_original', 'gigaword', 'blank', 'squad_generation', 'xsum',
                              'squad', 'squad_v1', 'extraction', 'cmrc']:
-        finetune(args, train_valid_datasets_provider, {}, end_of_epoch_callback_provider=metrics_func_provider,
+        ft(args, train_valid_datasets_provider, {}, end_of_epoch_callback_provider=metrics_func_provider,
                  forward_step=seq2seq_forward_step)
     else:
         raise NotImplementedError(args.task)

@@ -65,8 +65,8 @@ def seq2seq_forward_step(data, model, args, timers, mems, teacher_model=None):
     loss = torch.sum(losses.reshape(-1) * loss_mask) / loss_mask.sum()
 
     if is_distill:
-        loss = student_model.pre_loss(logits, logits_t, loss, loss_mask=loss_mask_)
-        loss += student_model.inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, t_model=teacher_model, loss_mask=loss_mask_)
+        loss = student_model.pre_loss(logits, logits_t, loss, loss_mask=loss_mask_, labels=labels)
+        loss += student_model.inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, t_model=teacher_model, loss_mask=loss_mask_, labels=labels)
     return loss, mems, 'bert'
 
 

@@ -9,6 +9,8 @@ from mpu import hook_model, hook_return, hook_reduce
 from utils import print_rank_0
 import math
 from tsc_base import merge_dict
+from apex.normalization.fused_layer_norm import FusedLayerNorm as LayerNorm
+from fp16 import fp32_to_fp16, fp16_to_fp32
 
 
 class GLMStudent(torch.nn.Module):
@@ -289,12 +291,18 @@ class MiniLM(GLMStudent):
 class DistilBERT(GLMStudent):
     def __init__(self, language_model, args, **kwargs):
         super().__init__(language_model, args, **kwargs)
+        if self.args.distilbert_fix_layernorm:
+            self.layernorm = LayerNorm(args.hidden_size)
+            self.t_layernorm = LayerNorm(args.teacher_hidden_size)
+            self.t_layernorm.requires_grad_(False)
 
     def get_teacher_hook(self, **kwargs):
-        return {'transformer': {'output': None}}
+        return {'transformer': {'output': None} if not self.args.distilbert_fix_layernorm else {
+            'layers': {self.args.teacher_num_layers - 1: {'tf_output': None}}}}
 
     def get_student_hook(self, **kwargs):
-        return {'transformer': {'output': None}}
+        return {'transformer': {'output': None} if not self.args.distilbert_fix_layernorm else {
+            'layers': {self.args.num_layers - 1: {'tf_output': None}}}}
 
     def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, loss_mask=None, **kwargs):
         loss_ = 0.
@@ -302,10 +310,21 @@ class DistilBERT(GLMStudent):
             return loss_
         if self.args.distilbert_alpha_cos <= 0.:
             return loss_
-        s_o = s_inter_vars[s_hook['transformer']['output']]
-        t_o = t_inter_vars[t_hook['transformer']['output']]
+        if not self.args.distilbert_fix_layernorm:
+            s_o = s_inter_vars[s_hook['transformer']['output']]
+            t_o = t_inter_vars[t_hook['transformer']['output']]
+            s_o.distill = t_o.distill = True
+        else:
+            s_o = s_inter_vars[s_hook['transformer']['layers'][self.args.num_layers - 1]['tf_output']]
+            t_o = t_inter_vars[t_hook['transformer']['layers'][self.args.teacher_num_layers - 1]['tf_output']]
+            s_o.distill = t_o.distill = True
+            if self.args.fp16:
+                s_o = fp16_to_fp32(self.layernorm(fp32_to_fp16(s_o)))
+                t_o = fp16_to_fp32(self.t_layernorm(fp32_to_fp16(t_o)))
+            else:
+                s_o = self.layernorm(s_o)
+                t_o = self.t_layernorm(t_o)
         assert s_o.size() == t_o.size(), f'{s_o.size()} == {t_o.size()}'
-        s_o.distill = t_o.distill = True
         loss_mask = loss_mask.view(*loss_mask.size(), 1)
         s_o = (s_o * loss_mask).view(-1, s_o.size(-1))
         t_o = (t_o * loss_mask).view(-1, t_o.size(-1))

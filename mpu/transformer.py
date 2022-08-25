@@ -593,6 +593,7 @@ class ParallelTransformerLayer(torch.nn.Module):
         # Second residual connection.
         output = layernorm_input + mlp_output
 
+        hook_add(hook, inter_vars, 'tf_output', output)
         return hook_return(hook, inter_vars, output)
 
 

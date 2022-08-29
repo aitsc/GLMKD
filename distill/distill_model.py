@@ -304,7 +304,7 @@ class DistilBERT(GLMStudent):
         return {'transformer': {'output': None} if not self.args.distilbert_fix_layernorm else {
             'layers': {self.args.num_layers - 1: {'tf_output': None}}}}
 
-    def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, loss_mask=None, **kwargs):
+    def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, loss_mask=None, labels=None, **kwargs):
         loss_ = 0.
         if len(s_inter_vars) == 0 or loss_mask is None:
             return loss_
@@ -325,6 +325,8 @@ class DistilBERT(GLMStudent):
                 s_o = self.layernorm(s_o)
                 t_o = self.t_layernorm(t_o)
         assert s_o.size() == t_o.size(), f'{s_o.size()} == {t_o.size()}'
+        if self.args.distilbert_cos_mask_padding:
+            loss_mask = labels > 0
         loss_mask = loss_mask.view(*loss_mask.size(), 1)
         s_o = (s_o * loss_mask).view(-1, s_o.size(-1))
         t_o = (t_o * loss_mask).view(-1, t_o.size(-1))
@@ -335,20 +337,23 @@ class DistilBERT(GLMStudent):
         super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook)
         return loss_
 
-    def pre_loss(self, s_logits, t_logits, loss, loss_mask=None, **kwargs):
+    def pre_loss(self, s_logits, t_logits, loss, loss_mask=None, labels=None, **kwargs):
         loss_ = 0.
         if self.args.finetune:
             return super().pre_loss(s_logits, t_logits, loss)
         self.pre_loss_description = 'pre_loss: 0'
         if self.args.distilbert_alpha_ce > 0:
             T = self.args.distill_temperature
-            self.pre_loss_description += ' + distilbert_alpha_ce(T%s)'%T
+            self.pre_loss_description += ' + %s*distilbert_alpha_ce(T%s)' % (self.args.distilbert_alpha_ce, T)
             if self.args.distill_wo_loss_mask:
                 loss_mask = 1.
                 self.pre_loss_description += '/wom'
+            elif self.args.distilbert_ce_mask_padding:
+                loss_mask = labels.view(*labels.size(), 1) > 0
+                self.pre_loss_description += '/mask_pad'
             else:
                 loss_mask = loss_mask.view(*loss_mask.size(), 1)
-                self.pre_loss_description += '/mask'
+                self.pre_loss_description += '/mask_A_pad'
             s_logits = (s_logits * loss_mask / T).view(-1, s_logits.size(-1))
             t_logits = (t_logits * loss_mask / T).view(-1, t_logits.size(-1))
             kl_loss = F.kl_div(F.log_softmax(s_logits, dim=-1), F.softmax(t_logits, dim=-1), reduction="batchmean")
@@ -357,7 +362,7 @@ class DistilBERT(GLMStudent):
             super().add_summary(f'pre_loss/distilbert_alpha_ce', l)
             loss_ += l
         if self.args.distilbert_alpha_mlm > 0:
-            self.pre_loss_description += ' + distilbert_alpha_mlm'
+            self.pre_loss_description += ' + %s*distilbert_alpha_mlm' % self.args.distilbert_alpha_mlm
             l = loss * self.args.distilbert_alpha_mlm
             super().add_summary(f'pre_loss/distilbert_alpha_mlm', l)
             loss_ += l

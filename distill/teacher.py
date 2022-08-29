@@ -37,6 +37,8 @@ def get_args():
     py_parser.add_argument('--distilbert_alpha_mlm', type=float, default=1., help="类似 distill_pt_hard")
     py_parser.add_argument('--distilbert_alpha_cos', type=float, default=1.)
     py_parser.add_argument('--distilbert_fix_layernorm', action='store_true')
+    py_parser.add_argument('--distilbert_cos_mask_padding', action='store_true', help='隐层只mask padding')
+    py_parser.add_argument('--distilbert_ce_mask_padding', action='store_true', help='软标签只mask padding')
     # mixbaseline
     py_parser.add_argument('--mixbaseline_wo_inter', action='store_true', help="不使用中间层,用于二次微调")
     py_parser.add_argument('--mixbaseline_tinybert_t', type=float, default=1., help="专用的temperature")

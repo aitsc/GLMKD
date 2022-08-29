@@ -19,8 +19,7 @@ pretrain: ... --student_model=minilmv2 --minilmv2_relation_heads=48 --minilmv2_t
 pretrain: ... --student_model=minilm
 
 ## DistilBERT
-- pretrain: ... --student_model=distilbert --distill_temperature=10. --distilbert_alpha_ce=0.33 --distilbert_alpha_mlm=0.33 --distilbert_alpha_cos=0.33
-- pretrain-变种: ... --student_model=distilbert --distill_temperature=15 --distilbert_alpha_ce=5 --distilbert_alpha_mlm=1 --distilbert_alpha_cos=0 --distill_wo_loss_mask
+- pretrain: ... --student_model=distilbert --distill_temperature=2 --distilbert_alpha_ce=5 --distilbert_alpha_mlm=2 --distilbert_alpha_cos=1 --distilbert_cos_mask_padding --distilbert_ce_mask_padding
 
 ## MixBaseline (KD + TinyBERT + MiniLMv2 + MiniLM + DistilBERT)
 1. pretrain: ... --student_model=mixbaseline --distill_temperature=10. --minilmv2_relation_heads=48 --minilmv2_teacher_layer=12

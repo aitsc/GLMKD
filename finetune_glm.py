@@ -212,7 +212,7 @@ def _train(model, optimizer, lr_scheduler, forward_step,
         print_rank_0('working on epoch {} ...'.format(epoch))
 
         # 上来先评估
-        if end_of_epoch_callback is not None and epoch == start_epoch:
+        if end_of_epoch_callback is not None and epoch == start_epoch and args.custom_first_eval:
             score_dict = end_of_epoch_callback(model, epoch, summary_writer=summary_writer)
             if score_dict:
                 validation_metric = args.validation_metric if args.validation_metric else list(score_dict.keys())[0]
@@ -454,6 +454,8 @@ def finetune(args, train_valid_datasets_provider, model_kwargs, forward_step=fin
             print_rank_0('evaluation only mode, setting epoch to -1')
             score_dict = end_of_train_callback(model, epoch=-1, output_predictions=True)
     if score_dict is not None and torch.distributed.get_rank() == 0:
+        from tasks.eval_utils import save_max_score_dict
+        save_max_score_dict(args, score_dict, -1)
         score_dict.update({"type": "test"})
         with open(os.path.join(args.log_dir, "test_results.json"), "w") as output:
             output.write(json.dumps(score_dict) + "\n")

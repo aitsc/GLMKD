@@ -53,6 +53,33 @@ global_tokenizer = None
 
 
 max_score_dict = {}  # {key:{'epoch':,'score_dict':{}},..}
+def save_max_score_dict(args, score_dict, epoch):
+    for key, score in score_dict.items():
+        msd = max_score_dict.get(key)
+        if msd:
+            if msd['score_dict'].get(key, -1e10) < score:
+                msd['epoch'] = epoch
+                msd['iteration'] = args.iteration
+                msd['score_dict'] = score_dict.copy()
+        else:
+            max_score_dict[key] = {'epoch': epoch, 'iteration': args.iteration, 'score_dict': score_dict.copy()}
+    if args.custom_tmp_result:
+        with open(args.custom_tmp_result, 'w', encoding='utf8') as w:
+            json.dump({
+                'args': {
+                    'save': args.save,
+                    'epochs': args.epochs,
+                    'iteration': args.iteration,
+                    'task': args.task,
+                    'wsc_negative': args.wsc_negative,
+                },
+                'now': str(datetime.datetime.now()),
+                'max_score_dict': max_score_dict,
+                'epoch': epoch,
+            }, w, ensure_ascii=False, indent=2)
+    return max_score_dict
+
+
 def accuracy_func_provider(single_dataset_provider, metric_dict, args, is_test=False, eval_func=None, output_func=None,
                            only_rank0=True, tokenizer=None):
     """Provide function that calculates accuracies."""
@@ -107,33 +134,11 @@ def accuracy_func_provider(single_dataset_provider, metric_dict, args, is_test=F
         score_dict = {key: score / float(total) for key, score in score_dict.items()}
         output_str = ' >> |epoch: {}| overall: total = {}'.format(epoch, total)
         for key, score in score_dict.items():
-            if epoch >= 0:
-                msd = max_score_dict.get(key)
-                if msd:
-                    if msd['score_dict'].get(key, -1e10) < score:
-                        msd['epoch'] = epoch
-                        msd['iteration'] = args.iteration
-                        msd['score_dict'] = score_dict.copy()
-                else:
-                    max_score_dict[key] = {'epoch': epoch, 'iteration': args.iteration, 'score_dict': score_dict.copy()}
             output_str += " {} = {:.4f}".format(key, score)
             if summary_writer is not None and epoch >= 0 and not is_test:
                 summary_writer.add_scalar(f'Train/valid_{key}', score, epoch)
+        save_max_score_dict(args, score_dict, epoch)
         print_rank_0(output_str + ' max' + str(max_score_dict))
-        if args.custom_tmp_result and epoch >= 0:
-            with open(args.custom_tmp_result, 'w', encoding='utf8') as w:
-                json.dump({
-                    'args': {
-                        'save': args.save,
-                        'epochs': args.epochs,
-                        'iteration': args.iteration,
-                        'task': args.task,
-                        'wsc_negative': args.wsc_negative,
-                    },
-                    'now': str(datetime.datetime.now()),
-                    'epoch': epoch,
-                    'max_score_dict': max_score_dict,
-                }, w, ensure_ascii=False, indent=2)
         return score_dict
 
     return metrics_func

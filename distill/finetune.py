@@ -27,75 +27,6 @@ from mpu import hook_model
 tokenizer = None
 
 
-def lm_forward_step_distill(data, model, args, timers, mems, eval_metric=None, teacher_model=None):
-    """Forward step."""
-    # Get the batch.
-    if timers is not None:
-        timers('batch generator').start()
-    try:
-        data = next(data)
-    except BaseException:
-        data = data
-
-    if 'mask' in data:
-        # finetune SQuAD
-        data['attention_mask'] = data.pop('mask')
-        data['position_id'] = data.pop('position')
-        data['loss_mask'] = data.pop('logit_mask')
-
-    tokens, labels, loss_mask, attention_mask, position_ids = get_batch(data, args)
-    if timers is not None:
-        timers('batch generator').stop()
-
-    if tokens.dim() == 3:
-        tokens = tokens.squeeze(1)
-        labels = labels.squeeze(1)
-        loss_mask = loss_mask.squeeze(1)
-        attention_mask = attention_mask.squeeze(1)
-        position_ids = position_ids.squeeze(1)
-
-    is_distill = teacher_model is not None
-    student_model = unpacking_student_model(model)
-    s_inter_vars, t_inter_vars = [], []
-    if is_distill:
-        t_hook, s_hook = student_model.get_teacher_hook(), student_model.get_student_hook()
-    else:
-        t_hook = s_hook = None
-    # Forward model.
-    m_in = [tokens, position_ids, attention_mask, *mems]
-    m_kw = {}
-    if args.continuous_prompt:
-        m_kw['prompt_pos'] = data["prompt_pos"].long().cuda()
-    logits, *mems = hook_model(s_hook, s_inter_vars, model, *m_in, **m_kw)
-    with torch.no_grad():
-        logits_t, *mems_t = hook_model(t_hook, t_inter_vars, teacher_model, *m_in, **m_kw) if is_distill else (None,)
-        
-    if eval_metric is None or eval_metric == 'loss':
-        losses = mpu.vocab_parallel_cross_entropy(logits.contiguous().float(), labels)
-        loss_mask = loss_mask.view(-1)
-        # The loss is not normalized for fair comparison
-        loss = torch.sum(losses.view(-1) * loss_mask)
-        if eval_metric is None:
-            loss = loss / loss_mask.sum()
-    elif eval_metric == 'accuracy' or eval_metric == 'classify':
-        logits = mpu.gather_from_model_parallel_region(logits)
-        outputs = torch.argmax(logits, -1)
-        correct = (outputs == labels).float()
-        correct[(1 - loss_mask).bool()] = 1
-        correct = correct.prod(-1)
-        if eval_metric == 'accuracy':
-            correct = correct.sum()
-        loss = correct
-    else:
-        raise NotImplementedError("Metric {} not implemented".format(eval_metric))
-
-    if is_distill:
-        loss = student_model.pre_loss(logits, logits_t, loss)
-        loss += student_model.inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, t_model=teacher_model)
-
-    return loss, mems, 'bert'
-
-
 def finetune_forward_step(batch, model, args, timers, mems, teacher_model=None):
     """Simple forward step with cross-entropy loss."""
     # Get the batch.
@@ -396,4 +327,4 @@ if __name__ == '__main__':
     else:
         raise NotImplementedError('Task {} is not implemented.'.format(args.task))
 
-    main(args, finetune, lm_forward_step_distill if args.teacher_load_pretrained else None)
+    main(args, finetune)

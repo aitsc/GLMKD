@@ -9,11 +9,12 @@ from mpu import hook_model, hook_return, hook_reduce
 from utils import print_rank_0
 import math
 from tsc_base import merge_dict
+from apex.normalization.fused_layer_norm import FusedLayerNorm as LayerNorm
 from fp16 import fp32_to_fp16, fp16_to_fp32
 
 
 class GLMStudent(torch.nn.Module):
-    def __init__(self, language_model: GLMModel, args, show_pre=True, show_inter=True, summary_loss=False, **kwargs):
+    def __init__(self, language_model: GLMModel, args, show_pre=True, show_inter=True, summary_loss=True, **kwargs):
         super().__init__()
         self.origin_model = language_model
         self.args = args
@@ -40,40 +41,68 @@ class GLMStudent(torch.nn.Module):
             self.show_inter = False
         return 0.
 
-    def pre_loss(self, s_logits, t_logits, loss, loss_mask=None, **kwargs):
+    def pre_loss(self, s_logits, t_logits, loss, loss_mask=None, return_dict=False, **kwargs):
         loss_ = 0.
         self.pre_loss_description = 'pre_loss: 0'
         T = self.args.distill_temperature
+        if self.args.distill_wo_loss_mask:
+            loss_mask = None
+        loss_D = {}
         if self.args.finetune:
             if self.args.distill_ft_soft:
                 self.pre_loss_description += ' + distill_ft_soft(T%s)'%T
-                student_likelihood = F.log_softmax(s_logits / T, dim=-1)
-                targets_prob = F.softmax(t_logits / T, dim=-1)
-                l = (- targets_prob * student_likelihood).mean()
+                if loss_mask is None:
+                    loss_mask = 1.
+                    self.pre_loss_description += '/wom'
+                else:  # 可用于 seq2seq_forward_step
+                    loss_mask = loss_mask.view(*loss_mask.size(), 1)
+                    self.pre_loss_description += '/mask'
+                student_likelihood = F.log_softmax(s_logits * loss_mask / T, dim=-1).view(-1, s_logits.size(-1))
+                targets_prob = F.softmax(t_logits * loss_mask / T, dim=-1).view(-1, t_logits.size(-1))
+                if self.args.distill_ft_soft_kl:
+                    l = F.kl_div(student_likelihood, targets_prob, reduction="batchmean") * T ** 2
+                else:
+                    l = (- targets_prob * student_likelihood).mean()
+                l = mpu.gather_from_model_parallel_region(l).mean()
                 self.add_summary('pre_loss/ft_soft', l)
                 loss_ += l
+                loss_D['soft'] = l
             if self.args.distill_ft_hard:
                 self.pre_loss_description += ' + distill_ft_hard'
                 self.add_summary('pre_loss/ft_hard', loss)
                 loss_ += loss
+                loss_D['hard'] = l
         else:
             if self.args.distill_pt_soft:
                 self.pre_loss_description += ' + distill_pt_soft(T%s)'%T
-                loss_mask = 1. if loss_mask is None else loss_mask.view(*loss_mask.size(), 1)
-                s_logits = (s_logits * loss_mask / T).view(-1, s_logits.size(-1))
-                t_logits = (t_logits * loss_mask / T).view(-1, t_logits.size(-1))
-                kl_loss = F.kl_div(F.log_softmax(s_logits, dim=-1), F.softmax(t_logits, dim=-1), reduction="batchmean")
-                l = mpu.gather_from_model_parallel_region(kl_loss).mean() * T ** 2
+                if loss_mask is None:
+                    loss_mask = 1.
+                    self.pre_loss_description += '/wom'
+                else:
+                    loss_mask = loss_mask.view(*loss_mask.size(), 1)
+                    self.pre_loss_description += '/mask'
+                student_likelihood = F.log_softmax(s_logits * loss_mask / T, dim=-1).view(-1, s_logits.size(-1))
+                targets_prob = F.softmax(t_logits * loss_mask / T, dim=-1).view(-1, t_logits.size(-1))
+                if self.args.distill_pt_soft_ce:
+                    l = (- targets_prob * student_likelihood).mean()
+                else:
+                    l = F.kl_div(student_likelihood, targets_prob, reduction="batchmean") * T ** 2
+                l = mpu.gather_from_model_parallel_region(l).mean()
                 self.add_summary('pre_loss/pt_soft', l)
                 loss_ += l
+                loss_D['soft'] = l
             if self.args.distill_pt_hard:
                 self.pre_loss_description += ' + distill_pt_hard'
                 self.add_summary('pre_loss/pt_hard', loss)
                 loss_ += loss
+                loss_D['hard'] = l
+        loss_D['loss'] = loss_
         # show
         if self.show_pre:
             print_rank_0(self.pre_loss_description)
             self.show_pre = False
+        if return_dict:
+            return loss_D
         return loss_
 
     def state_dict(self, destination=None, prefix='', keep_vars=False):
@@ -195,16 +224,20 @@ class TinyBERT(GLMStudent):
         if not self.args.tinybert_inter_final:
             student_reps = get_layer_f('s', 'attention_scores')
             teacher_reps = get_layer_f('t', 'attention_scores')
-            for student_rep, teacher_rep in zip(student_reps, teacher_reps):
+            for i, (student_rep, teacher_rep) in enumerate(zip(student_reps, teacher_reps)):
                 student_rep.distill = teacher_rep.distill = True
-                loss_ += F.mse_loss(student_rep, teacher_rep)
-            loss_ += mpu.reduce_from_model_parallel_region(loss_)
+                l = F.mse_loss(student_rep, teacher_rep)
+                l = mpu.reduce_from_model_parallel_region(l)
+                super().add_summary(f'inter_loss/attention_scores.{i}', l)
+                loss_ += l
         # emb + hidden_states
         student_reps = get_layer_f('s', 'layernorm_output') + [s_inter_vars[s_hook['transformer']['output']]]
         teacher_reps = get_layer_f('t', 'layernorm_output') + [t_inter_vars[t_hook['transformer']['output']]]
-        for student_rep, teacher_rep in zip(student_reps, teacher_reps):
+        for i, (student_rep, teacher_rep) in enumerate(zip(student_reps, teacher_reps)):
             student_rep.distill = teacher_rep.distill = True
-            loss_ += F.mse_loss(student_rep, teacher_rep)
+            l = F.mse_loss(student_rep, teacher_rep)
+            super().add_summary(f'inter_loss/hidden_states.{i}', l)
+            loss_ += l
         super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook)
         return loss_
 
@@ -282,48 +315,81 @@ class MiniLM(GLMStudent):
 class DistilBERT(GLMStudent):
     def __init__(self, language_model, args, **kwargs):
         super().__init__(language_model, args, **kwargs)
+        if self.args.distilbert_fix_layernorm:
+            self.layernorm = LayerNorm(args.hidden_size)
+            self.t_layernorm = LayerNorm(args.teacher_hidden_size)
+            self.t_layernorm.requires_grad_(False)
 
     def get_teacher_hook(self, **kwargs):
-        return {'transformer': {'output': None}}
+        return {'transformer': {'output': None} if not self.args.distilbert_fix_layernorm else {
+            'layers': {self.args.teacher_num_layers - 1: {'tf_output': None}}}}
 
     def get_student_hook(self, **kwargs):
-        return {'transformer': {'output': None}}
+        return {'transformer': {'output': None} if not self.args.distilbert_fix_layernorm else {
+            'layers': {self.args.num_layers - 1: {'tf_output': None}}}}
 
-    def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, loss_mask=None, **kwargs):
+    def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, loss_mask=None, labels=None, **kwargs):
         loss_ = 0.
         if len(s_inter_vars) == 0 or loss_mask is None:
             return loss_
         if self.args.distilbert_alpha_cos <= 0.:
             return loss_
-        s_o = s_inter_vars[s_hook['transformer']['output']]
-        t_o = t_inter_vars[t_hook['transformer']['output']]
+        if not self.args.distilbert_fix_layernorm:
+            s_o = s_inter_vars[s_hook['transformer']['output']]
+            t_o = t_inter_vars[t_hook['transformer']['output']]
+            s_o.distill = t_o.distill = True
+        else:
+            s_o = s_inter_vars[s_hook['transformer']['layers'][self.args.num_layers - 1]['tf_output']]
+            t_o = t_inter_vars[t_hook['transformer']['layers'][self.args.teacher_num_layers - 1]['tf_output']]
+            s_o.distill = t_o.distill = True
+            if self.args.fp16:
+                s_o = fp16_to_fp32(self.layernorm(fp32_to_fp16(s_o)))
+                t_o = fp16_to_fp32(self.t_layernorm(fp32_to_fp16(t_o)))
+            else:
+                s_o = self.layernorm(s_o)
+                t_o = self.t_layernorm(t_o)
         assert s_o.size() == t_o.size(), f'{s_o.size()} == {t_o.size()}'
-        s_o.distill = t_o.distill = True
+        if self.args.distilbert_cos_mask_padding:
+            loss_mask = labels > 0
         loss_mask = loss_mask.view(*loss_mask.size(), 1)
         s_o = (s_o * loss_mask).view(-1, s_o.size(-1))
         t_o = (t_o * loss_mask).view(-1, t_o.size(-1))
         target = s_o.new(s_o.size(0)).fill_(1)
-        loss_ += F.cosine_embedding_loss(s_o, t_o, target) * self.args.distilbert_alpha_cos
+        l = F.cosine_embedding_loss(s_o, t_o, target) * self.args.distilbert_alpha_cos
+        super().add_summary(f'inter_loss/distilbert_alpha_cos', l)
+        loss_ += l
         super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook)
         return loss_
 
-    def pre_loss(self, s_logits, t_logits, loss, loss_mask=None, **kwargs):
+    def pre_loss(self, s_logits, t_logits, loss, loss_mask=None, labels=None, **kwargs):
         loss_ = 0.
         if self.args.finetune:
             return super().pre_loss(s_logits, t_logits, loss)
         self.pre_loss_description = 'pre_loss: 0'
         if self.args.distilbert_alpha_ce > 0:
-            self.pre_loss_description += ' + distilbert_alpha_ce'
-            loss_mask = loss_mask.view(*loss_mask.size(), 1)
             T = self.args.distill_temperature
+            self.pre_loss_description += ' + %s*distilbert_alpha_ce(T%s)' % (self.args.distilbert_alpha_ce, T)
+            if self.args.distill_wo_loss_mask:
+                loss_mask = 1.
+                self.pre_loss_description += '/wom'
+            elif self.args.distilbert_ce_mask_padding:
+                loss_mask = labels.view(*labels.size(), 1) > 0
+                self.pre_loss_description += '/mask_pad'
+            else:
+                loss_mask = loss_mask.view(*loss_mask.size(), 1)
+                self.pre_loss_description += '/mask_A_pad'
             s_logits = (s_logits * loss_mask / T).view(-1, s_logits.size(-1))
             t_logits = (t_logits * loss_mask / T).view(-1, t_logits.size(-1))
             kl_loss = F.kl_div(F.log_softmax(s_logits, dim=-1), F.softmax(t_logits, dim=-1), reduction="batchmean")
             kl_loss = mpu.gather_from_model_parallel_region(kl_loss)
-            loss_ += kl_loss.mean() * T ** 2 * self.args.distilbert_alpha_ce
+            l = kl_loss.mean() * T ** 2 * self.args.distilbert_alpha_ce
+            super().add_summary(f'pre_loss/distilbert_alpha_ce', l)
+            loss_ += l
         if self.args.distilbert_alpha_mlm > 0:
-            self.pre_loss_description += ' + distilbert_alpha_mlm'
-            loss_ += loss * self.args.distilbert_alpha_mlm
+            self.pre_loss_description += ' + %s*distilbert_alpha_mlm' % self.args.distilbert_alpha_mlm
+            l = loss * self.args.distilbert_alpha_mlm
+            super().add_summary(f'pre_loss/distilbert_alpha_mlm', l)
+            loss_ += l
         # show
         if self.show_pre:
             print_rank_0(self.pre_loss_description)
@@ -432,8 +498,7 @@ class MixBaseline(GLMStudent):
         self.pre_bl_finetune_soft = ['TinyBERT']  # 默认包含 KD(super())
         self.baselines = set(self.inter_bl + self.pre_bl_pretrain_soft + self.pre_bl_finetune_soft)
         for c in self.baselines:
-            setattr(self, c, eval(c)(language_model, args, show_pre=False, show_inter=False))
-        self.summary_loss = True
+            setattr(self, c, eval(c)(language_model, args, show_pre=False, show_inter=False, summary_loss=False))
 
     def get_teacher_hook(self, **kwargs):
         if self.args.mixbaseline_wo_inter:
@@ -500,6 +565,51 @@ class MixBaseline(GLMStudent):
         return loss_
 
 
+class PKD(GLMStudent):
+    def __init__(self, language_model, args, **kwargs):
+        super().__init__(language_model, args, **kwargs)
+
+    def get_teacher_hook(self, **kwargs):
+        layers_per_block = int(self.args.teacher_num_layers / self.args.num_layers)
+        layers = tuple(range(0, self.args.teacher_num_layers + 1, layers_per_block))
+        return {'transformer': {
+            'layers': {i: {'layernorm_output': None} for i in layers[1: -1]},
+            'output': None,
+        }}
+
+    def get_student_hook(self, **kwargs):
+        return {'transformer': {
+            'layers': {i: {'layernorm_output': None} for i in range(1, self.args.num_layers)},
+            'output': None,
+        }}
+
+    def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, **kwargs):
+        loss_ = 0.
+        if len(s_inter_vars) == 0:
+            return loss_
+        def get_layer_f(st, name):
+            inter_vars, hook = (s_inter_vars, s_hook) if st == 's' else (t_inter_vars, t_hook)
+            return [inter_vars[i[1][name]] for i in sorted(hook['transformer']['layers'].items()) if name in i[1]]
+
+        student_reps = get_layer_f('s', 'layernorm_output') + [s_inter_vars[s_hook['transformer']['output']]]
+        teacher_reps = get_layer_f('t', 'layernorm_output') + [t_inter_vars[t_hook['transformer']['output']]]
+        for i, (student_rep, teacher_rep) in enumerate(zip(student_reps, teacher_reps)):
+            student_rep.distill = teacher_rep.distill = True
+            if self.args.pkd_normalized_patience:
+                student_rep = F.normalize(student_rep, p=2, dim=-1)
+                teacher_rep = F.normalize(teacher_rep, p=2, dim=-1)
+            l = F.mse_loss(student_rep, teacher_rep)
+            super().add_summary(f'inter_loss/hidden_states.{i}', l)
+            loss_ += l
+        super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook)
+        return loss_ * self.args.pkd_beta
+
+    def pre_loss(self, s_logits, t_logits, loss, **kwargs):
+        loss_D = super().pre_loss(s_logits, t_logits, loss, return_dict=True, **kwargs)
+        loss_ = (1 - self.args.pkd_alpha) * loss_D['hard'] + self.args.pkd_alpha * loss_D['soft']
+        return loss_
+
+
 student_model_D = {
     None: None,
     'kd': GLMStudent,
@@ -509,4 +619,5 @@ student_model_D = {
     'minilm': MiniLM,
     'distilbert': DistilBERT,
     'mixbaseline': MixBaseline,
+    'pkd': PKD,
 }

@@ -418,6 +418,7 @@ def add_custom_args(parser: argparse.ArgumentParser):
     group = parser.add_argument_group('custom', 'custom configurations')
     group.add_argument('--spare_port', type=int, default=get_random_port())
     group.add_argument('--custom_tmp_result', type=str, default=None)
+    group.add_argument('--custom_first_eval', action='store_true')
     return parser
 
 

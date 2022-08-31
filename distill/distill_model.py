@@ -41,22 +41,25 @@ class GLMStudent(torch.nn.Module):
             self.show_inter = False
         return 0.
 
-    def pre_loss(self, s_logits, t_logits, loss, loss_mask=None, return_dict=False, **kwargs):
+    def pre_loss(self, s_logits, t_logits, loss, loss_mask=None, return_dict=False, labels=False, **kwargs):
         loss_ = 0.
         self.pre_loss_description = 'pre_loss: 0'
         T = self.args.distill_temperature
         if self.args.distill_wo_loss_mask:
-            loss_mask = None
+            loss_mask = labels = None
         loss_D = {}
         if self.args.finetune:
             if self.args.distill_ft_soft:
                 self.pre_loss_description += ' + distill_ft_soft(T%s)'%T
-                if loss_mask is None:
+                if loss_mask is None and labels is None:
                     loss_mask = 1.
                     self.pre_loss_description += '/wom'
+                elif labels is not None and self.args.distill_only_mask_pad:
+                    loss_mask = labels.view(*labels.size(), 1) > 0
+                    self.pre_loss_description += '/mask_pad'
                 else:  # 可用于 seq2seq_forward_step
                     loss_mask = loss_mask.view(*loss_mask.size(), 1)
-                    self.pre_loss_description += '/mask'
+                    self.pre_loss_description += '/mask_A_pad'
                 student_likelihood = F.log_softmax(s_logits * loss_mask / T, dim=-1).view(-1, s_logits.size(-1))
                 targets_prob = F.softmax(t_logits * loss_mask / T, dim=-1).view(-1, t_logits.size(-1))
                 if self.args.distill_ft_soft_kl:
@@ -75,12 +78,15 @@ class GLMStudent(torch.nn.Module):
         else:
             if self.args.distill_pt_soft:
                 self.pre_loss_description += ' + distill_pt_soft(T%s)'%T
-                if loss_mask is None:
+                if loss_mask is None and labels is None:
                     loss_mask = 1.
                     self.pre_loss_description += '/wom'
+                elif labels is not None and self.args.distill_only_mask_pad:
+                    loss_mask = labels.view(*labels.size(), 1) > 0
+                    self.pre_loss_description += '/mask_pad'
                 else:
                     loss_mask = loss_mask.view(*loss_mask.size(), 1)
-                    self.pre_loss_description += '/mask'
+                    self.pre_loss_description += '/mask_A_pad'
                 student_likelihood = F.log_softmax(s_logits * loss_mask / T, dim=-1).view(-1, s_logits.size(-1))
                 targets_prob = F.softmax(t_logits * loss_mask / T, dim=-1).view(-1, t_logits.size(-1))
                 if self.args.distill_pt_soft_ce:
@@ -340,7 +346,7 @@ class DistilBERT(GLMStudent):
     def pre_loss(self, s_logits, t_logits, loss, loss_mask=None, labels=None, **kwargs):
         loss_ = 0.
         if self.args.finetune:
-            return super().pre_loss(s_logits, t_logits, loss)
+            return super().pre_loss(s_logits, t_logits, loss, loss_mask=loss_mask, labels=labels, **kwargs)
         self.pre_loss_description = 'pre_loss: 0'
         if self.args.distilbert_alpha_ce > 0:
             T = self.args.distill_temperature

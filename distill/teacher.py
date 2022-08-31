@@ -17,6 +17,7 @@ def get_args():
     py_parser.add_argument('--distill_pt_hard', action='store_true')
     py_parser.add_argument('--distill_temperature', type=float, default=1.)
     py_parser.add_argument('--distill_wo_loss_mask', action='store_true')
+    py_parser.add_argument('--distill_only_mask_pad', action='store_true')
     py_parser.add_argument('--distill_ft_soft_kl', action='store_true', help="使用kl散度计算ft_soft")
     py_parser.add_argument('--distill_pt_soft_ce', action='store_true', help="使用交叉熵计算pt_soft")
     # teacher

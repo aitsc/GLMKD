@@ -30,6 +30,7 @@ def get_args():
     # tinybert
     py_parser.add_argument('--tinybert_inter_final', action='store_true', help="inter: final layer")
     py_parser.add_argument('--tinybert_wo_inter', action='store_true', help="不使用中间层,用于二次微调")
+    py_parser.add_argument('--tinybert_fit_parallel', action='store_true')
     # minilmv2
     py_parser.add_argument('--minilmv2_relation_heads', type=int, default=48, help="base=48,large=64")
     py_parser.add_argument('--minilmv2_teacher_layer', type=int, default=12, help="start at one")

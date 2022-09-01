@@ -53,3 +53,4 @@ from .transformer import GPT2ParallelTransformer
 from .transformer import LayerNorm
 
 from .hook import hook_model, hook_add, hook_offset, hook_reduce, hook_return, hook_copy, hook_child
+from .utils import divide, split_tensor_along_last_dim

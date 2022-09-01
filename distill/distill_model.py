@@ -163,7 +163,10 @@ def unpacking_student_model(model):
 class TinyBERT(GLMStudent):
     def __init__(self, language_model, args, **kwargs):
         super().__init__(language_model, args, **kwargs)
-        self.fit_dense = torch.nn.Linear(args.hidden_size, args.teacher_hidden_size)
+        if args.tinybert_fit_parallel:
+            self.fit_dense = mpu.ColumnParallelLinear(args.hidden_size, args.teacher_hidden_size)
+        else:
+            self.fit_dense = torch.nn.Linear(args.hidden_size, args.teacher_hidden_size)
 
     def get_teacher_hook(self, **kwargs):
         layers_per_block = int(self.args.teacher_num_layers / self.args.num_layers)

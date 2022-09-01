@@ -383,7 +383,7 @@ class MixBaseline(GLMStudent):
     def __init__(self, language_model, args, **kwargs):
         super().__init__(language_model, args, **kwargs)
         self.inter_bl = args.mixbaseline_inter_bl.split(',')
-        # 支持 --distill_ft_hard 的模型必须放在最后
+        # 支持 --distill_ft_hard 的模型必须放在最后, 保证只算一次
         self.pre_bl_pretrain_soft = args.mixbaseline_pre_bl_pt_soft.split(',')  # 重复的预训练软标签构建方式不需要
         self.pre_bl_finetune_soft = args.mixbaseline_pre_bl_ft_soft.split(',')  # 有 distill_ft 相关参数就等于包含 KD(super())
         self.baselines = set(self.inter_bl + self.pre_bl_pretrain_soft + self.pre_bl_finetune_soft)
@@ -447,7 +447,7 @@ class MixBaseline(GLMStudent):
             l = getattr(self, c).pre_loss(s_logits, t_logits, loss, **kwargs)
             super().add_summary(f'pre_loss/{c}', l)
             loss_ += l
-            pre_loss_description.append(f'\t{c} - {self.pre_loss_description}')
+            pre_loss_description.append(f'\t{c} - {getattr(self, c).pre_loss_description}')
             self.args.distill_temperature = distill_temperature
         # show
         if show_pre:

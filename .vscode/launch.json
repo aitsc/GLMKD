@@ -23,7 +23,7 @@
             "args": [
                 // deepspeed
                 "--master_port=10161",
-                "--include=localhost:5",
+                "--include=localhost:7",
                 "distill/pretrain.py",
                 "--deepspeed_config=config/config_block_tiny6.json",
                 "--deepspeed-activation-checkpointing",
@@ -59,19 +59,19 @@
                 "--distill_temperature=15",
                 "--distilbert_fix_layernorm",
                 // 蒸馏 base
-                "--teacher_load_pretrained=../GLM/data/checkpoints/pretrain/blocklm-base-blank",
-                "--teacher_num_layers=12",
-                "--teacher_hidden_size=768",
-                "--teacher_num_attention_heads=12",
-                "--teacher_max_position_embeddings=512",
-                "--teacher_fp16",
-                // 蒸馏 large
-                // "--teacher_load_pretrained=../GLM/data/checkpoints/pretrain/blocklm-large-blank",
-                // "--teacher_num_layers=24",
-                // "--teacher_hidden_size=1024",
-                // "--teacher_num_attention_heads=16",
+                // "--teacher_load_pretrained=../GLM/data/checkpoints/pretrain/blocklm-base-blank",
+                // "--teacher_num_layers=12",
+                // "--teacher_hidden_size=768",
+                // "--teacher_num_attention_heads=12",
                 // "--teacher_max_position_embeddings=512",
                 // "--teacher_fp16",
+                // 蒸馏 large
+                "--teacher_load_pretrained=../GLM/data/checkpoints/pretrain/blocklm-large-blank",
+                "--teacher_num_layers=24",
+                "--teacher_hidden_size=1024",
+                "--teacher_num_attention_heads=16",
+                "--teacher_max_position_embeddings=512",
+                "--teacher_fp16",
             ],
             "env": {
                 "NCCL_DEBUG":"info",

@@ -382,10 +382,10 @@ class DistilBERT(GLMStudent):
 class MixBaseline(GLMStudent):
     def __init__(self, language_model, args, **kwargs):
         super().__init__(language_model, args, **kwargs)
-        self.inter_bl = ['TinyBERT', 'MiniLMv2', 'MiniLM', 'DistilBERT']
-        # 支持 pre_loss hard 的模型必须放在最后, 保证只算一次
-        self.pre_bl_pretrain_soft = ['DistilBERT', 'TinyBERT']  # 重复的预训练软标签构建方式不需要
-        self.pre_bl_finetune_soft = ['TinyBERT']  # 默认包含 KD(super())
+        self.inter_bl = args.mixbaseline_inter_bl.split(',')
+        # 支持 --distill_ft_hard 的模型必须放在最后
+        self.pre_bl_pretrain_soft = args.mixbaseline_pre_bl_pt_soft.split(',')  # 重复的预训练软标签构建方式不需要
+        self.pre_bl_finetune_soft = args.mixbaseline_pre_bl_ft_soft.split(',')  # 有 distill_ft 相关参数就等于包含 KD(super())
         self.baselines = set(self.inter_bl + self.pre_bl_pretrain_soft + self.pre_bl_finetune_soft)
         for c in self.baselines:
             setattr(self, c, eval(c)(language_model, args, show_pre=False, show_inter=False, summary_loss=False))

@@ -43,6 +43,9 @@ def get_args():
     # mixbaseline
     py_parser.add_argument('--mixbaseline_wo_inter', action='store_true', help="不使用中间层,用于二次微调")
     py_parser.add_argument('--mixbaseline_tinybert_t', type=float, default=1., help="专用的temperature")
+    py_parser.add_argument('--mixbaseline_inter_bl', type=str, default='TinyBERT,MiniLMv2,MiniLM,DistilBERT')
+    py_parser.add_argument('--mixbaseline_pre_bl_pt_soft', type=str, default='DistilBERT,TinyBERT')
+    py_parser.add_argument('--mixbaseline_pre_bl_ft_soft', type=str, default='TinyBERT')
     # pkd
     py_parser.add_argument('--pkd_normalized_patience', action='store_true')
     py_parser.add_argument('--pkd_alpha', type=float, default=0.5, help="soft权重")

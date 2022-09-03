@@ -14,14 +14,15 @@ from utils import print_rank_0, get_checkpoint_name, get_checkpoint_iteration
 import time
 
 
-def load_pretrained(model, checkpoint_path, args, task_tokens=None):
+def load_pretrained(model, checkpoint_path, args, task_tokens=None, sd=None):
     load_dir, tag, release, success = get_checkpoint_iteration(checkpoint_path)
     checkpoint_name = get_checkpoint_name(load_dir, tag, release)
     if mpu.get_data_parallel_rank() == 0:
         print('global rank {} is loading pretrained model {}'.format(
             torch.distributed.get_rank(), checkpoint_name))
     # Load the checkpoint.
-    sd = torch.load(checkpoint_name, map_location='cpu')
+    if sd is None:
+        sd = torch.load(checkpoint_name, map_location='cpu')
     if args.deepspeed and hasattr(model, "module"):
         model = model.module
     if isinstance(model, TorchDDP):
@@ -109,7 +110,7 @@ def get_model(args, model_type=None, multi_token=True, num_labels=None, spell_le
         if args.freeze_transformer:
             model.freeze_transformer(tune_prefix_layers=args.tune_prefix_layers)
         if glm_wrap is not None:
-            model = glm_wrap(model, args)
+            model = glm_wrap(model=model, args=args)
         if model_type is not None:
             if model_type == 'multiple_choice':
                 if args.cloze_eval:

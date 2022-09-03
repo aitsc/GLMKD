@@ -71,6 +71,7 @@ class GLMModel(torch.nn.Module):
         self.parallel_output = parallel_output
         self.output_predict = output_predict
         self.hidden_size = hidden_size
+        self.vocab_size = vocab_size
 
         init_method = init_method_normal(std=0.02)
 
@@ -139,6 +140,31 @@ class GLMModel(torch.nn.Module):
         else:
             ret = (logits, *outputs)
         return hook_return(hook, inter_vars, ret)
+
+
+class GLMModel_empty(torch.nn.Module):
+    # 空模型用于占位
+    def __init__(self, glm_model=None, vocab_size=None, hidden_size=None, parallel_output=True, output_predict=True):
+        super().__init__()
+        if glm_model is not None:
+            parallel_output = glm_model.parallel_output
+            output_predict = glm_model.output_predict
+            hidden_size = glm_model.hidden_size
+            vocab_size = glm_model.vocab_size
+        self.parallel_output = parallel_output
+        self.output_predict = output_predict
+        self.hidden_size = hidden_size
+        self.vocab_size = vocab_size
+
+    def forward(self, input_ids, *inputs, hook=None, **kw):
+        inter_vars = []
+        if self.output_predict:
+            if self.parallel_output:
+                dim = mpu.divide(self.vocab_size, mpu.get_model_parallel_world_size())
+            dim = self.vocab_size
+        else:
+            dim = self.hidden_size
+        return hook_return(hook, inter_vars, (torch.ones([*input_ids.size(), dim], device=input_ids.device),))
 
 
 class EncoderDecoder(torch.nn.Module):

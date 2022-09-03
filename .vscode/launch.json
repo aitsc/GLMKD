@@ -55,9 +55,8 @@
                 "--no-lazy-loader",
                 "--resume-dataloader",
                 // 蒸馏
-                "--student_model=distilbert",
-                "--distill_temperature=15",
-                "--distilbert_fix_layernorm",
+                "--student_model=tinybert",
+                "--mt_has_loss",
                 // 蒸馏 base
                 "--teacher_load_pretrained=../GLM/data/checkpoints/pretrain/blocklm-base-blank",
                 "--teacher_num_layers=12",
@@ -65,6 +64,11 @@
                 "--teacher_num_attention_heads=12",
                 "--teacher_max_position_embeddings=512",
                 "--teacher_fp16",
+                "--mt_load_pretrained=../GLM/data/checkpoints/pretrain/blocklm-base-blank:../GLM/data/checkpoints/pretrain/blocklm-base-blank",
+                "--mt_num_layers=12:12",
+                "--mt_hidden_size=768:768",
+                "--mt_num_attention_heads=12:12",
+                "--mt_max_position_embeddings=512:512",
                 // 蒸馏 large
                 // "--teacher_load_pretrained=../GLM/data/checkpoints/pretrain/blocklm-large-blank",
                 // "--teacher_num_layers=24",
@@ -92,7 +96,7 @@
             "args": [
                 // deepspeed
                 "--master_port=14161",
-                "--include=localhost:0",
+                "--include=localhost:2",
                 "distill/finetune.py",
                 "--deepspeed_config=config/config_block_tiny6.json",
                 "--deepspeed-activation-checkpointing",
@@ -133,11 +137,10 @@
                 "--experiment-name=finetune_debug", // date +"%y%m%d_%H%M%S"
                 "--load-pretrained=../GLM/data/checkpoints/distill/tiny6/distill12-6.576+wikibook19G",
                 // 蒸馏
-                "--student_model=mixbaseline",
-                "--distill_temperature=10.",
-                "--minilmv2_relation_heads=48",
-                "--minilmv2_teacher_layer=12",
-                "--hidden-size=576",
+                "--student_model=tinybert",
+                "--mt_has_loss",
+                // "--mt_has_grad",
+                // "--student_use_empty_glm",
                 // 蒸馏 base
                 "--teacher_load_pretrained=../GLM/data/checkpoints/pretrain/blocklm-base-blank/finetune/COPA/blank-base-COPA-220813_064749",
                 // "--teacher_load_pretrained=../GLM/data/checkpoints/pretrain/blocklm-base-blank/finetune/ReCoRD/blank-base-ReCoRD-220813_083745",
@@ -146,6 +149,11 @@
                 "--teacher_num_attention_heads=12",
                 "--teacher_max_position_embeddings=512",
                 "--teacher_fp16",
+                "--mt_load_pretrained=../GLM/data/checkpoints/pretrain/blocklm-base-blank/finetune/COPA/blank-base-COPA-220813_064749:../GLM/data/checkpoints/pretrain/blocklm-base-blank/finetune/COPA/blank-base-COPA-220813_064749",
+                "--mt_num_layers=12:12",
+                "--mt_hidden_size=768:768",
+                "--mt_num_attention_heads=12:12",
+                "--mt_max_position_embeddings=512:512",
             ],
             "env": {
                 "NCCL_DEBUG":"info",

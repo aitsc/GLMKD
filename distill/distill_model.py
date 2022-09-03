@@ -2,7 +2,7 @@ import sys, os
 sys.path.append(os.getcwd())
 
 import torch
-from model import GLMModel
+from model import GLMModel, GLMModel_empty
 import mpu
 import torch.nn.functional as F
 from mpu import hook_model, hook_return, hook_reduce
@@ -16,13 +16,15 @@ from fp16 import fp32_to_fp16, fp16_to_fp32
 class GLMStudent(torch.nn.Module):
     def __init__(self, language_model: GLMModel, args, show_pre=True, show_inter=True, summary_loss=True, **kwargs):
         super().__init__()
-        self.origin_model = language_model
+        self.origin_model = GLMModel_empty(language_model) if args.student_use_empty_glm else language_model
         self.args = args
         self.pre_loss_description = ''
         self.show_pre = show_pre
         self.show_inter = show_inter
         self.summary_writer = None
         self.summary_loss = summary_loss
+        self.summary_suffix = ''  # 可用于多教师时增加标注
+        self.inter_show_hooks = {}  # 用于滞后展示,例如多教师情况
 
     def get_teacher_hook(self, **kwargs):
         return {}
@@ -34,29 +36,35 @@ class GLMStudent(torch.nn.Module):
         return self.origin_model(*inputs, **kwargs)
 
     def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, **kwargs):
+        self.inter_show_hooks = {
+            'student': hook_reduce(s_hook, s_inter_vars, filter=None),
+            'teacher': hook_reduce(t_hook, t_inter_vars, filter=None),
+        }
         # show
         if self.show_inter:
-            print_rank_0({'student': hook_reduce(s_hook, s_inter_vars, filter=None),
-                          'teacher': hook_reduce(t_hook, t_inter_vars, filter=None),})
+            print_rank_0(self.inter_show_hooks)
             self.show_inter = False
         return 0.
 
-    def pre_loss(self, s_logits, t_logits, loss, loss_mask=None, return_dict=False, **kwargs):
+    def pre_loss(self, s_logits, t_logits, loss, loss_mask=None, return_dict=False, labels=False, **kwargs):
         loss_ = 0.
         self.pre_loss_description = 'pre_loss: 0'
         T = self.args.distill_temperature
         if self.args.distill_wo_loss_mask:
-            loss_mask = None
+            loss_mask = labels = None
         loss_D = {}
         if self.args.finetune:
             if self.args.distill_ft_soft:
                 self.pre_loss_description += ' + distill_ft_soft(T%s)'%T
-                if loss_mask is None:
+                if loss_mask is None and labels is None:
                     loss_mask = 1.
                     self.pre_loss_description += '/wom'
+                elif labels is not None and self.args.distill_only_mask_pad:
+                    loss_mask = labels.view(*labels.size(), 1) > 0
+                    self.pre_loss_description += '/mask_pad'
                 else:  # 可用于 seq2seq_forward_step
                     loss_mask = loss_mask.view(*loss_mask.size(), 1)
-                    self.pre_loss_description += '/mask'
+                    self.pre_loss_description += '/mask_A_pad'
                 student_likelihood = F.log_softmax(s_logits * loss_mask / T, dim=-1).view(-1, s_logits.size(-1))
                 targets_prob = F.softmax(t_logits * loss_mask / T, dim=-1).view(-1, t_logits.size(-1))
                 if self.args.distill_ft_soft_kl:
@@ -75,12 +83,15 @@ class GLMStudent(torch.nn.Module):
         else:
             if self.args.distill_pt_soft:
                 self.pre_loss_description += ' + distill_pt_soft(T%s)'%T
-                if loss_mask is None:
+                if loss_mask is None and labels is None:
                     loss_mask = 1.
                     self.pre_loss_description += '/wom'
+                elif labels is not None and self.args.distill_only_mask_pad:
+                    loss_mask = labels.view(*labels.size(), 1) > 0
+                    self.pre_loss_description += '/mask_pad'
                 else:
                     loss_mask = loss_mask.view(*loss_mask.size(), 1)
-                    self.pre_loss_description += '/mask'
+                    self.pre_loss_description += '/mask_A_pad'
                 student_likelihood = F.log_softmax(s_logits * loss_mask / T, dim=-1).view(-1, s_logits.size(-1))
                 targets_prob = F.softmax(t_logits * loss_mask / T, dim=-1).view(-1, t_logits.size(-1))
                 if self.args.distill_pt_soft_ce:
@@ -136,7 +147,7 @@ class GLMStudent(torch.nn.Module):
             return False
         if self.args.iteration % self.args.log_interval == 0:
             value = value.item() if hasattr(value, 'item') else value
-            self.summary_writer.add_scalar(name, value, self.args.iteration)
+            self.summary_writer.add_scalar(name + self.summary_suffix, value, self.args.iteration)
             return True
         else:
             return False
@@ -181,7 +192,10 @@ def find_model_inter_var(model, name):
 class TinyBERT(GLMStudent):
     def __init__(self, language_model, args, **kwargs):
         super().__init__(language_model, args, **kwargs)
-        self.fit_dense = torch.nn.Linear(args.hidden_size, args.teacher_hidden_size)
+        if args.tinybert_fit_parallel:
+            self.fit_dense = mpu.ColumnParallelLinear(args.hidden_size, args.teacher_hidden_size)
+        else:
+            self.fit_dense = torch.nn.Linear(args.hidden_size, args.teacher_hidden_size)
 
     def get_teacher_hook(self, **kwargs):
         layers_per_block = int(self.args.teacher_num_layers / self.args.num_layers)
@@ -205,7 +219,7 @@ class TinyBERT(GLMStudent):
     def forward(self, *inputs, hook=None, **kwargs):
         inter_vars = []
         outputs = hook_model(hook, inter_vars, self.origin_model, *inputs, **kwargs)
-        if hook is not None and not self.args.tinybert_wo_inter:
+        if hook is not None and not self.args.tinybert_wo_inter and inter_vars:
             # {'transformer': {'layers':{0:{'layernorm_output':,'attention_scores':},..},'output':,..},..}
             for v in hook['transformer']['layers'].values():
                 inter_vars[v['layernorm_output']] = self.fit_dense(inter_vars[v['layernorm_output']])
@@ -364,7 +378,7 @@ class DistilBERT(GLMStudent):
     def pre_loss(self, s_logits, t_logits, loss, loss_mask=None, labels=None, **kwargs):
         loss_ = 0.
         if self.args.finetune:
-            return super().pre_loss(s_logits, t_logits, loss)
+            return super().pre_loss(s_logits, t_logits, loss, loss_mask=loss_mask, labels=labels, **kwargs)
         self.pre_loss_description = 'pre_loss: 0'
         if self.args.distilbert_alpha_ce > 0:
             T = self.args.distill_temperature
@@ -492,10 +506,12 @@ class ERDistill(GLMStudent):
 class MixBaseline(GLMStudent):
     def __init__(self, language_model, args, **kwargs):
         super().__init__(language_model, args, **kwargs)
-        self.inter_bl = ['TinyBERT', 'MiniLMv2', 'MiniLM', 'DistilBERT']
-        # 支持 pre_loss hard 的模型必须放在最后, 保证只算一次
-        self.pre_bl_pretrain_soft = ['DistilBERT', 'TinyBERT']  # 重复的预训练软标签构建方式不需要
-        self.pre_bl_finetune_soft = ['TinyBERT']  # 默认包含 KD(super())
+        self.inter_bl = args.mixbaseline_inter_bl.split(',')
+        # 支持 --distill_ft_hard 的模型必须放在最后, 保证只算一次
+        self.pre_bl_pretrain_soft = args.mixbaseline_pre_bl_pt_soft.split(',')  # 重复的预训练软标签构建方式不需要
+        self.pre_bl_pretrain_soft = [i for i in self.pre_bl_pretrain_soft if i]
+        self.pre_bl_finetune_soft = args.mixbaseline_pre_bl_ft_soft.split(',')  # 有 distill_ft 相关参数就等于包含 KD(super())
+        self.pre_bl_finetune_soft = [i for i in self.pre_bl_finetune_soft if i]
         self.baselines = set(self.inter_bl + self.pre_bl_pretrain_soft + self.pre_bl_finetune_soft)
         for c in self.baselines:
             setattr(self, c, eval(c)(language_model, args, show_pre=False, show_inter=False, summary_loss=False))
@@ -537,9 +553,11 @@ class MixBaseline(GLMStudent):
         loss_ = 0.
         show_pre = self.show_pre
         self.show_pre = False
-        distill_ft_hard, distill_pt_hard = self.args.distill_ft_hard, self.args.distill_pt_hard
-        self.args.distill_ft_hard = self.args.distill_pt_hard = False  # 硬标签只需要算一次
         pre_loss_description = ['all pre_loss:']
+        pre_bl = self.pre_bl_finetune_soft if self.args.finetune else self.pre_bl_pretrain_soft
+        distill_ft_hard, distill_pt_hard = self.args.distill_ft_hard, self.args.distill_pt_hard
+        if pre_bl:
+            self.args.distill_ft_hard = self.args.distill_pt_hard = False  # 硬标签只需要算一次
         # KD pre_loss
         if self.args.finetune:
             l = super().pre_loss(s_logits, t_logits, loss, **kwargs)
@@ -547,7 +565,6 @@ class MixBaseline(GLMStudent):
             loss_ += l
             pre_loss_description.append(f'\tKD - {self.pre_loss_description}')
         # other pre_loss
-        pre_bl = self.pre_bl_finetune_soft if self.args.finetune else self.pre_bl_pretrain_soft
         for i, c in enumerate(pre_bl):
             if i == len(pre_bl) - 1:
                 self.args.distill_ft_hard, self.args.distill_pt_hard = distill_ft_hard, distill_pt_hard
@@ -557,7 +574,7 @@ class MixBaseline(GLMStudent):
             l = getattr(self, c).pre_loss(s_logits, t_logits, loss, **kwargs)
             super().add_summary(f'pre_loss/{c}', l)
             loss_ += l
-            pre_loss_description.append(f'\t{c} - {self.pre_loss_description}')
+            pre_loss_description.append(f'\t{c} - {getattr(self, c).pre_loss_description}')
             self.args.distill_temperature = distill_temperature
         # show
         if show_pre:

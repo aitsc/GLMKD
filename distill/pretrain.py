@@ -3,22 +3,18 @@ sys.path.append(os.getcwd())
 
 from datetime import datetime
 import random
-import math
-import argparse
 
 import torch.distributed
 from filelock import FileLock
-import numpy as np
 import torch
 
-import deepspeed
 from contextlib import ExitStack
 from configure_data import configure_data, prepare_tokenizer, build_multi_task_dataset
 import mpu
 import pathlib
-from distill.teacher import get_args, get_teacher_model
+from distill.prepare import get_args, get_teacher_model, get_teachers_hook, mt_repeat_operation, glm_wrap, mt_model_load, NoneWith, truncate_teacher_as_student
 
-from train_utils import setup_model_and_optimizer, train_step, load_pretrained
+from train_utils import setup_model_and_optimizer
 from utils import Timers
 from utils import save_checkpoint
 from utils import load_checkpoint
@@ -28,13 +24,14 @@ from utils import print_rank_0
 from utils import get_sample_writer, get_log_dir, get_hostname
 import torch.distributed as dist
 from pretrain_glm import get_batch, evaluate_and_print_results, initialize_distributed, set_random_seed, get_train_val_test_data, train
-from distill.distill_model import student_model_D, unpacking_student_model
+from distill.distill_model import unpacking_student_model
 from mpu import hook_model
+from tsc_base import merge_dict
 
 tokenizer = None
 
 
-def forward_step(data_iterator, model, args, timers, mems, teacher_model=None):
+def forward_step(data_iterator, model, args, timers, mems, teacher_models=None):
     """Forward step."""
 
     # Get the batch.
@@ -56,27 +53,53 @@ def forward_step(data_iterator, model, args, timers, mems, teacher_model=None):
     else:
         mode = 'bert'
 
-    is_distill = teacher_model is not None
+    is_distill = teacher_models is not None and len(teacher_models) > 0
     student_model = unpacking_student_model(model)
-    s_inter_vars, t_inter_vars = [], []
+    s_inter_vars, t_inter_vars_L = [], []
     if is_distill:
-        t_hook, s_hook = student_model.get_teacher_hook(), student_model.get_student_hook()
+        s_hook = student_model.get_student_hook()
+        t_hook_L = get_teachers_hook(args, student_model)
+        t_inter_vars_L = [[] for _ in range(len(t_hook_L))]
     else:
-        t_hook = s_hook = None
+        t_hook_L = s_hook = None
+        teacher_models = []
     logits, *mems = hook_model(s_hook, s_inter_vars, model, tokens, position_ids, attention_mask, *mems)
-    losses = mpu.vocab_parallel_cross_entropy(logits.contiguous().float(), labels)
     loss_mask_ = loss_mask
     loss_mask = loss_mask.view(-1)
-    loss = torch.sum(losses.view(-1) * loss_mask)
-    if loss_mask.sum().item() > 0:
-        loss = loss / loss_mask.sum()
+
+    def compute_loss(logits):
+        losses = mpu.vocab_parallel_cross_entropy(logits.contiguous().float(), labels)
+        loss = torch.sum(losses.view(-1) * loss_mask)
+        if loss_mask.sum().item() > 0:
+            loss = loss / loss_mask.sum()
+        return loss
+    loss = compute_loss(logits)
 
     if is_distill:
-        with torch.no_grad():
-            logits_t, *mems_t = hook_model(t_hook, t_inter_vars, teacher_model, tokens, position_ids, attention_mask, *mems)
-        loss = student_model.pre_loss(logits, logits_t, loss, loss_mask=loss_mask_, labels=labels)
-        loss += student_model.inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, t_model=teacher_model, loss_mask=loss_mask_, labels=labels)
-
+        with NoneWith() if args.mt_has_grad else torch.no_grad():
+            t_out_L = mt_repeat_operation(
+                zip(t_hook_L, t_inter_vars_L, teacher_models),
+                lambda h, i, m: hook_model(h, i, m, tokens, position_ids, attention_mask, *mems),
+                lambda ret: {'logits': ret[0], 'mems': ret[1:]},
+            )
+        if args.mt_has_loss:
+            t_out_L = [merge_dict([i, j]) for i, j in zip(mt_repeat_operation(
+                t_out_L,
+                lambda logits, **k: compute_loss(logits),
+                lambda loss: {'loss': loss},
+            ), t_out_L)]
+        loss = student_model.multi_teacher_model.compute(
+            teacher_models = teacher_models,
+            t_hook_L = t_hook_L,
+            t_inter_vars_L = t_inter_vars_L,
+            t_out_L = t_out_L,
+            student_model = student_model,
+            s_hook = s_hook,
+            s_inter_vars = s_inter_vars,
+            s_out = {'logits': logits, 'loss': loss},
+            loss_mask = loss_mask_,
+            labels = labels,
+        )
     return loss, mems, mode
 
 
@@ -112,9 +135,9 @@ def main():
         multi_train_data, multi_val_data = build_multi_task_dataset(args, tokenizer)
 
     # Model, optimizer, and learning rate.
-    glm_wrap = student_model_D[args.student_model]
-    model, optimizer, lr_scheduler = setup_model_and_optimizer(args, glm_wrap=glm_wrap)
-
+    teacher_models=get_teacher_model(args)
+    glm_wrap_ = lambda **k: glm_wrap(**k, teacher_models=teacher_models)
+    model, optimizer, lr_scheduler = setup_model_and_optimizer(args, glm_wrap=glm_wrap_)
     if args.load is not None:
         with FileLock(os.path.join(pathlib.Path.home(), "checkpoint_lock"), timeout=-1):
             args.iteration = load_checkpoint(model, optimizer, lr_scheduler, args, no_deepspeed=args.no_deepspeed_load)
@@ -125,16 +148,11 @@ def main():
                 optimizer._model_params_to_master_params()
     else:
         args.iteration = 0
+    mt_model_load(model, args.mt_model_load)
+    truncate_teacher_as_student(model, teacher_models, args)
     torch.distributed.barrier()
     if args.switch_linear:
         lr_scheduler.switch_linear(args)
-
-    if args.teacher_load_pretrained:
-        teacher_model = get_teacher_model(args)
-        load_pretrained(teacher_model, args.teacher_load_pretrained, args)
-        teacher_model.eval()
-    else:
-        teacher_model = None
 
     summary_writer = None
     if torch.distributed.get_rank() == 0:
@@ -192,7 +210,7 @@ def main():
                                            lr_scheduler,
                                            (train_data_iterator, multi_train_iterator),
                                            (val_data_iterator, multi_val_iterator),
-                                           timers, args, summary_writer=summary_writer, teacher_model=teacher_model, forward_step_func=forward_step)
+                                           timers, args, summary_writer=summary_writer, teacher_models=teacher_models, forward_step_func=forward_step)
 
         if args.do_valid:
             prefix = 'the end of training for val data'

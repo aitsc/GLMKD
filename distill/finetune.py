@@ -4,7 +4,7 @@ sys.path.append(os.getcwd())
 import json
 from tasks.data_utils import build_data_loader, FakeDataloader
 from utils import get_sample_writer, get_log_dir, print_and_save_args
-from distill.teacher import get_args, get_teacher_model
+from distill.prepare import get_args, get_teacher_model, get_teachers_hook, mt_repeat_operation, glm_wrap, mt_model_load, NoneWith, truncate_teacher_as_student
 from filelock import FileLock
 import pretrain_glm
 from pretrain_glm import initialize_distributed, set_random_seed, get_batch
@@ -14,7 +14,7 @@ import mpu
 import torch
 import torch.utils.data
 from configure_data import prepare_tokenizer
-from distill.distill_model import student_model_D, unpacking_student_model
+from distill.distill_model import unpacking_student_model
 
 from utils import print_rank_0
 from utils import Timers
@@ -23,11 +23,12 @@ from utils import load_checkpoint, save_checkpoint
 from configure_data import make_data_loader
 from finetune_glm import _train, _build_train_valid_dataloaders, process_batch, mix_forward_step
 from mpu import hook_model
+from tsc_base import merge_dict
 
 tokenizer = None
 
 
-def finetune_forward_step(batch, model, args, timers, mems, teacher_model=None):
+def finetune_forward_step(batch, model, args, timers, mems, teacher_models=None):
     """Simple forward step with cross-entropy loss."""
     # Get the batch.
     timers('batch generator').start()
@@ -39,92 +40,121 @@ def finetune_forward_step(batch, model, args, timers, mems, teacher_model=None):
     data = process_batch(batch_, args)
     timers('batch generator').stop()
 
-    is_distill = teacher_model is not None
+    is_distill = teacher_models is not None and len(teacher_models) > 0
     student_model = unpacking_student_model(model)
-    s_inter_vars, t_inter_vars = [], []
+    s_inter_vars, t_inter_vars_L = [], []
     if is_distill:
-        t_hook, s_hook = student_model.get_teacher_hook(), student_model.get_student_hook()
+        s_hook = student_model.get_student_hook()
+        t_hook_L = get_teachers_hook(args, student_model)
+        t_inter_vars_L = [[] for _ in range(len(t_hook_L))]
     else:
-        t_hook = s_hook = None
+        t_hook_L = s_hook = None
+        teacher_models = []
+        
     # Forward model.
     if args.pretrained_bert:
         tokens, types, labels, attention_mask = data['text'], data['types'], data['label'], data['padding_mask']
-        logits = model(tokens, token_type_ids=types, attention_mask=attention_mask, checkpoint_activations=True)
     elif args.cloze_eval:
         tokens, labels, position_ids = data['text'], data['label'], data['position']
         attention_mask = data['mask']
-
         if not args.fast_decode:
             target_ids, logit_mask = data['target'], data['logit_mask']
             m_in, m_kw = [tokens, position_ids, attention_mask, target_ids, logit_mask], {}
             if args.continuous_prompt:
                 m_kw['prompt_pos'] = data["prompt_pos"]
-            result = hook_model(s_hook, s_inter_vars, model, *m_in, **m_kw)
-            with torch.no_grad():
-                result_t = hook_model(t_hook, t_inter_vars, teacher_model, *m_in, **m_kw) if is_distill else None
-            if not args.multi_token:
-                logits, lm_logits, *mems = result
-                logits_t, lm_logits_t, *mems_t = result_t if is_distill else (None, None,)
-            else:
-                logits, *mems = result
-                logits_t, *mems_t = result_t if is_distill else (None,)
         else:
             dec_input_ids, dec_position_ids, dec_attention_mask = data['dec_text'], data['dec_position'], data[
                 'dec_mask']
             dec_target_ids, dec_logit_mask = data['dec_target'], data['dec_logit_mask']
-            logits, *mems = model(tokens, position_ids, attention_mask, dec_input_ids, dec_position_ids,
-                                  dec_attention_mask, dec_target_ids, dec_logit_mask)
     else:
         tokens, labels, position_ids, attention_mask = data['text'], data['label'], data['position'], data['mask']
         m_in = [tokens, position_ids, attention_mask]
         m_kw = {}
-        logits, *mems = hook_model(s_hook, s_inter_vars, model, *m_in, **m_kw)
-        with torch.no_grad():
-            logits_t, *mems_t = hook_model(t_hook, t_inter_vars, teacher_model, *m_in, **m_kw) if is_distill else (None,)
-
-    if args.adapet:
-        batch_size, num_classes = logits.size()[:2]
-        label_mask = torch.ones(batch_size, num_classes, device=logits.device)
-        label_mask.scatter_(1, labels.unsqueeze(1), -1.0)
-        if "loss_mask" in data:
-            loss_mask = data["loss_mask"]
-            label_mask = label_mask * loss_mask
-        loss = logits.contiguous().float() * label_mask
-        loss = loss.sum() / batch_size
-    else:
-        if "segment_id" in data:
-            from torch_scatter import scatter_sum
-            if "loss_mask" in data:
-                logits = logits * data["loss_mask"]
-                logits_t = logits_t * data["loss_mask"] if is_distill else None
-            logits = scatter_sum(logits, data["segment_id"], dim=1)
-            logits_t = scatter_sum(logits_t, data["segment_id"], dim=1) if is_distill else None
-        elif "loss_mask" in data:
-            loss_mask = data["loss_mask"]
-            logits = logits * loss_mask - 10000.0 * (1.0 - loss_mask)
-            logits_t = logits_t * loss_mask - 10000.0 * (1.0 - loss_mask) if is_distill else None
-        if args.loss_func == "cross_entropy":
-            # Cross-entropy loss.
-            loss_func = torch.nn.CrossEntropyLoss()
-            loss = loss_func(logits.contiguous().float(), labels)
-        elif args.loss_func == "hinge":
-            correct_logits = logits[range(logits.size(0)), labels]
-            hinge_loss = 1 + logits - correct_logits.unsqueeze(1)
-            hinge_loss[hinge_loss < 0.0] = 0.0
-            loss = hinge_loss.sum(dim=1).mean() - 1.0
-        elif args.loss_func == "generative" or args.loss_func == "mix":
-            batch_size = logits.size(0)
-            loss = - logits[range(batch_size), labels].mean()
-            if args.loss_func == "mix":
-                loss_func = torch.nn.CrossEntropyLoss()
-                loss = loss + loss_func(logits.contiguous().float(), labels)
+        
+    def get_logits(h, i, m, no_grad=False):
+        if args.pretrained_bert:
+            logits = model(tokens, token_type_ids=types, attention_mask=attention_mask, checkpoint_activations=True)
+        elif args.cloze_eval:
+            if not args.fast_decode:
+                with torch.no_grad() if no_grad else NoneWith():
+                    result = hook_model(h, i, m, *m_in, **m_kw)
+                if not args.multi_token:
+                    logits, lm_logits, *mems = result
+                else:
+                    logits, *mems = result
+            else:
+                logits, *mems = model(tokens, position_ids, attention_mask, dec_input_ids, dec_position_ids,
+                                    dec_attention_mask, dec_target_ids, dec_logit_mask)
         else:
-            raise NotImplementedError
+            with torch.no_grad() if no_grad else NoneWith():
+                logits, *mems = hook_model(h, i, m, *m_in, **m_kw)
+        if not args.adapet:
+            if "segment_id" in data:
+                from torch_scatter import scatter_sum
+                if "loss_mask" in data:
+                    logits = logits * data["loss_mask"]
+                logits = scatter_sum(logits, data["segment_id"], dim=1)
+            elif "loss_mask" in data:
+                loss_mask = data["loss_mask"]
+                logits = logits * loss_mask - 10000.0 * (1.0 - loss_mask)
+        return logits, mems
+    logits, mems = get_logits(s_hook, s_inter_vars, model)
+
+    # loss
+    def get_loss(logits):
+        if args.adapet:
+            batch_size, num_classes = logits.size()[:2]
+            label_mask = torch.ones(batch_size, num_classes, device=logits.device)
+            label_mask.scatter_(1, labels.unsqueeze(1), -1.0)
+            if "loss_mask" in data:
+                loss_mask = data["loss_mask"]
+                label_mask = label_mask * loss_mask
+            loss = logits.contiguous().float() * label_mask
+            loss = loss.sum() / batch_size
+        else:
+            if args.loss_func == "cross_entropy":
+                # Cross-entropy loss.
+                loss_func = torch.nn.CrossEntropyLoss()
+                loss = loss_func(logits.contiguous().float(), labels)
+            elif args.loss_func == "hinge":
+                correct_logits = logits[range(logits.size(0)), labels]
+                hinge_loss = 1 + logits - correct_logits.unsqueeze(1)
+                hinge_loss[hinge_loss < 0.0] = 0.0
+                loss = hinge_loss.sum(dim=1).mean() - 1.0
+            elif args.loss_func == "generative" or args.loss_func == "mix":
+                batch_size = logits.size(0)
+                loss = - logits[range(batch_size), labels].mean()
+                if args.loss_func == "mix":
+                    loss_func = torch.nn.CrossEntropyLoss()
+                    loss = loss + loss_func(logits.contiguous().float(), labels)
+            else:
+                raise NotImplementedError
+        return loss
+    loss = get_loss(logits)
 
     if is_distill:
-        loss = student_model.pre_loss(logits, logits_t, loss)
-        loss += student_model.inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, t_model=teacher_model)
-
+        t_out_L = mt_repeat_operation(
+            zip(t_hook_L, t_inter_vars_L, teacher_models),
+            lambda h, i, m: get_logits(h, i, m, no_grad=not args.mt_has_grad),
+            lambda ret: {'logits': ret[0], 'mems': ret[1]},
+        )
+        if args.mt_has_loss:
+            t_out_L = [merge_dict([i, j]) for i, j in zip(mt_repeat_operation(
+                t_out_L,
+                lambda logits, **k: get_loss(logits),
+                lambda loss: {'loss': loss},
+            ), t_out_L)]
+        loss = student_model.multi_teacher_model.compute(
+            teacher_models = teacher_models,
+            t_hook_L = t_hook_L,
+            t_inter_vars_L = t_inter_vars_L,
+            t_out_L = t_out_L,
+            student_model = student_model,
+            s_hook = s_hook,
+            s_inter_vars = s_inter_vars,
+            s_out = {'logits': logits, 'loss': loss},
+            labels = labels,
+        )
     return loss, mems, 'bert'
 
 
@@ -190,16 +220,10 @@ def finetune(args, train_valid_datasets_provider, model_kwargs, forward_step=fin
 
     # Build model, optimizer and learning rate scheduler.
     timers('model and optimizer').start()
-    glm_wrap = student_model_D[args.student_model]
-    model, optimizer, lr_scheduler = setup_model_and_optimizer(args, **model_kwargs, glm_wrap=glm_wrap)
+    teacher_models=get_teacher_model(args, **model_kwargs)
+    glm_wrap_ = lambda **k: glm_wrap(**k, teacher_models=teacher_models)
+    model, optimizer, lr_scheduler = setup_model_and_optimizer(args, **model_kwargs, glm_wrap=glm_wrap_)
     timers('model and optimizer').stop()
-
-    if args.teacher_load_pretrained:
-        teacher_model = get_teacher_model(args, **model_kwargs)
-        load_pretrained(teacher_model, args.teacher_load_pretrained, args)
-        teacher_model.eval()
-    else:
-        teacher_model = None
 
     # If pretrained checkpoint is provided and we have not trained for
     # any iteration (i.e., iteration is zero), then load the pretrained
@@ -251,6 +275,8 @@ def finetune(args, train_valid_datasets_provider, model_kwargs, forward_step=fin
                 optimizer.refresh_fp32_params()
             else:
                 optimizer._model_params_to_master_params()
+    mt_model_load(model, args.mt_model_load)
+    truncate_teacher_as_student(model, teacher_models, args)
     torch.distributed.barrier()
     timers('pretrained checkpoint').stop()
     args.iteration = 0
@@ -279,7 +305,7 @@ def finetune(args, train_valid_datasets_provider, model_kwargs, forward_step=fin
         best_iteration = _train(model, optimizer, lr_scheduler, forward_step,
                                 (train_dataloader, train_block_dataloader), (valid_dataloader, valid_block_dataloader),
                                 end_of_epoch_callback, args, timers,
-                                summary_writer=summary_writer, teacher_model=teacher_model)
+                                summary_writer=summary_writer, teacher_models=teacher_models)
         if end_of_train_callback is not None and best_iteration is not None:
             with FileLock(os.path.join(pathlib.Path.home(), "checkpoint_lock"), timeout=-1):
                 args.load = os.path.join(args.save, "best")

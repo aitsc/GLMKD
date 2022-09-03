@@ -16,7 +16,7 @@ def get_args():
     py_parser = argparse.ArgumentParser(add_help=False)
     # generic
     py_parser.add_argument('--student_model', type=str, default=None)
-    py_parser.add_argument('--student_truncate', type=int, default=None, help='如果有的话选择第n个教师前几层截断作为初始化')
+    py_parser.add_argument('--student_truncate_tn', type=int, default=None, help='如果有的话代表选择第几个教师前面层截断作为初始化(长于学生的维度靠前截断参数,短于学生的维度默认学生参数不变)')
     py_parser.add_argument('--distill_ft_soft', action='store_true')
     py_parser.add_argument('--distill_ft_hard', action='store_true')
     py_parser.add_argument('--distill_pt_soft', action='store_true')
@@ -210,7 +210,28 @@ def mt_model_load(model, checkpoint_path):
 
 def truncate_teacher_as_student(model, teacher_models, args):
     # 提取教师模型的部分glm参数作为学生模型的初始化
-    student_model = unpacking_student_model(model)
+    if args.student_truncate_tn is None or len(teacher_models) <= args.student_truncate_tn:
+        return False
+    s_model = unpacking_student_model(model).origin_model
+    t_model = teacher_models[args.student_truncate_tn]
+    s_sd = s_model.state_dict()
+    s_sd_new = {}  # {'状态名称':张量,..}
+    print_rank_0(f'从教师模型 {args.student_truncate_tn} 中截断出学生模型参数 ...')
+    for k, v in t_model.state_dict().items():
+        if k not in s_sd:
+            continue
+        if s_sd[k].size() != v.size():
+            print_rank_0(f'trim {k}: {v.size()} -> {s_sd[k].size()}')
+            min_size = [slice(0, min(i)) for i in zip(s_sd[k].size(), v.size())]
+            s_sd_new[k] = s_sd[k].clone()
+            s_sd_new[k][min_size] = v[min_size].clone()
+        else:
+            s_sd_new[k] = v.clone()
+    missing_keys, unexpected_keys = s_model.load_state_dict(s_sd_new, strict=False)
+    if missing_keys or unexpected_keys:
+        print_rank_0(f"Missing keys {missing_keys}, unexpected keys {unexpected_keys}")
+        time.sleep(3)
+    return True
 
 
 class NoneWith:

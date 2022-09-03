@@ -113,9 +113,8 @@ def lm_forward_step(data, model, args, timers, mems, eval_metric=None, teacher_m
     def get_loss(logits):
         if eval_metric is None or eval_metric == 'loss':
             losses = mpu.vocab_parallel_cross_entropy(logits.contiguous().float(), labels)
-            loss_mask = loss_mask.view(-1)
             # The loss is not normalized for fair comparison
-            loss = torch.sum(losses.view(-1) * loss_mask)
+            loss = torch.sum(losses.view(-1) * loss_mask.view(-1))
             if eval_metric is None:
                 loss = loss / loss_mask.sum()
         elif eval_metric == 'accuracy' or eval_metric == 'classify':

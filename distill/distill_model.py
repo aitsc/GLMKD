@@ -393,7 +393,9 @@ class MixBaseline(GLMStudent):
         self.inter_bl = args.mixbaseline_inter_bl.split(',')
         # 支持 --distill_ft_hard 的模型必须放在最后, 保证只算一次
         self.pre_bl_pretrain_soft = args.mixbaseline_pre_bl_pt_soft.split(',')  # 重复的预训练软标签构建方式不需要
+        self.pre_bl_pretrain_soft = [i for i in self.pre_bl_pretrain_soft if i]
         self.pre_bl_finetune_soft = args.mixbaseline_pre_bl_ft_soft.split(',')  # 有 distill_ft 相关参数就等于包含 KD(super())
+        self.pre_bl_finetune_soft = [i for i in self.pre_bl_finetune_soft if i]
         self.baselines = set(self.inter_bl + self.pre_bl_pretrain_soft + self.pre_bl_finetune_soft)
         for c in self.baselines:
             setattr(self, c, eval(c)(language_model, args, show_pre=False, show_inter=False, summary_loss=False))
@@ -435,9 +437,11 @@ class MixBaseline(GLMStudent):
         loss_ = 0.
         show_pre = self.show_pre
         self.show_pre = False
-        distill_ft_hard, distill_pt_hard = self.args.distill_ft_hard, self.args.distill_pt_hard
-        self.args.distill_ft_hard = self.args.distill_pt_hard = False  # 硬标签只需要算一次
         pre_loss_description = ['all pre_loss:']
+        pre_bl = self.pre_bl_finetune_soft if self.args.finetune else self.pre_bl_pretrain_soft
+        distill_ft_hard, distill_pt_hard = self.args.distill_ft_hard, self.args.distill_pt_hard
+        if pre_bl:
+            self.args.distill_ft_hard = self.args.distill_pt_hard = False  # 硬标签只需要算一次
         # KD pre_loss
         if self.args.finetune:
             l = super().pre_loss(s_logits, t_logits, loss, **kwargs)
@@ -445,7 +449,6 @@ class MixBaseline(GLMStudent):
             loss_ += l
             pre_loss_description.append(f'\tKD - {self.pre_loss_description}')
         # other pre_loss
-        pre_bl = self.pre_bl_finetune_soft if self.args.finetune else self.pre_bl_pretrain_soft
         for i, c in enumerate(pre_bl):
             if i == len(pre_bl) - 1:
                 self.args.distill_ft_hard, self.args.distill_pt_hard = distill_ft_hard, distill_pt_hard

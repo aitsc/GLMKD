@@ -96,7 +96,7 @@
             "args": [
                 // deepspeed
                 "--master_port=14161",
-                "--include=localhost:2",
+                "--include=localhost:0",
                 "distill/finetune.py",
                 "--deepspeed_config=config/config_block_tiny6.json",
                 "--deepspeed-activation-checkpointing",

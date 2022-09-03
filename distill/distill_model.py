@@ -2,7 +2,7 @@ import sys, os
 sys.path.append(os.getcwd())
 
 import torch
-from model import GLMModel
+from model import GLMModel, GLMModel_empty
 import mpu
 import torch.nn.functional as F
 from mpu import hook_model, hook_return, hook_reduce
@@ -16,13 +16,15 @@ from fp16 import fp32_to_fp16, fp16_to_fp32
 class GLMStudent(torch.nn.Module):
     def __init__(self, language_model: GLMModel, args, show_pre=True, show_inter=True, summary_loss=True, **kwargs):
         super().__init__()
-        self.origin_model = language_model
+        self.origin_model = GLMModel_empty(language_model) if args.student_use_empty_glm else language_model
         self.args = args
         self.pre_loss_description = ''
         self.show_pre = show_pre
         self.show_inter = show_inter
         self.summary_writer = None
         self.summary_loss = summary_loss
+        self.summary_suffix = ''  # 可用于多教师时增加标注
+        self.inter_show_hooks = {}  # 用于滞后展示,例如多教师情况
 
     def get_teacher_hook(self, **kwargs):
         return {}
@@ -34,10 +36,13 @@ class GLMStudent(torch.nn.Module):
         return self.origin_model(*inputs, **kwargs)
 
     def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, **kwargs):
+        self.inter_show_hooks = {
+            'student': hook_reduce(s_hook, s_inter_vars, filter=None),
+            'teacher': hook_reduce(t_hook, t_inter_vars, filter=None),
+        }
         # show
         if self.show_inter:
-            print_rank_0({'student': hook_reduce(s_hook, s_inter_vars, filter=None),
-                          'teacher': hook_reduce(t_hook, t_inter_vars, filter=None),})
+            print_rank_0(self.inter_show_hooks)
             self.show_inter = False
         return 0.
 
@@ -142,7 +147,7 @@ class GLMStudent(torch.nn.Module):
             return False
         if self.args.iteration % self.args.log_interval == 0:
             value = value.item() if hasattr(value, 'item') else value
-            self.summary_writer.add_scalar(name, value, self.args.iteration)
+            self.summary_writer.add_scalar(name + self.summary_suffix, value, self.args.iteration)
             return True
         else:
             return False
@@ -190,7 +195,7 @@ class TinyBERT(GLMStudent):
     def forward(self, *inputs, hook=None, **kwargs):
         inter_vars = []
         outputs = hook_model(hook, inter_vars, self.origin_model, *inputs, **kwargs)
-        if hook is not None and not self.args.tinybert_wo_inter:
+        if hook is not None and not self.args.tinybert_wo_inter and inter_vars:
             # {'transformer': {'layers':{0:{'layernorm_output':,'attention_scores':},..},'output':,..},..}
             for v in hook['transformer']['layers'].values():
                 inter_vars[v['layernorm_output']] = self.fit_dense(inter_vars[v['layernorm_output']])

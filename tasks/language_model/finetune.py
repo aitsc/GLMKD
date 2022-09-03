@@ -28,11 +28,13 @@ from pretrain_glm import get_batch
 from finetune_glm import finetune
 from mpu import hook_model
 from distill.distill_model import unpacking_student_model
+from tsc_base import merge_dict
+from distill.prepare import get_teachers_hook, mt_repeat_operation, NoneWith
 
 global_tokenizer = None
 
 
-def lm_forward_step(data, model, args, timers, mems, eval_metric=None, teacher_model=None):
+def lm_forward_step(data, model, args, timers, mems, eval_metric=None, teacher_models=None):
     """Forward step."""
     # Get the batch.
     if timers is not None:
@@ -90,45 +92,70 @@ def lm_forward_step(data, model, args, timers, mems, eval_metric=None, teacher_m
                   global_tokenizer.DecodeIds(labels[batch_id, last_index:].tolist()))
             print(position_ids_[batch_id, last_index:].tolist(), block_position_ids[batch_id, last_index:].tolist())
 
-    is_distill = teacher_model is not None
+    is_distill = teacher_models is not None and len(teacher_models) > 0
     student_model = unpacking_student_model(model)
-    s_inter_vars, t_inter_vars = [], []
+    s_inter_vars, t_inter_vars_L = [], []
     if is_distill:
-        t_hook, s_hook = student_model.get_teacher_hook(), student_model.get_student_hook()
+        s_hook = student_model.get_student_hook()
+        t_hook_L = get_teachers_hook(args, student_model)
+        t_inter_vars_L = [[] for _ in range(len(t_hook_L))]
     else:
-        t_hook = s_hook = None
+        t_hook_L = s_hook = None
+        teacher_models = []
+
     # Forward model.
     m_in = [tokens, position_ids, attention_mask, *mems]
     m_kw = {}
     if args.continuous_prompt:
         m_kw['prompt_pos'] = data["prompt_pos"].long().cuda()
     logits, *mems = hook_model(s_hook, s_inter_vars, model, *m_in, **m_kw)
-    with torch.no_grad():
-        logits_t, *mems_t = hook_model(t_hook, t_inter_vars, teacher_model, *m_in, **m_kw) if is_distill else (None,)
-        
-    if eval_metric is None or eval_metric == 'loss':
-        losses = mpu.vocab_parallel_cross_entropy(logits.contiguous().float(), labels)
-        loss_mask = loss_mask.view(-1)
-        # The loss is not normalized for fair comparison
-        loss = torch.sum(losses.view(-1) * loss_mask)
-        if eval_metric is None:
-            loss = loss / loss_mask.sum()
-    elif eval_metric == 'accuracy' or eval_metric == 'classify':
-        logits = mpu.gather_from_model_parallel_region(logits)
-        outputs = torch.argmax(logits, -1)
-        correct = (outputs == labels).float()
-        correct[(1 - loss_mask).bool()] = 1
-        correct = correct.prod(-1)
-        if eval_metric == 'accuracy':
-            correct = correct.sum()
-        loss = correct
-    else:
-        raise NotImplementedError("Metric {} not implemented".format(eval_metric))
+    # loss
+    def get_loss(logits):
+        if eval_metric is None or eval_metric == 'loss':
+            losses = mpu.vocab_parallel_cross_entropy(logits.contiguous().float(), labels)
+            loss_mask = loss_mask.view(-1)
+            # The loss is not normalized for fair comparison
+            loss = torch.sum(losses.view(-1) * loss_mask)
+            if eval_metric is None:
+                loss = loss / loss_mask.sum()
+        elif eval_metric == 'accuracy' or eval_metric == 'classify':
+            logits = mpu.gather_from_model_parallel_region(logits)
+            outputs = torch.argmax(logits, -1)
+            correct = (outputs == labels).float()
+            correct[(1 - loss_mask).bool()] = 1
+            correct = correct.prod(-1)
+            if eval_metric == 'accuracy':
+                correct = correct.sum()
+            loss = correct
+        else:
+            raise NotImplementedError("Metric {} not implemented".format(eval_metric))
+        return loss
+    loss = get_loss(logits)
 
     if is_distill:
-        loss = student_model.pre_loss(logits, logits_t, loss)
-        loss += student_model.inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, t_model=teacher_model)
-
+        with NoneWith() if args.mt_has_grad else torch.no_grad():
+            t_out_L = mt_repeat_operation(
+                zip(t_hook_L, t_inter_vars_L, teacher_models),
+                lambda h, i, m: hook_model(h, i, m, *m_in, **m_kw),
+                lambda ret: {'logits': ret[0], 'mems': ret[1:]},
+            )
+        if args.mt_has_loss:
+            t_out_L = [merge_dict([i, j]) for i, j in zip(mt_repeat_operation(
+                t_out_L,
+                lambda logits, **k: get_loss(logits),
+                lambda loss: {'loss': loss},
+            ), t_out_L)]
+        loss = student_model.multi_teacher_model.compute(
+            teacher_models = teacher_models,
+            t_hook_L = t_hook_L,
+            t_inter_vars_L = t_inter_vars_L,
+            t_out_L = t_out_L,
+            student_model = student_model,
+            s_hook = s_hook,
+            s_inter_vars = s_inter_vars,
+            s_out = {'logits': logits, 'loss': loss},
+            labels = labels,
+        )
     return loss, mems, 'bert'
 
 

@@ -56,12 +56,12 @@ class GLMStudent(torch.nn.Module):
         if self.args.finetune:
             if self.args.distill_ft_soft:
                 self.pre_loss_description += ' + distill_ft_soft(T%s)'%T
-                if loss_mask is None and labels is None:
-                    loss_mask = 1.
-                    self.pre_loss_description += '/wom'
-                elif labels is not None and self.args.distill_only_mask_pad:
+                if labels is not None and self.args.distill_only_mask_pad:
                     loss_mask = labels.view(*labels.size(), 1) > 0
                     self.pre_loss_description += '/mask_pad'
+                elif loss_mask is None:
+                    loss_mask = 1.
+                    self.pre_loss_description += '/wom'
                 else:  # 可用于 seq2seq_forward_step
                     loss_mask = loss_mask.view(*loss_mask.size(), 1)
                     self.pre_loss_description += '/mask_A_pad'
@@ -87,12 +87,12 @@ class GLMStudent(torch.nn.Module):
         else:
             if self.args.distill_pt_soft:
                 self.pre_loss_description += ' + distill_pt_soft(T%s)'%T
-                if loss_mask is None and labels is None:
-                    loss_mask = 1.
-                    self.pre_loss_description += '/wom'
-                elif labels is not None and self.args.distill_only_mask_pad:
+                if labels is not None and self.args.distill_only_mask_pad:
                     loss_mask = labels.view(*labels.size(), 1) > 0
                     self.pre_loss_description += '/mask_pad'
+                elif loss_mask is None:
+                    loss_mask = 1.
+                    self.pre_loss_description += '/wom'
                 else:
                     loss_mask = loss_mask.view(*loss_mask.size(), 1)
                     self.pre_loss_description += '/mask_A_pad'

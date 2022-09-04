@@ -26,7 +26,8 @@ class AvgTeacher(torch.nn.Module):
             loss += student_model.inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, t_model=t_model, loss_mask=loss_mask, labels=labels)
             loss_L.append(loss)
             inter_show_hooks.update(student_model.inter_show_hooks)
-            inter_show_hooks[f'teacher_{i}'] = inter_show_hooks['teacher']
+            if 'teacher' in inter_show_hooks:
+                inter_show_hooks[f'teacher_{i}'] = inter_show_hooks['teacher']
             student_model.add_summary(f'teacher_loss/teacher_{i}', loss)
             
         student_model.summary_suffix = summary_suffix  # 复原
@@ -39,4 +40,5 @@ class AvgTeacher(torch.nn.Module):
 
 multi_teacher_model_D = {
     None: AvgTeacher,
+    'tmkd': AvgTeacher,
 }

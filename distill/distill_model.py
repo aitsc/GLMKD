@@ -65,12 +65,16 @@ class GLMStudent(torch.nn.Module):
                 else:  # 可用于 seq2seq_forward_step
                     loss_mask = loss_mask.view(*loss_mask.size(), 1)
                     self.pre_loss_description += '/mask_A_pad'
-                student_likelihood = F.log_softmax(s_logits * loss_mask / T, dim=-1).view(-1, s_logits.size(-1))
-                targets_prob = F.softmax(t_logits * loss_mask / T, dim=-1).view(-1, t_logits.size(-1))
-                if self.args.distill_ft_soft_kl:
-                    l = F.kl_div(student_likelihood, targets_prob, reduction="batchmean") * T ** 2
+                if self.args.distill_ft_soft_mse:
+                    l = F.mse_loss(s_logits * loss_mask, t_logits * loss_mask)
+                    self.pre_loss_description += '(mse)'
                 else:
-                    l = (- targets_prob * student_likelihood).mean()
+                    student_likelihood = F.log_softmax(s_logits * loss_mask / T, dim=-1).view(-1, s_logits.size(-1))
+                    targets_prob = F.softmax(t_logits * loss_mask / T, dim=-1).view(-1, t_logits.size(-1))
+                    if self.args.distill_ft_soft_kl:
+                        l = F.kl_div(student_likelihood, targets_prob, reduction="batchmean") * T ** 2
+                    else:
+                        l = (- targets_prob * student_likelihood).mean()
                 l = mpu.gather_from_model_parallel_region(l).mean()
                 self.add_summary('pre_loss/ft_soft', l)
                 loss_ += l
@@ -78,7 +82,7 @@ class GLMStudent(torch.nn.Module):
             if self.args.distill_ft_hard:
                 self.pre_loss_description += ' + distill_ft_hard'
                 self.add_summary('pre_loss/ft_hard', loss)
-                loss_ += loss
+                loss_ += loss * self.args.distill_hard_rate
                 loss_D['hard'] = l
         else:
             if self.args.distill_pt_soft:
@@ -92,12 +96,16 @@ class GLMStudent(torch.nn.Module):
                 else:
                     loss_mask = loss_mask.view(*loss_mask.size(), 1)
                     self.pre_loss_description += '/mask_A_pad'
-                student_likelihood = F.log_softmax(s_logits * loss_mask / T, dim=-1).view(-1, s_logits.size(-1))
-                targets_prob = F.softmax(t_logits * loss_mask / T, dim=-1).view(-1, t_logits.size(-1))
-                if self.args.distill_pt_soft_ce:
-                    l = (- targets_prob * student_likelihood).mean()
+                if self.args.distill_pt_soft_mse:
+                    l = F.mse_loss(s_logits * loss_mask, t_logits * loss_mask)
+                    self.pre_loss_description += '(mse)'
                 else:
-                    l = F.kl_div(student_likelihood, targets_prob, reduction="batchmean") * T ** 2
+                    student_likelihood = F.log_softmax(s_logits * loss_mask / T, dim=-1).view(-1, s_logits.size(-1))
+                    targets_prob = F.softmax(t_logits * loss_mask / T, dim=-1).view(-1, t_logits.size(-1))
+                    if self.args.distill_pt_soft_ce:
+                        l = (- targets_prob * student_likelihood).mean()
+                    else:
+                        l = F.kl_div(student_likelihood, targets_prob, reduction="batchmean") * T ** 2
                 l = mpu.gather_from_model_parallel_region(l).mean()
                 self.add_summary('pre_loss/pt_soft', l)
                 loss_ += l
@@ -105,7 +113,7 @@ class GLMStudent(torch.nn.Module):
             if self.args.distill_pt_hard:
                 self.pre_loss_description += ' + distill_pt_hard'
                 self.add_summary('pre_loss/pt_hard', loss)
-                loss_ += loss
+                loss_ += loss * self.args.distill_hard_rate
                 loss_D['hard'] = l
         loss_D['loss'] = loss_
         # show

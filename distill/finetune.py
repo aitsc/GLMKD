@@ -72,6 +72,7 @@ def finetune_forward_step(batch, model, args, timers, mems, teacher_models=None)
         m_kw = {}
         
     def get_logits(h, i, m, no_grad=False):
+        # 必须是 model 直出的结果, 防止和测试过程中的不一致
         if args.pretrained_bert:
             logits = model(tokens, token_type_ids=types, attention_mask=attention_mask, checkpoint_activations=True)
         elif args.cloze_eval:
@@ -88,15 +89,6 @@ def finetune_forward_step(batch, model, args, timers, mems, teacher_models=None)
         else:
             with torch.no_grad() if no_grad else NoneWith():
                 logits, *mems = hook_model(h, i, m, *m_in, **m_kw)
-        if not args.adapet:
-            if "segment_id" in data:
-                from torch_scatter import scatter_sum
-                if "loss_mask" in data:
-                    logits = logits * data["loss_mask"]
-                logits = scatter_sum(logits, data["segment_id"], dim=1)
-            elif "loss_mask" in data:
-                loss_mask = data["loss_mask"]
-                logits = logits * loss_mask - 10000.0 * (1.0 - loss_mask)
         return logits, mems
     logits, mems = get_logits(s_hook, s_inter_vars, model)
 
@@ -112,6 +104,14 @@ def finetune_forward_step(batch, model, args, timers, mems, teacher_models=None)
             loss = logits.contiguous().float() * label_mask
             loss = loss.sum() / batch_size
         else:
+            if "segment_id" in data:
+                from torch_scatter import scatter_sum
+                if "loss_mask" in data:
+                    logits = logits * data["loss_mask"]
+                logits = scatter_sum(logits, data["segment_id"], dim=1)
+            elif "loss_mask" in data:
+                loss_mask = data["loss_mask"]
+                logits = logits * loss_mask - 10000.0 * (1.0 - loss_mask)
             if args.loss_func == "cross_entropy":
                 # Cross-entropy loss.
                 loss_func = torch.nn.CrossEntropyLoss()

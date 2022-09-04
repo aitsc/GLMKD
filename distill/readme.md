@@ -32,10 +32,10 @@ finetune: ... --student_model=pkd --distill_ft_soft --distill_ft_soft_kl --disti
 
 
 # 多教师蒸馏命令
-- 多教师参数: ... --mt_num_attention_heads=a1,a2 --mt_hidden_size=h1,h2 --mt_num_layers=l1,l2 --mt_max_position_embeddings=m1,m2 --mt_load_pretrained=p1,p2 --teacher_fp16
+- 多教师参数: ... --mt_num_attention_heads=a1:a2 --mt_hidden_size=h1:h2 --mt_num_layers=l1:l2 --mt_max_position_embeddings=m1:m2 --mt_load_pretrained=p1:p2 --teacher_fp16
 
 ## TMKD (类似)
-pretrain: ... --student_model=kd --distill_pt_soft --distill_pt_soft_mse --multi_teacher_model=tmkd --student_truncate_tn=0
-finetune: ... --student_model=kd --distill_ft_soft --distill_ft_soft_mse --distill_ft_hard --distill_hard_rate=1/教师数量 --multi_teacher_model=tmkd
+pretrain: ... --student_model=kd --distill_pt_soft --distill_pt_soft_mse --distill_only_mask_pad --multi_teacher_model=tmkd --student_truncate_tn=0
+finetune: ... --student_model=kd --distill_ft_soft --distill_ft_soft_mse --distill_only_mask_pad --distill_ft_hard --distill_hard_rate=1/教师数量 --multi_teacher_model=tmkd
 
 ## MT-BERT

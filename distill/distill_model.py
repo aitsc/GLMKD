@@ -470,7 +470,8 @@ class MixBaseline(GLMStudent):
             self.args.distill_temperature = distill_temperature
         # show
         if show_pre:
-            print_rank_0('\n'.join(pre_loss_description))
+            self.pre_loss_description = '\n'.join(pre_loss_description)
+            print_rank_0(self.pre_loss_description)
         return loss_
 
 

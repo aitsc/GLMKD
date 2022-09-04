@@ -32,7 +32,8 @@ class AvgTeacher(torch.nn.Module):
             
         student_model.summary_suffix = summary_suffix  # 复原
         if self.show_inter:
-            del inter_show_hooks['teacher']
+            if 'teacher' in inter_show_hooks:
+                del inter_show_hooks['teacher']
             print_rank_0(inter_show_hooks)
             self.show_inter = False
         return sum(loss_L) / len(loss_L)

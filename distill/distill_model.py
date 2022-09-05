@@ -11,6 +11,7 @@ import math
 from tsc_base import merge_dict
 from apex.normalization.fused_layer_norm import FusedLayerNorm as LayerNorm
 from fp16 import fp32_to_fp16, fp16_to_fp32
+from distill.tools import all_mean_custom
 
 
 class GLMStudent(torch.nn.Module):
@@ -76,12 +77,12 @@ class GLMStudent(torch.nn.Module):
                     else:
                         l = (- targets_prob * student_likelihood)
                     l = l.sum(-1)
-                l = all_mean_custom(l, keep_batch, reduce=True)
+                l = all_mean_custom(l, keep_batch, reduce=True)  # 可能等于加权(1/模型并行数)
                 self.add_summary('pre_loss/ft_soft', l)
                 loss_ += l
                 loss_D['soft'] = l
             if self.args.distill_ft_hard:
-                self.pre_loss_description += ' + distill_ft_hard'
+                self.pre_loss_description += ' + %s*distill_ft_hard'%self.args.distill_hard_rate
                 self.add_summary('pre_loss/ft_hard', loss)
                 loss_ += loss * self.args.distill_hard_rate
                 loss_D['hard'] = l
@@ -108,12 +109,12 @@ class GLMStudent(torch.nn.Module):
                     else:
                         l = F.kl_div(student_likelihood, targets_prob, reduction="none") * T ** 2
                     l = l.sum(-1)
-                l = all_mean_custom(l, keep_batch, reduce=True)
+                l = all_mean_custom(l, keep_batch, reduce=True)  # 可能等于加权(1/模型并行数)
                 self.add_summary('pre_loss/pt_soft', l)
                 loss_ += l
                 loss_D['soft'] = l
             if self.args.distill_pt_hard:
-                self.pre_loss_description += ' + distill_pt_hard'
+                self.pre_loss_description += ' + %s*distill_pt_hard'%self.args.distill_hard_rate
                 self.add_summary('pre_loss/pt_hard', loss)
                 loss_ += loss * self.args.distill_hard_rate
                 loss_D['hard'] = l
@@ -200,20 +201,6 @@ def find_model_inter_var(model, name):
             model = model.origin_model
         else:
             return None
-
-
-def all_mean_custom(tensor, keep_batch=False, reduce=False):
-    # 平均张量, 可以保持 batch (第0个维度) 不被平均
-    if keep_batch:
-        if len(tensor.shape) > 1:
-            ret = tensor.mean(list(range(1, len(tensor.shape))))
-        else:
-            ret = tensor
-    else:
-        ret = tensor.mean()
-    if reduce:
-        ret = mpu.reduce_from_model_parallel_region(ret) / mpu.get_model_parallel_world_size()
-    return ret
 
 
 class TinyBERT(GLMStudent):

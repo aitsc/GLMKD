@@ -75,6 +75,14 @@ def get_args():
     py_parser.add_argument('--mt_has_grad', action='store_true', help='是否每个教师都需要梯度,是的话教师模型会作为学生模型的一部分进行更新')
     py_parser.add_argument('--student_use_empty_glm', action='store_true', help='学生模型中的glm模型置空,可配合mt_has_grad训练活的多教师')
     py_parser.add_argument('--mt_load_from_s', type=str, default=None, help='从整合多教师模型的学生模型路径中加载多教师的参数,将替代teacher_/mt_load_pretrained,mt_*参数中多教师顺序与当初保存的要一致')
+    # mt_bert
+    py_parser.add_argument('--mt_bert_fit_teacher', action='store_true', help='内层变换是否针对教师,否则是学生')
+    # uncertainty
+    py_parser.add_argument('--uncertainty_wo_loss_mask', action='store_true', help='NLG的logits熵不mask')
+    py_parser.add_argument('--uncertainty_only_mask_pad', action='store_true', help='NLG的logits熵只mask padding')
+    py_parser.add_argument('--uncertainty_inter_entropy', action='store_true', help='是否用信息熵方式处理inter_loss权重')
+    py_parser.add_argument('--uncertainty_teacher_seq', type=str, default=None, help='教师模型从小到大的序号顺序(从0开始),默认mt_*参数是从小到大,冒号分隔')
+    py_parser.add_argument('--uncertainty_hard', action='store_true', help='pre_loss Hard Selection,要求单卡batch size大于教师数量')
 
     known, args_list = py_parser.parse_known_args()
     args = get_args_(args_list)
@@ -129,12 +137,13 @@ def get_teacher_model(args, **kwargs):
         print_rank_0(f'加载 {i} 号教师模型... ' + str(dict(zip(transfer_vars, vars))))
         for name, v, original_v in zip(transfer_vars, vars, original_vars):
             if name == 'max_position_embeddings':
-                if original_v > int(v):
+                if original_v > int(v):  # 主要解决NLG序列增长问题
                     print_rank_0(f'teacher_{i}-max_position_embeddings was modified to {original_v}')
                     v = original_v
             original_v = '' if original_v is None else original_v
             setattr(args, name, type(original_v)(v))
         teacher_model = get_model(args, **kwargs)  # without deepspeed.initialize
+        # 加载参数
         if f'student.teacher_model_{i}' in sd:
             sd_ = {'module': sd[f'student.teacher_model_{i}']}
             print_rank_0(f'mt_load_from_s: student.teacher_model_{i}')

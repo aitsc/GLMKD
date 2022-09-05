@@ -5,7 +5,7 @@ import torch
 from model import GLMModel, GLMModel_empty
 import mpu
 import torch.nn.functional as F
-from mpu import hook_model, hook_return, hook_reduce
+from mpu import hook_model, hook_return, hook_reduce, hook_add
 from utils import print_rank_0
 import math
 from tsc_base import merge_dict
@@ -161,14 +161,38 @@ class GLMStudent(torch.nn.Module):
             return False
 
 
-def unpacking_student_model(model):
+def unpacking_student_model(model, attrs=('origin_model', 'get_teacher_hook')):
+    # 默认拆包 model 直到遇到 GLMStudent, 用于使用 GLMStudent 内部的函数, 或者修改 attrs 用于其他内部模型
     while True:
-        if hasattr(model, 'origin_model') and hasattr(model, 'get_teacher_hook'):
+        if sum([hasattr(model, a) for a in attrs]) == len(attrs):
             return model
         if hasattr(model, 'module'):
             model = model.module
         elif hasattr(model, 'model'):
             model = model.model
+        else:
+            return None
+
+
+def find_model_inter_var(model, name):
+    # 找到模型内部的某个参数, 找不到会一直拆包
+    name_L = name.split('.')
+    while True:
+        has_find, m = False, model
+        for i, n in enumerate(name_L):
+            if hasattr(m, n):
+                m = getattr(m, n)
+                has_find = True if i == len(name_L) - 1 else False
+            else:
+                break
+        if has_find:
+            return m
+        if hasattr(model, 'module'):
+            model = model.module
+        elif hasattr(model, 'model'):
+            model = model.model
+        elif hasattr(model, 'origin_model'):
+            model = model.origin_model
         else:
             return None
 
@@ -516,7 +540,11 @@ class PKD(GLMStudent):
 
     def pre_loss(self, s_logits, t_logits, loss, **kwargs):
         loss_D = super().pre_loss(s_logits, t_logits, loss, return_dict=True, **kwargs)
-        loss_ = (1 - self.args.pkd_alpha) * loss_D['hard'] + self.args.pkd_alpha * loss_D['soft']
+        loss_ = 0.
+        if 'hard' in loss_D:
+            loss_ += (1 - self.args.pkd_alpha) * loss_D['hard']
+        if 'soft' in loss_D:
+            loss_ += self.args.pkd_alpha * loss_D['soft']
         return loss_
 
 

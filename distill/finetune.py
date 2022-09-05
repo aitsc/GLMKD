@@ -101,8 +101,8 @@ def finetune_forward_step(batch, model, args, timers, mems, teacher_models=None)
             if "loss_mask" in data:
                 loss_mask = data["loss_mask"]
                 label_mask = label_mask * loss_mask
-            loss = logits.contiguous().float() * label_mask
-            loss = loss.sum() / batch_size
+            loss_batch = logits.contiguous().float() * label_mask
+            loss = loss_batch.sum() / batch_size
         else:
             if "segment_id" in data:
                 from torch_scatter import scatter_sum
@@ -114,23 +114,27 @@ def finetune_forward_step(batch, model, args, timers, mems, teacher_models=None)
                 logits = logits * loss_mask - 10000.0 * (1.0 - loss_mask)
             if args.loss_func == "cross_entropy":
                 # Cross-entropy loss.
-                loss_func = torch.nn.CrossEntropyLoss()
-                loss = loss_func(logits.contiguous().float(), labels)
+                loss_func = torch.nn.CrossEntropyLoss(reduction='none')
+                loss_batch = loss_func(logits.contiguous().float(), labels)
+                loss = loss_batch.mean()
             elif args.loss_func == "hinge":
                 correct_logits = logits[range(logits.size(0)), labels]
                 hinge_loss = 1 + logits - correct_logits.unsqueeze(1)
                 hinge_loss[hinge_loss < 0.0] = 0.0
-                loss = hinge_loss.sum(dim=1).mean() - 1.0
+                loss_batch = hinge_loss.sum(dim=1) - 1.0
+                loss = loss_batch.mean()
             elif args.loss_func == "generative" or args.loss_func == "mix":
                 batch_size = logits.size(0)
-                loss = - logits[range(batch_size), labels].mean()
+                loss = - logits[range(batch_size), labels]
                 if args.loss_func == "mix":
-                    loss_func = torch.nn.CrossEntropyLoss()
+                    loss_func = torch.nn.CrossEntropyLoss(reduction='none')
                     loss = loss + loss_func(logits.contiguous().float(), labels)
+                loss_batch = loss
+                loss = loss.mean()
             else:
                 raise NotImplementedError
-        return loss
-    loss = get_loss(logits)
+        return loss, loss_batch
+    loss, loss_batch = get_loss(logits)
 
     if is_distill:
         t_out_L = mt_repeat_operation(
@@ -142,7 +146,7 @@ def finetune_forward_step(batch, model, args, timers, mems, teacher_models=None)
             t_out_L = [merge_dict([i, j]) for i, j in zip(mt_repeat_operation(
                 t_out_L,
                 lambda logits, **k: get_loss(logits),
-                lambda loss: {'loss': loss},
+                lambda ret: {'loss': ret[0], 'loss_batch': ret[1]},
             ), t_out_L)]
         loss = student_model.multi_teacher_model.compute(
             teacher_models = teacher_models,
@@ -152,7 +156,7 @@ def finetune_forward_step(batch, model, args, timers, mems, teacher_models=None)
             student_model = student_model,
             s_hook = s_hook,
             s_inter_vars = s_inter_vars,
-            s_out = {'logits': logits, 'loss': loss},
+            s_out = {'logits': logits, 'loss': loss, 'loss_batch': loss_batch},
             labels = labels,
         )
     return loss, mems, 'bert'

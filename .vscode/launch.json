@@ -97,9 +97,9 @@
             "args": [
                 // deepspeed
                 "--master_port=14161",
-                "--include=localhost:2",
+                "--include=localhost:7",
                 "distill/finetune.py",
-                "--deepspeed_config=config/config_block_tiny6.json",
+                "--deepspeed_config=config_tasks/config_blocklm_tiny6.json",
                 "--deepspeed-activation-checkpointing",
                 "--deepspeed",
                 // "--load=",
@@ -137,11 +137,16 @@
                 "--save=../GLM/data/checkpoints/finetune_checkpoints",
                 "--experiment-name=finetune_debug", // date +"%y%m%d_%H%M%S"
                 "--load-pretrained=../GLM/data/checkpoints/distill/tiny6/pre-distill6+wikibook19G-new",
+                "--custom_first_eval",
                 // 蒸馏
-                "--student_model=tinybert",
+                "--student_model=pkd",
+                "--distill_ft_soft",
+                "--distill_temperature=1",
+                "--pkd_alpha=1",
+                "--pkd_beta=1",
+                "--student_truncate_tn=0",
+                "--multi_teacher_model=mt_bert",
                 "--mt_has_loss",
-                // "--mt_has_grad",
-                // "--student_use_empty_glm",
                 // 蒸馏 base
                 "--teacher_load_pretrained=../GLM/data/checkpoints/pretrain/blocklm-base-blank/finetune/COPA/blank-base-COPA-220813_064749",
                 // "--teacher_load_pretrained=../GLM/data/checkpoints/pretrain/blocklm-base-blank/finetune/ReCoRD/blank-base-ReCoRD-220813_083745",

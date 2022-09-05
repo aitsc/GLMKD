@@ -98,10 +98,10 @@ class MT_BERT(AvgTeacher):
                 if 'output' in s_hook['transformer']:
                     inter_vars[s_hook['transformer']['output']] = self.aux_layer(fit_dense, inter_vars[s_hook['transformer']['output']])
             # loss
-            pre_loss = student_model.pre_loss(s_out['logits'], t_out['logits'], s_out['loss'], loss_mask=loss_mask, labels=labels)
-            pre_loss *= 1 / (1 + t_out['loss'])  # 加权, 依赖参数 --mt_has_loss
+            pre_loss = student_model.pre_loss(s_out['logits'], t_out['logits'], s_out['loss_batch'], loss_mask=loss_mask, labels=labels, keep_batch=True)
+            pre_loss *= 1 / (1 + t_out['loss_batch'])  # 加权, 依赖参数 --mt_has_loss
             inter_loss = student_model.inter_loss(inter_vars, t_inter_vars, s_hook, t_hook, t_model=t_model, loss_mask=loss_mask, labels=labels)
-            loss = pre_loss + inter_loss
+            loss = pre_loss.mean() + inter_loss
             loss_L.append(loss)
             self.record_and_show(student_model, op='t_end', t_no=i, loss=loss)
         self.record_and_show(student_model, op='final_show')

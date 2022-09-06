@@ -139,12 +139,10 @@ class Uncertainty(AvgTeacher):
         loss_L = []
         self.record_and_show(student_model)
         # mask
-        if self.args.uncertainty_wo_loss_mask:
+        if self.args.uncertainty_wo_loss_mask or loss_mask is None:
             mask = 1.
         elif labels is not None and self.args.uncertainty_only_mask_pad:
             mask = labels.view(*labels.size(), 1) > 0
-        elif loss_mask is None:
-            mask = 1.
         else:
             mask = loss_mask.view(*loss_mask.size(), 1)
         # entropy
@@ -232,19 +230,17 @@ class RL_KD(AvgTeacher):
         loss_L = []
         self.record_and_show(student_model)
         # mask
-        if self.args.rl_kd_wo_loss_mask:
+        if self.args.rl_kd_wo_loss_mask or loss_mask is None:
             mask = 1.
         elif labels is not None and self.args.rl_kd_only_mask_pad:
             mask = labels.view(*labels.size(), 1) > 0
-        elif loss_mask is None:
-            mask = 1.
         else:
             mask = loss_mask.view(*loss_mask.size(), 1)
         semantic_mt_loss_rep = []
         mt_soft_rep = []
         # loss
         for i, (t_hook, t_inter_vars, t_out, t_model) in enumerate(zip(t_hook_L, t_inter_vars_L, t_out_L, teacher_models)):
-            if i == self.args.rl_kd_semantic_model:
+            if i == self.args.rl_kd_semantic_model and not self.args.rl_kd_only_avg:
                 # Semantic Representation: [CLS]
                 rep = t_inter_vars[t_hook['transformer']['output']][...,0,:].squeeze(-2)
                 rep = rep.contiguous().view(s_out['loss_batch'].size(0), -1)
@@ -252,20 +248,28 @@ class RL_KD(AvgTeacher):
                 continue
             self.record_and_show(student_model, op='t_start', t_no=i)
             # other Environment rep
-            semantic_mt_loss_rep.append(t_out['loss_batch'].detach().clone().unsqueeze(-1))
-            if len(t_out['logits'].shape) == 3:
-                logits = (t_out['logits'] * mask).mean(-2)
-            else:
-                logits = t_out['logits'] * mask
-            mt_soft_rep.append(logits.detach().clone())
+            if not self.args.rl_kd_only_avg:
+                semantic_mt_loss_rep.append(t_out['loss_batch'].detach().clone().unsqueeze(-1))
+                if len(t_out['logits'].shape) == 3:
+                    logits = (t_out['logits'] * mask).mean(-2)
+                else:
+                    logits = t_out['logits'] * mask
+                mt_soft_rep.append(logits.detach().clone())
             # pre_loss
-            pre_loss = student_model.pre_loss(s_out['logits'], t_out['logits'], s_out['loss_batch'], loss_mask=loss_mask, labels=labels, keep_batch=True)
+            if self.args.rl_kd_only_avg:
+                s_loss, keep_batch = s_out['loss'], False
+            else:
+                s_loss, keep_batch = s_out['loss_batch'], True
+            pre_loss = student_model.pre_loss(s_out['logits'], t_out['logits'], s_loss, loss_mask=loss_mask, labels=labels, keep_batch=keep_batch)
             # inter_loss
-            inter_loss = student_model.inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, t_model=t_model, loss_mask=loss_mask, labels=labels, keep_batch=True)
+            inter_loss = student_model.inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, t_model=t_model, loss_mask=loss_mask, labels=labels, keep_batch=keep_batch)
             # loss
             loss = pre_loss + inter_loss
             loss_L.append(loss)
             self.record_and_show(student_model, op='t_end', t_no=i, loss=loss)
+        self.record_and_show(student_model, op='final_show')
+        if self.args.rl_kd_only_avg:
+            return sum(loss_L) / len(loss_L)
         # Teacher Selector
         semantic_mt_loss_rep = torch.cat(semantic_mt_loss_rep, -1)
         mt_soft_rep = torch.cat(mt_soft_rep, -1)
@@ -288,13 +292,12 @@ class RL_KD(AvgTeacher):
                 - s_out['loss'],
                 - s_out['loss'] - t_out['loss'],
             ]
-            rl_loss = - pi.sum() * reward[self.args.rl_kd_reward - 1]
+            rl_loss = - pi.sum() * reward[self.args.rl_kd_reward - 1].detach().clone()
             student_model.add_summary('multi_teacher_model/rl_loss', rl_loss)
             final_loss = final_loss + rl_loss
         self.semantic_mt_loss_rep = semantic_mt_loss_rep
         self.mt_soft_rep = mt_soft_rep
         self.teacher_select = teacher_select
-        self.record_and_show(student_model, op='final_show')
         return final_loss
 
 

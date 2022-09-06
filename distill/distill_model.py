@@ -51,27 +51,25 @@ class GLMStudent(torch.nn.Module):
         loss_ = 0.
         self.pre_loss_description = 'pre_loss: 0'
         T = self.args.distill_temperature
-        if self.args.distill_wo_loss_mask:
-            loss_mask = labels = None
         loss_D = {}
+        if loss_mask is None or self.args.distill_wo_loss_mask:
+            mask = 1.
+            self.pre_loss_description += '/wom'
+        elif labels is not None and self.args.distill_only_mask_pad:
+            mask = labels.view(*labels.size(), 1) > 0
+            self.pre_loss_description += '/mask_pad'
+        else:  # 在 finetune 中一般用于 seq2seq_forward_step
+            mask = loss_mask.view(*loss_mask.size(), 1)
+            self.pre_loss_description += '/mask_A_pad'
         if self.args.finetune:
             if self.args.distill_ft_soft:
                 self.pre_loss_description += ' + distill_ft_soft(T%s)'%T
-                if labels is not None and self.args.distill_only_mask_pad:
-                    loss_mask = labels.view(*labels.size(), 1) > 0
-                    self.pre_loss_description += '/mask_pad'
-                elif loss_mask is None:
-                    loss_mask = 1.
-                    self.pre_loss_description += '/wom'
-                else:  # 可用于 seq2seq_forward_step
-                    loss_mask = loss_mask.view(*loss_mask.size(), 1)
-                    self.pre_loss_description += '/mask_A_pad'
                 if self.args.distill_ft_soft_mse:
-                    l = F.mse_loss(s_logits * loss_mask, t_logits * loss_mask, reduction='none')
+                    l = F.mse_loss(s_logits * mask, t_logits * mask, reduction='none')
                     self.pre_loss_description += '(mse)'
                 else:
-                    student_likelihood = F.log_softmax(s_logits * loss_mask / T, dim=-1)
-                    targets_prob = F.softmax(t_logits * loss_mask / T, dim=-1)
+                    student_likelihood = F.log_softmax(s_logits * mask / T, dim=-1)
+                    targets_prob = F.softmax(t_logits * mask / T, dim=-1)
                     if self.args.distill_ft_soft_kl:
                         l = F.kl_div(student_likelihood, targets_prob, reduction="none") * T ** 2
                     else:
@@ -89,21 +87,12 @@ class GLMStudent(torch.nn.Module):
         else:
             if self.args.distill_pt_soft:
                 self.pre_loss_description += ' + distill_pt_soft(T%s)'%T
-                if labels is not None and self.args.distill_only_mask_pad:
-                    loss_mask = labels.view(*labels.size(), 1) > 0
-                    self.pre_loss_description += '/mask_pad'
-                elif loss_mask is None:
-                    loss_mask = 1.
-                    self.pre_loss_description += '/wom'
-                else:
-                    loss_mask = loss_mask.view(*loss_mask.size(), 1)
-                    self.pre_loss_description += '/mask_A_pad'
                 if self.args.distill_pt_soft_mse:
-                    l = F.mse_loss(s_logits * loss_mask, t_logits * loss_mask, reduction='none')
+                    l = F.mse_loss(s_logits * mask, t_logits * mask, reduction='none')
                     self.pre_loss_description += '(mse)'
                 else:
-                    student_likelihood = F.log_softmax(s_logits * loss_mask / T, dim=-1)
-                    targets_prob = F.softmax(t_logits * loss_mask / T, dim=-1)
+                    student_likelihood = F.log_softmax(s_logits * mask / T, dim=-1)
+                    targets_prob = F.softmax(t_logits * mask / T, dim=-1)
                     if self.args.distill_pt_soft_ce:
                         l = (- targets_prob * student_likelihood)
                     else:

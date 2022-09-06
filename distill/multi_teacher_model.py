@@ -200,26 +200,30 @@ class Uncertainty(AvgTeacher):
 class RL_KD(AvgTeacher):
     def __init__(self, args, **kwargs):
         super().__init__(args, **kwargs)
+        if args.custom_sample_shape:
+            sample_shape = [int(i) for i in args.custom_sample_shape.split(',')]
         # Semantic Representation + Teacher CE Loss
         semantic_len = 0
         tn = len(args.mt_hidden_size.split(':')) if args.mt_hidden_size else 1
         if args.rl_kd_semantic_model is not None:
             semantic_len = int(args.mt_hidden_size.split(':')[args.rl_kd_semantic_model])
             tn -= 1  # multi Teacher CE Loss
+        if len(sample_shape) == 2:  # 分类方式差异
+            semantic_len *= sample_shape[0]
         self.agent_semantic_mt_loss = torch.nn.Linear(semantic_len + tn, tn)
         # Teacher soft labels
-        class_dim = args.vocab_size
-        if args.custom_sample_shape:
-            sample_shape = [int(i) for i in args.custom_sample_shape.split(',')]
-            if len(sample_shape) == 2:
-                class_dim = sample_shape[0]
+        class_dim = sample_shape[0] if len(sample_shape) == 2 else args.vocab_size
         if args.custom_logits_paralle:  # 注意这里教师序号等于是连续的
             self.agent_mt_soft = mpu.RowParallelLinear(class_dim * tn, tn, input_is_parallel=True)
         else:
             self.agent_mt_soft = torch.nn.Linear(class_dim * tn, tn)
+        # Environment: bs * tn
+        self.semantic_mt_loss_rep = None
+        self.mt_soft_rep = None
+        self.teacher_select = None  # a
 
     def hooks_process(self, t_hook_L, **kwargs):
-        if self.args.rl_kd_semantic_model:
+        if self.args.rl_kd_semantic_model is not None:
             t_hook_L[self.args.rl_kd_semantic_model] = {'transformer': {'output': None}}
         return t_hook_L
         
@@ -239,22 +243,21 @@ class RL_KD(AvgTeacher):
         semantic_mt_loss_rep = []
         mt_soft_rep = []
         # loss
-        reward1 = 0.
-        reward2 = 0.
         for i, (t_hook, t_inter_vars, t_out, t_model) in enumerate(zip(t_hook_L, t_inter_vars_L, t_out_L, teacher_models)):
             if i == self.args.rl_kd_semantic_model:
                 # Semantic Representation: [CLS]
                 rep = t_inter_vars[t_hook['transformer']['output']][...,0,:].squeeze(-2)
-                semantic_mt_loss_rep = [rep] + semantic_mt_loss_rep
+                rep = rep.contiguous().view(s_out['loss_batch'].size(0), -1)
+                semantic_mt_loss_rep = [rep.detach().clone()] + semantic_mt_loss_rep
                 continue
             self.record_and_show(student_model, op='t_start', t_no=i)
             # other Environment rep
-            semantic_mt_loss_rep.append(t_out['loss_batch'])
+            semantic_mt_loss_rep.append(t_out['loss_batch'].detach().clone().unsqueeze(-1))
             if len(t_out['logits'].shape) == 3:
                 logits = (t_out['logits'] * mask).mean(-2)
             else:
                 logits = t_out['logits'] * mask
-            mt_soft_rep.append(logits)
+            mt_soft_rep.append(logits.detach().clone())
             # pre_loss
             pre_loss = student_model.pre_loss(s_out['logits'], t_out['logits'], s_out['loss_batch'], loss_mask=loss_mask, labels=labels, keep_batch=True)
             # inter_loss
@@ -263,14 +266,36 @@ class RL_KD(AvgTeacher):
             loss = pre_loss + inter_loss
             loss_L.append(loss)
             self.record_and_show(student_model, op='t_end', t_no=i, loss=loss)
-            reward1 = reward1 - s_out['loss']
-            reward2 = reward2 - s_out['loss'] - t_out['loss']
         # Teacher Selector
-
+        semantic_mt_loss_rep = torch.cat(semantic_mt_loss_rep, -1)
+        mt_soft_rep = torch.cat(mt_soft_rep, -1)
+        s = self.aux_layer(self.agent_semantic_mt_loss, semantic_mt_loss_rep)
+        s += self.aux_layer(self.agent_mt_soft, mt_soft_rep)
+        s = s.sigmoid()
+        teacher_select = torch.rand(*s.shape, device=s.device) < s
+        final_loss = torch.stack(loss_L, -1) * teacher_select
+        final_loss = final_loss.mean()
         # Update agent
-
+        if self.semantic_mt_loss_rep is not None \
+            and self.mt_soft_rep is not None \
+            and self.teacher_select is not None \
+            :  # 隔代更新不用数据重复使用
+            s = self.aux_layer(self.agent_semantic_mt_loss, self.semantic_mt_loss_rep)
+            s += self.aux_layer(self.agent_mt_soft, self.mt_soft_rep)
+            s = s.sigmoid()
+            pi = s * self.teacher_select + (1 - s) * (1 - self.teacher_select * 1)
+            reward = [
+                - s_out['loss'],
+                - s_out['loss'] - t_out['loss'],
+            ]
+            rl_loss = - pi.sum() * reward[self.args.rl_kd_reward - 1]
+            student_model.add_summary('multi_teacher_model/rl_loss', rl_loss)
+            final_loss = final_loss + rl_loss
+        self.semantic_mt_loss_rep = semantic_mt_loss_rep
+        self.mt_soft_rep = mt_soft_rep
+        self.teacher_select = teacher_select
         self.record_and_show(student_model, op='final_show')
-        return sum(loss_L)
+        return final_loss
 
 
 multi_teacher_model_D = {

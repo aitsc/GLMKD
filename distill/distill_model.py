@@ -384,13 +384,11 @@ class DistilBERT(GLMStudent):
 
     def pre_loss(self, s_logits, t_logits, loss, loss_mask=None, labels=None, keep_batch=False, **kwargs):
         loss_ = 0.
-        if self.args.finetune:
-            return super().pre_loss(s_logits, t_logits, loss, loss_mask=loss_mask, labels=labels, keep_batch=keep_batch, **kwargs)
         self.pre_loss_description = 'pre_loss: 0'
         if self.args.distilbert_alpha_ce > 0:
             T = self.args.distill_temperature
             self.pre_loss_description += ' + %s*distilbert_alpha_ce(T%s)' % (self.args.distilbert_alpha_ce, T)
-            if self.args.distill_wo_loss_mask:
+            if self.args.distill_wo_loss_mask or loss_mask is None:
                 loss_mask = 1.
                 self.pre_loss_description += '/wom'
             elif self.args.distilbert_ce_mask_padding:

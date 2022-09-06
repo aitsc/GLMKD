@@ -211,6 +211,8 @@ def finetune(args, train_valid_datasets_provider, model_kwargs, forward_step=fin
                 train_block_dataloader = FakeDataloader(args.train_iters)
                 valid_block_dataloader = FakeDataloader(None)
             train_block_dataloader, valid_block_dataloader = iter(train_block_dataloader), iter(valid_block_dataloader)
+    if train_dataloader is not None and not args.custom_sample_shape:
+        args.custom_sample_shape = ','.join((str(i) for i in train_dataloader.dataset[0]['text'].shape))
 
     timers('train/valid/test dataset/dataloder').stop()
     # Build calback function.

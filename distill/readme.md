@@ -45,4 +45,5 @@ finetune: ... --student_model=pkd --distill_ft_soft --distill_temperature=1 --pk
 finetune: ... --student_model=kd --distill_ft_soft --distill_temperature=1 --distill_ft_soft_kl --distill_ft_hard --distill_only_mask_pad --student_truncate_tn=0 --multi_teacher_model=uncertainty --uncertainty_only_mask_pad --uncertainty_hard
 
 ## RL-KD
-finetune: ...
+1. finetune-avg: ... --student_model=kd --distill_ft_soft --distill_temperature=10 --distill_ft_hard --student_truncate_tn=0 --multi_teacher_model=rl_kd --rl_kd_only_mask_pad --rl_kd_only_avg
+2. finetune-rl: ... --student_model=kd --distill_ft_soft --distill_temperature=10 --distill_ft_hard --multi_teacher_model=rl_kd --rl_kd_only_mask_pad --rl_kd_reward=1 --rl_kd_semantic_model=0

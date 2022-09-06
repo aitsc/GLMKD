@@ -79,6 +79,10 @@ class AvgTeacher(torch.nn.Module):
         self.record_and_show(student_model, op='final_show')
         return sum(loss_L) / len(loss_L)
 
+    def hooks_process(self, t_hook_L, **kwargs):
+        # get_teachers_hook 之后的结果再处理
+        return t_hook_L
+
 
 class MT_BERT(AvgTeacher):
     def __init__(self, args, **kwargs):
@@ -196,23 +200,77 @@ class Uncertainty(AvgTeacher):
 class RL_KD(AvgTeacher):
     def __init__(self, args, **kwargs):
         super().__init__(args, **kwargs)
+        # Semantic Representation + Teacher CE Loss
+        semantic_len = 0
+        tn = len(args.mt_hidden_size.split(':')) if args.mt_hidden_size else 1
+        if args.rl_kd_semantic_model is not None:
+            semantic_len = int(args.mt_hidden_size.split(':')[args.rl_kd_semantic_model])
+            tn -= 1  # multi Teacher CE Loss
+        self.agent_semantic_mt_loss = torch.nn.Linear(semantic_len + tn, tn)
+        # Teacher soft labels
+        class_dim = args.vocab_size
+        if args.custom_sample_shape:
+            sample_shape = [int(i) for i in args.custom_sample_shape.split(',')]
+            if len(sample_shape) == 2:
+                class_dim = sample_shape[0]
+        if args.custom_logits_paralle:  # 注意这里教师序号等于是连续的
+            self.agent_mt_soft = mpu.RowParallelLinear(class_dim * tn, tn, input_is_parallel=True)
+        else:
+            self.agent_mt_soft = torch.nn.Linear(class_dim * tn, tn)
 
+    def hooks_process(self, t_hook_L, **kwargs):
+        if self.args.rl_kd_semantic_model:
+            t_hook_L[self.args.rl_kd_semantic_model] = {'transformer': {'output': None}}
+        return t_hook_L
+        
     def compute(self, teacher_models, t_hook_L, t_inter_vars_L, t_out_L, student_model, s_hook, s_inter_vars, s_out,
                 loss_mask=None, labels=None, **kwargs):
         loss_L = []
         self.record_and_show(student_model)
+        # mask
+        if self.args.rl_kd_wo_loss_mask:
+            mask = 1.
+        elif labels is not None and self.args.rl_kd_only_mask_pad:
+            mask = labels.view(*labels.size(), 1) > 0
+        elif loss_mask is None:
+            mask = 1.
+        else:
+            mask = loss_mask.view(*loss_mask.size(), 1)
+        semantic_mt_loss_rep = []
+        mt_soft_rep = []
+        # loss
+        reward1 = 0.
+        reward2 = 0.
         for i, (t_hook, t_inter_vars, t_out, t_model) in enumerate(zip(t_hook_L, t_inter_vars_L, t_out_L, teacher_models)):
+            if i == self.args.rl_kd_semantic_model:
+                # Semantic Representation: [CLS]
+                rep = t_inter_vars[t_hook['transformer']['output']][...,0,:].squeeze(-2)
+                semantic_mt_loss_rep = [rep] + semantic_mt_loss_rep
+                continue
             self.record_and_show(student_model, op='t_start', t_no=i)
+            # other Environment rep
+            semantic_mt_loss_rep.append(t_out['loss_batch'])
+            if len(t_out['logits'].shape) == 3:
+                logits = (t_out['logits'] * mask).mean(-2)
+            else:
+                logits = t_out['logits'] * mask
+            mt_soft_rep.append(logits)
             # pre_loss
-            pre_loss = student_model.pre_loss(s_out['logits'], t_out['logits'], s_out['loss'], loss_mask=loss_mask, labels=labels)
+            pre_loss = student_model.pre_loss(s_out['logits'], t_out['logits'], s_out['loss_batch'], loss_mask=loss_mask, labels=labels, keep_batch=True)
             # inter_loss
-            inter_loss = student_model.inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, t_model=t_model, loss_mask=loss_mask, labels=labels)
+            inter_loss = student_model.inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, t_model=t_model, loss_mask=loss_mask, labels=labels, keep_batch=True)
             # loss
             loss = pre_loss + inter_loss
             loss_L.append(loss)
             self.record_and_show(student_model, op='t_end', t_no=i, loss=loss)
+            reward1 = reward1 - s_out['loss']
+            reward2 = reward2 - s_out['loss'] - t_out['loss']
+        # Teacher Selector
+
+        # Update agent
+
         self.record_and_show(student_model, op='final_show')
-        return sum(loss_L) / len(loss_L)
+        return sum(loss_L)
 
 
 multi_teacher_model_D = {

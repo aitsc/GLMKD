@@ -85,6 +85,7 @@ def main(args, ft=finetune):
         model_kwargs["spell_length"] = pvp.spell_length
     if args.task.lower() == 'wsc' and args.cloze_eval and not args.wsc_negative:
         from tasks.language_model.finetune import lm_forward_step
+        args.custom_logits_paralle = True
         ft(args, train_valid_datasets_provider, model_kwargs,
                  end_of_epoch_callback_provider=metrics_func_provider, forward_step=lm_forward_step)
     else:
@@ -101,5 +102,6 @@ def main(args, ft=finetune):
             model_kwargs["model_type"] = "multiple_choice"
             model_kwargs["multi_token"] = True
             model_kwargs["num_labels"] = 1
+        args.custom_logits_paralle = False
         ft(args, train_valid_datasets_provider, model_kwargs,
                  end_of_epoch_callback_provider=metrics_func_provider)

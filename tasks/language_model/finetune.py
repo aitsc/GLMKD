@@ -277,4 +277,5 @@ def metrics_func_provider(args, tokenizer, is_test):
 
 def main(args, ft=finetune):
     """Main program."""
+    args.custom_logits_paralle = True
     ft(args, None, {}, end_of_epoch_callback_provider=metrics_func_provider, forward_step=lm_forward_step)

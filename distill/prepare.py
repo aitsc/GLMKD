@@ -84,7 +84,11 @@ def get_args():
     py_parser.add_argument('--uncertainty_teacher_seq', type=str, default=None, help='教师模型从小到大的序号顺序(从0开始),默认mt_*参数是从小到大,冒号分隔')
     py_parser.add_argument('--uncertainty_hard', action='store_true', help='pre_loss Hard Selection,要求单卡batch size大于等于教师数量')
     # rl_kd
+    py_parser.add_argument('--rl_kd_wo_loss_mask', action='store_true', help='用于agent-NLG的logits不mask')
+    py_parser.add_argument('--rl_kd_only_mask_pad', action='store_true', help='用于agent-NLG的logits只mask padding')
     py_parser.add_argument('--rl_kd_reward', type=int, default=1, help='reward type')
+    py_parser.add_argument('--rl_kd_semantic_model', type=int, default=None, help='第几个教师模型会拿来做Environment的Semantic Representation,这个教师模型将不参与其他计算,默认不使用Semantic')
+    py_parser.add_argument('--rl_kd_only_avg', action='store_true', help='只使用平均教师loss不使用强化学习')
 
     known, args_list = py_parser.parse_known_args()
     args = get_args_(args_list)
@@ -188,6 +192,9 @@ def get_teachers_hook(args, student_model=None):
     # 复原
     for v, name in zip(original_vars, transfer_vars):
         setattr(args, 'teacher_' + name, v)
+    # 再处理
+    if hasattr(student_model, 'multi_teacher_model'):
+        hooks = student_model.multi_teacher_model.hooks_process(hooks)
     return hooks
 
 

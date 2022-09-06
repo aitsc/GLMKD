@@ -419,6 +419,8 @@ def add_custom_args(parser: argparse.ArgumentParser):
     group.add_argument('--spare_port', type=int, default=get_random_port())
     group.add_argument('--custom_tmp_result', type=str, default=None)
     group.add_argument('--custom_first_eval', action='store_true')
+    group.add_argument('--custom_logits_paralle', action='store_true', help='forward_step中得到的logits是否是并行的,根据tasks自动设置,可用于蒸馏模型判断')
+    group.add_argument('--custom_sample_shape', type=str, default=None, help='训练集一个样本.text的形状,可方便获取分类数量num_choices,None则自动处理,逗号分隔维度')
     return parser
 
 

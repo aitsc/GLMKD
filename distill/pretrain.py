@@ -64,16 +64,16 @@ def forward_step(data_iterator, model, args, timers, mems, teacher_models=None):
         t_hook_L = s_hook = None
         teacher_models = []
     logits, *mems = hook_model(s_hook, s_inter_vars, model, tokens, position_ids, attention_mask, *mems)
-    loss_mask_ = loss_mask
-    loss_mask = loss_mask.view(-1)
 
     def compute_loss(logits):
         losses = mpu.vocab_parallel_cross_entropy(logits.contiguous().float(), labels)
-        loss = torch.sum(losses.view(-1) * loss_mask)
+        loss_batch = (losses * loss_mask).sum(-1)
+        loss = loss_batch.sum()
         if loss_mask.sum().item() > 0:
             loss = loss / loss_mask.sum()
-        return loss
-    loss = compute_loss(logits)
+            loss_batch = loss_batch / loss_mask.sum(-1)
+        return loss, loss_batch
+    loss, loss_batch = compute_loss(logits)
 
     if is_distill:
         with NoneWith() if args.mt_has_grad else torch.no_grad():
@@ -86,7 +86,7 @@ def forward_step(data_iterator, model, args, timers, mems, teacher_models=None):
             t_out_L = [merge_dict([i, j]) for i, j in zip(mt_repeat_operation(
                 t_out_L,
                 lambda logits, **k: compute_loss(logits),
-                lambda loss: {'loss': loss},
+                lambda ret: {'loss': ret[0], 'loss_batch': ret[1]},
             ), t_out_L)]
         loss = student_model.multi_teacher_model.compute(
             teacher_models = teacher_models,
@@ -96,8 +96,8 @@ def forward_step(data_iterator, model, args, timers, mems, teacher_models=None):
             student_model = student_model,
             s_hook = s_hook,
             s_inter_vars = s_inter_vars,
-            s_out = {'logits': logits, 'loss': loss},
-            loss_mask = loss_mask_,
+            s_out = {'logits': logits, 'loss': loss, 'loss_batch': loss_batch},
+            loss_mask = loss_mask,
             labels = labels,
         )
     return loss, mems, mode

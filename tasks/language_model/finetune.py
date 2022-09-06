@@ -117,8 +117,8 @@ def lm_forward_step(data, model, args, timers, mems, eval_metric=None, teacher_m
             loss_batch = (losses * loss_mask).sum(-1)
             loss = loss_batch.sum()
             if eval_metric is None:
-                loss_batch /= loss_mask.sum(-1)
-                loss /= loss_mask.sum()
+                loss_batch = loss_batch / loss_mask.sum(-1)
+                loss = loss / loss_mask.sum()
         elif eval_metric == 'accuracy' or eval_metric == 'classify':
             logits = mpu.gather_from_model_parallel_region(logits)
             outputs = torch.argmax(logits, -1)

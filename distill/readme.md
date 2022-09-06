@@ -42,4 +42,7 @@ finetune: ... --student_model=kd --distill_ft_soft --distill_ft_soft_mse --disti
 finetune: ... --student_model=pkd --distill_ft_soft --distill_temperature=1 --pkd_alpha=1 --pkd_beta=1 --student_truncate_tn=0 --multi_teacher_model=mt_bert --mt_has_loss --mt_bert_fit_teacher
 
 ## Uncertainty
-finetune: ... --student_model=kd --distill_ft_soft --distill_temperature=1 --distill_ft_hard --distill_only_mask_pad --student_truncate_tn=0 --multi_teacher_model=uncertainty --uncertainty_only_mask_pad --uncertainty_hard
+finetune: ... --student_model=kd --distill_ft_soft --distill_temperature=1 --distill_ft_soft_kl --distill_ft_hard --distill_only_mask_pad --student_truncate_tn=0 --multi_teacher_model=uncertainty --uncertainty_only_mask_pad --uncertainty_hard
+
+## RL-KD
+finetune: ...

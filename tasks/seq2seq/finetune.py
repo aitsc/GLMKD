@@ -68,7 +68,7 @@ def seq2seq_forward_step(data, model, args, timers, mems, teacher_models=None):
         # The loss is not normalized for fair comparison
         loss_batch = (losses * loss_mask).sum(-1)
         loss = loss_batch.sum() / loss_mask.sum()
-        loss_batch /= loss_mask.sum(-1)
+        loss_batch = loss_batch / loss_mask.sum(-1)
         return loss, loss_batch
     loss, loss_batch = get_loss(logits)
 

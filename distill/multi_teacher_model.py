@@ -68,8 +68,12 @@ class AvgTeacher(torch.nn.Module):
         self.record_and_show(student_model)
         for i, (t_hook, t_inter_vars, t_out, t_model) in enumerate(zip(t_hook_L, t_inter_vars_L, t_out_L, teacher_models)):
             self.record_and_show(student_model, op='t_start', t_no=i)
-            loss = student_model.pre_loss(s_out['logits'], t_out['logits'], s_out['loss'], loss_mask=loss_mask, labels=labels)
-            loss += student_model.inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, t_model=t_model, loss_mask=loss_mask, labels=labels)
+            # pre_loss
+            pre_loss = student_model.pre_loss(s_out['logits'], t_out['logits'], s_out['loss'], loss_mask=loss_mask, labels=labels)
+            # inter_loss
+            inter_loss = student_model.inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, t_model=t_model, loss_mask=loss_mask, labels=labels)
+            # loss
+            loss = pre_loss + inter_loss
             loss_L.append(loss)
             self.record_and_show(student_model, op='t_end', t_no=i, loss=loss)
         self.record_and_show(student_model, op='final_show')
@@ -149,7 +153,7 @@ class Uncertainty(AvgTeacher):
         s_entropy = norm_entropy_f(s_out['logits'])
         # rate: batch_size * teacher_num
         if len(t_hook_L) > 1:
-            if self.args.uncertainty_hard and s_entropy.size(0) > len(t_hook_L):
+            if self.args.uncertainty_hard and s_entropy.size(0) >= len(t_hook_L):
                 sort_i = (-s_entropy).sort(0).indices.sort(0).indices.unsqueeze(-1) + 1.
                 sort_i = sort_i / sort_i.size(0) * len(t_hook_L)
                 rate = sort_i > torch.arange(0, len(t_hook_L), device=sort_i.device)
@@ -189,10 +193,33 @@ class Uncertainty(AvgTeacher):
         return sum(loss_L) / len(loss_L)
 
 
+class RL_KD(AvgTeacher):
+    def __init__(self, args, **kwargs):
+        super().__init__(args, **kwargs)
+
+    def compute(self, teacher_models, t_hook_L, t_inter_vars_L, t_out_L, student_model, s_hook, s_inter_vars, s_out,
+                loss_mask=None, labels=None, **kwargs):
+        loss_L = []
+        self.record_and_show(student_model)
+        for i, (t_hook, t_inter_vars, t_out, t_model) in enumerate(zip(t_hook_L, t_inter_vars_L, t_out_L, teacher_models)):
+            self.record_and_show(student_model, op='t_start', t_no=i)
+            # pre_loss
+            pre_loss = student_model.pre_loss(s_out['logits'], t_out['logits'], s_out['loss'], loss_mask=loss_mask, labels=labels)
+            # inter_loss
+            inter_loss = student_model.inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, t_model=t_model, loss_mask=loss_mask, labels=labels)
+            # loss
+            loss = pre_loss + inter_loss
+            loss_L.append(loss)
+            self.record_and_show(student_model, op='t_end', t_no=i, loss=loss)
+        self.record_and_show(student_model, op='final_show')
+        return sum(loss_L) / len(loss_L)
+
+
 multi_teacher_model_D = {
     None: AvgTeacher,
     '': AvgTeacher,
     'tmkd': AvgTeacher,
     'mt_bert': MT_BERT,
     'uncertainty': Uncertainty,
+    'rl_kd': RL_KD,
 }

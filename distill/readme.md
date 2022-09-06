@@ -46,4 +46,4 @@
 
 ## RL-KD (类似)
 1. finetune-avg: ... --student_model=kd --distill_ft_soft --distill_temperature=10 --distill_ft_hard --student_truncate_tn=0 --multi_teacher_model=rl_kd --rl_kd_only_mask_pad --rl_kd_only_avg
-2. finetune-rl: ... --student_model=kd --distill_ft_soft --distill_temperature=10 --distill_ft_hard --multi_teacher_model=rl_kd --rl_kd_only_mask_pad --rl_kd_reward=1 --rl_kd_semantic_model=0 --mt_has_loss
+2. finetune-rl (多1个base教师): ... --student_model=kd --distill_ft_soft --distill_temperature=10 --distill_ft_hard --multi_teacher_model=rl_kd --rl_kd_only_mask_pad --rl_kd_reward=1 --rl_kd_semantic_model=0 --mt_has_loss

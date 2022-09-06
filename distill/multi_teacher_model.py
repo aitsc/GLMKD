@@ -127,7 +127,10 @@ class MT_BERT(AvgTeacher):
             loss_L.append(loss)
             self.record_and_show(student_model, op='t_end', t_no=i, loss=loss)
         self.record_and_show(student_model, op='final_show')
-        return sum(loss_L) + s_out['loss']  # 这里加入了硬标签, pre_loss 不应再有硬标签参数
+        if self.args.mt_bert_wo_hard:
+            return sum(loss_L)
+        else:
+            return sum(loss_L) + s_out['loss']  # 这里加入了硬标签, pre_loss 不应再有硬标签参数
 
 
 class Uncertainty(AvgTeacher):
@@ -240,11 +243,12 @@ class RL_KD(AvgTeacher):
         mt_soft_rep = []
         # loss
         for i, (t_hook, t_inter_vars, t_out, t_model) in enumerate(zip(t_hook_L, t_inter_vars_L, t_out_L, teacher_models)):
-            if i == self.args.rl_kd_semantic_model and not self.args.rl_kd_only_avg:
+            if i == self.args.rl_kd_semantic_model:
                 # Semantic Representation: [CLS]
-                rep = t_inter_vars[t_hook['transformer']['output']][...,0,:].squeeze(-2)
-                rep = rep.contiguous().view(s_out['loss_batch'].size(0), -1)
-                semantic_mt_loss_rep = [rep.detach().clone()] + semantic_mt_loss_rep
+                if not self.args.rl_kd_only_avg:
+                    rep = t_inter_vars[t_hook['transformer']['output']][...,0,:].squeeze(-2)
+                    rep = rep.contiguous().view(s_out['loss_batch'].size(0), -1)
+                    semantic_mt_loss_rep = [rep.detach().clone()] + semantic_mt_loss_rep
                 continue
             self.record_and_show(student_model, op='t_start', t_no=i)
             # other Environment rep

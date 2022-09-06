@@ -16,7 +16,7 @@ def get_args():
     py_parser = argparse.ArgumentParser(add_help=False)
     # generic
     py_parser.add_argument('--student_model', type=str, default=None, help='学生模型类型,没有则是原生模型')
-    py_parser.add_argument('--student_truncate_tn', type=int, default=None, help='如果有的话代表选择第几个教师前面层截断作为初始化(长于学生的维度靠前截断参数,短于学生的维度默认学生参数不变)')
+    py_parser.add_argument('--student_truncate_tn', type=int, default=None, help='非None或不小于0的话代表选择第几个教师前面层截断作为初始化(长于学生的维度靠前截断参数,短于学生的维度默认学生参数不变)')
     py_parser.add_argument('--distill_ft_soft', action='store_true', help='是否在微调蒸馏阶段使用软标签')
     py_parser.add_argument('--distill_ft_hard', action='store_true', help='是否在微调蒸馏阶段使用硬标签')
     py_parser.add_argument('--distill_pt_soft', action='store_true', help='是否在预训练蒸馏阶段使用软标签')
@@ -77,6 +77,7 @@ def get_args():
     py_parser.add_argument('--mt_load_from_s', type=str, default=None, help='从整合多教师模型的学生模型路径中加载多教师的参数,将替代teacher_/mt_load_pretrained,mt_*参数中多教师顺序与当初保存的要一致')
     # mt_bert
     py_parser.add_argument('--mt_bert_fit_teacher', action='store_true', help='内层变换是否针对教师,否则是学生')
+    py_parser.add_argument('--mt_bert_wo_hard', action='store_true', help='取消默认自带的硬标签')
     # uncertainty
     py_parser.add_argument('--uncertainty_wo_loss_mask', action='store_true', help='NLG的logits熵不mask')
     py_parser.add_argument('--uncertainty_only_mask_pad', action='store_true', help='NLG的logits熵只mask padding')
@@ -95,6 +96,8 @@ def get_args():
     args = argparse.Namespace(**vars(args), **vars(known))
     # check args
     get_teachers_hook(args)
+    if args.student_truncate_tn is not None and args.student_truncate_tn < 0:
+        args.student_truncate_tn = None
     return args
 
 

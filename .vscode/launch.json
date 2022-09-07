@@ -97,7 +97,7 @@
             "args": [
                 // deepspeed
                 "--master_port=14161",
-                "--include=localhost:1",
+                "--include=localhost:3",
                 "distill/finetune.py",
                 "--deepspeed_config=config_tasks/config_blocklm_tiny6.json",
                 "--deepspeed-activation-checkpointing",
@@ -115,8 +115,11 @@
                 "--model-parallel-size=1",
                 "--save-interval=5000",
                 // 微调
-                "--task=COPA",
-                "--data-dir=../GLM/data/english_data/superglue/COPA",
+                // "--task=copa",
+                // "--data-dir=../GLM/data/english_data/superglue/COPA",
+                // "--seq-length=256",
+                "--task=cb",
+                "--data-dir=../GLM/data/english_data/superglue/CB",
                 "--seq-length=256",
                 // "--task=ReCoRD",
                 // "--data-dir=../GLM/data/english_data/superglue/ReCoRD",
@@ -137,7 +140,7 @@
                 "--save=../GLM/data/checkpoints/finetune_checkpoints",
                 "--experiment-name=finetune_debug", // date +"%y%m%d_%H%M%S"
                 "--load-pretrained=../GLM/data/checkpoints/distill/tiny6/pre-distill6+wikibook19G-new",
-                "--custom_first_eval",
+                // "--custom_first_eval",
                 // 蒸馏
                 // MT-BERT
                 // "--student_model=pkd",

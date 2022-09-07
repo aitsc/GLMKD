@@ -194,19 +194,19 @@ class Uncertainty(AvgTeacher):
 class RL_KD(AvgTeacher):
     def __init__(self, args, **kwargs):
         super().__init__(args, **kwargs)
-        if args.custom_sample_shape:
-            sample_shape = [int(i) for i in args.custom_sample_shape.split(',')]
         # Semantic Representation + Teacher CE Loss
         semantic_len = 0
         tn = len(args.mt_hidden_size.split(':')) if args.mt_hidden_size else 1
         if args.rl_kd_semantic_model is not None:
             semantic_len = int(args.mt_hidden_size.split(':')[args.rl_kd_semantic_model])
             tn -= 1  # multi Teacher CE Loss
+        if args.custom_sample_shape:
+            sample_shape = [int(i) for i in args.custom_sample_shape.split(',')]
         if len(sample_shape) == 2:  # 分类方式差异
             semantic_len *= sample_shape[0]
         self.agent_semantic_mt_loss = torch.nn.Linear(semantic_len + tn, tn)
         # Teacher soft labels
-        class_dim = sample_shape[0] if len(sample_shape) == 2 else args.vocab_size
+        class_dim = self.get_class_num() if self.get_class_num() else args.vocab_size
         if args.custom_logits_paralle:  # 注意这里教师序号等于是连续的
             self.agent_mt_soft = mpu.RowParallelLinear(class_dim * tn, tn, input_is_parallel=True)
         else:
@@ -215,6 +215,23 @@ class RL_KD(AvgTeacher):
         self.semantic_mt_loss_rep = None
         self.mt_soft_rep = None
         self.teacher_select = None  # a
+    
+    def get_class_num(self):
+        from tasks.superglue.dataset import PROCESSORS  # 参考
+        task_class_num = {  # {任务:当作几分类,..}
+            'copa': 2,
+            'wsc': 10,
+            'record': 10,
+            'rte': 2,
+            'boolq': 2,
+            'wic': 2,
+            'cb': 3,
+            'multirc': 2,
+        }
+        if self.args.task.lower() in task_class_num and not self.args.custom_logits_paralle:
+            return task_class_num[self.args.task.lower()]
+        else:
+            return None
 
     def hooks_process(self, t_hook_L, **kwargs):
         if self.args.rl_kd_semantic_model is not None:

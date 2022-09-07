@@ -10,11 +10,11 @@ from distill.tools import all_mean_custom, aux_layer
 
 
 class AvgTeacher(torch.nn.Module):
-    def __init__(self, args, **kwargs):
+    def __init__(self, args, show_inter=True, show_pre=True, **kwargs):
         super().__init__()
         self.args = args
-        self.show_inter = True
-        self.show_pre = True
+        self.show_inter = show_inter
+        self.show_pre = show_pre
 
     def record_and_show(self, student_model, op='init', t_no=-1, loss=0):
         # 初始化显示和记录的参数
@@ -301,6 +301,33 @@ class RL_KD(AvgTeacher):
         return final_loss * self.args.rl_kd_alpha + (1 - self.args.rl_kd_alpha) * s_out['loss']
 
 
+class MixMT(AvgTeacher):
+    def __init__(self, args, **kwargs):
+        super().__init__(args, **kwargs)
+        self.mixmt_model = args.mixmt_model.split(',')
+        self.baselines = set(self.mixmt_model)
+        for c in self.baselines:
+            setattr(self, c, eval(c)(args, **kwargs))
+        self.show_c = True
+
+    def hooks_process(self, t_hook_L, **kwargs):
+        for c in self.baselines:
+            getattr(self, c).hooks_process(t_hook_L, **kwargs)
+        return t_hook_L
+        
+    def compute(self, teacher_models, t_hook_L, t_inter_vars_L, t_out_L, student_model, s_hook, s_inter_vars, s_out, **kwargs):
+        loss_ = 0.
+        for c in self.baselines:
+            if self.show_c:
+                print(c)
+            mt = getattr(self, c)
+            l = mt.compute(teacher_models, t_hook_L, t_inter_vars_L, t_out_L, student_model, s_hook, s_inter_vars, s_out, **kwargs)
+            student_model.add_summary(f'multi_teacher_model/{c}', l)
+            loss_ += l
+        self.show_c = False
+        return loss_
+
+
 multi_teacher_model_D = {
     None: AvgTeacher,
     '': AvgTeacher,
@@ -308,4 +335,5 @@ multi_teacher_model_D = {
     'mt_bert': MT_BERT,
     'uncertainty': Uncertainty,
     'rl_kd': RL_KD,
+    'mixmt': MixMT,
 }

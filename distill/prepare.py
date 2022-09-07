@@ -95,6 +95,8 @@ def get_args():
     py_parser.add_argument('--rl_kd_only_avg', action='store_true', help='只使用平均教师loss不使用强化学习')
     py_parser.add_argument('--rl_kd_wo_hard', action='store_true', help='取消默认自带的硬标签')
     py_parser.add_argument('--rl_kd_alpha', type=float, default=0.5, help='非自带硬标签部分的权重,(1-权重)为自带硬标签的权重,保留默认自带的硬标签才生效')
+    # mixmt
+    py_parser.add_argument('--mixmt_model', type=str, default='', help='AvgTeacher,MT_BERT,Uncertainty,RL_KD')
 
     known, args_list = py_parser.parse_known_args()
     args = get_args_(args_list)

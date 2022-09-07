@@ -11,7 +11,7 @@ import math
 from tsc_base import merge_dict
 from apex.normalization.fused_layer_norm import FusedLayerNorm as LayerNorm
 from fp16 import fp32_to_fp16, fp16_to_fp32
-from distill.tools import all_mean_custom
+from distill.tools import all_mean_custom, aux_layer
 
 
 class GLMStudent(torch.nn.Module):
@@ -36,7 +36,7 @@ class GLMStudent(torch.nn.Module):
     def forward(self, *inputs, **kwargs):
         return self.origin_model(*inputs, **kwargs)
 
-    def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=False, **kwargs):
+    def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=False, t_no=None, **kwargs):
         self.inter_show_hooks = {
             'student': hook_reduce(s_hook, s_inter_vars, filter=None),
             'teacher': hook_reduce(t_hook, t_inter_vars, filter=None),
@@ -47,7 +47,7 @@ class GLMStudent(torch.nn.Module):
             self.show_inter = False
         return 0.
 
-    def pre_loss(self, s_logits, t_logits, loss, loss_mask=None, return_dict=False, labels=False, keep_batch=False, **kwargs):
+    def pre_loss(self, s_logits, t_logits, loss, loss_mask=None, return_dict=False, labels=False, keep_batch=False, t_no=None, **kwargs):
         loss_ = 0.
         self.pre_loss_description = 'pre_loss: 0'
         T = self.args.distill_temperature
@@ -199,10 +199,13 @@ def find_model_inter_var(model, name):
 class TinyBERT(GLMStudent):
     def __init__(self, language_model, args, **kwargs):
         super().__init__(language_model, args, **kwargs)
-        if args.tinybert_fit_parallel:
-            self.fit_dense = mpu.ColumnParallelLinear(args.hidden_size, args.teacher_hidden_size)
+        Linear = mpu.ColumnParallelLinear if args.tinybert_fit_parallel else torch.nn.Linear
+        if args.tinybert_fit_compatible_mt and args.mt_hidden_size:
+            mt_hidden_size = [int(i) for i in args.mt_hidden_size.split(':')]
+            for i, hidden_size in enumerate(mt_hidden_size):
+                setattr(self, f'fit_dense_{i}', Linear(args.hidden_size, hidden_size))
         else:
-            self.fit_dense = torch.nn.Linear(args.hidden_size, args.teacher_hidden_size)
+            self.fit_dense = Linear(args.hidden_size, args.teacher_hidden_size)
 
     def get_teacher_hook(self, **kwargs):
         layers_per_block = int(self.args.teacher_num_layers / self.args.num_layers)
@@ -226,14 +229,15 @@ class TinyBERT(GLMStudent):
     def forward(self, *inputs, hook=None, **kwargs):
         inter_vars = []
         outputs = hook_model(hook, inter_vars, self.origin_model, *inputs, **kwargs)
-        if hook is not None and not self.args.tinybert_wo_inter and inter_vars:
+        if hook is not None and not self.args.tinybert_wo_inter and inter_vars \
+            and not (self.args.tinybert_fit_compatible_mt and self.args.mt_hidden_size):
             # {'transformer': {'layers':{0:{'layernorm_output':,'attention_scores':},..},'output':,..},..}
             for v in hook['transformer']['layers'].values():
                 inter_vars[v['layernorm_output']] = self.fit_dense(inter_vars[v['layernorm_output']])
             inter_vars[hook['transformer']['output']] = self.fit_dense(inter_vars[hook['transformer']['output']])
         return hook_return(hook, inter_vars, outputs)
 
-    def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=False, **kwargs):
+    def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=False, t_no=None, **kwargs):
         loss_ = 0.
         if self.args.tinybert_wo_inter or len(s_inter_vars) == 0:
             return loss_
@@ -241,6 +245,16 @@ class TinyBERT(GLMStudent):
             inter_vars, hook = (s_inter_vars, s_hook) if st == 's' else (t_inter_vars, t_hook)
             return [inter_vars[i[1][name]] for i in sorted(hook['transformer']['layers'].items()) if name in i[1]]
 
+        # 学生中间层 W
+        if self.args.tinybert_fit_compatible_mt and self.args.mt_hidden_size \
+            and 'transformer' in s_hook and 'layers' in s_hook['transformer'] and t_no is not None:
+            s_inter_vars = s_inter_vars.copy()
+            fit_dense = getattr(self, f'fit_dense_{t_no}')
+            for v in s_hook['transformer']['layers'].values():
+                if 'layernorm_output' in v:
+                    s_inter_vars[v['layernorm_output']] = aux_layer(self.args, fit_dense, s_inter_vars[v['layernorm_output']])
+            if 'output' in s_hook['transformer']:
+                s_inter_vars[s_hook['transformer']['output']] = aux_layer(self.args, fit_dense, s_inter_vars[s_hook['transformer']['output']])
         # attentions
         if not self.args.tinybert_inter_final:
             student_reps = get_layer_f('s', 'attention_scores')

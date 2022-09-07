@@ -41,7 +41,8 @@ def get_args():
     # tinybert
     py_parser.add_argument('--tinybert_inter_final', action='store_true', help="inter: final layer")
     py_parser.add_argument('--tinybert_wo_inter', action='store_true', help="不使用中间层,用于二次微调")
-    py_parser.add_argument('--tinybert_fit_parallel', action='store_true')
+    py_parser.add_argument('--tinybert_fit_parallel', action='store_true', help='转换层是否使用模型并行')
+    py_parser.add_argument('--tinybert_fit_compatible_mt', action='store_true', help='是否使用多个转换层兼容多教师')
     # minilmv2
     py_parser.add_argument('--minilmv2_relation_heads', type=int, default=48, help="base=48,large=64")
     py_parser.add_argument('--minilmv2_teacher_layer', type=int, default=12, help="start at one")
@@ -79,6 +80,7 @@ def get_args():
     # mt_bert
     py_parser.add_argument('--mt_bert_fit_teacher', action='store_true', help='内层变换是否针对教师,否则是学生')
     py_parser.add_argument('--mt_bert_wo_hard', action='store_true', help='取消默认自带的硬标签')
+    py_parser.add_argument('--mt_bert_wo_convert_layer', action='store_true', help='取消自带的神经网络层转换,可用于学生自带或相同隐层不需要')
     # uncertainty
     py_parser.add_argument('--uncertainty_wo_loss_mask', action='store_true', help='NLG的logits熵不mask')
     py_parser.add_argument('--uncertainty_only_mask_pad', action='store_true', help='NLG的logits熵只mask padding')

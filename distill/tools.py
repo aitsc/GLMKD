@@ -2,6 +2,7 @@ import sys, os
 sys.path.append(os.getcwd())
 
 import mpu
+from fp16 import fp32_to_fp16, fp16_to_fp32
 
 
 def all_mean_custom(tensor, keep_batch=False, reduce=False):
@@ -17,3 +18,10 @@ def all_mean_custom(tensor, keep_batch=False, reduce=False):
         ret = mpu.reduce_from_model_parallel_region(ret) / mpu.get_model_parallel_world_size()
     return ret
     
+
+def aux_layer(args, layer, *inputs, **kwargs):
+    # 解决外部调用内部layer精度不同的问题
+    if args.fp16:
+        return fp16_to_fp32(layer(*(fp32_to_fp16(inputs)), **kwargs))
+    else:
+        return layer(*inputs, **kwargs)

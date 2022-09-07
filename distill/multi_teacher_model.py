@@ -5,9 +5,8 @@ import torch
 import torch.nn.functional as F
 from utils import print_rank_0
 import mpu
-from fp16 import fp32_to_fp16, fp16_to_fp32
 import math
-from distill.tools import all_mean_custom
+from distill.tools import all_mean_custom, aux_layer
 
 
 class AvgTeacher(torch.nn.Module):
@@ -55,13 +54,6 @@ class AvgTeacher(torch.nn.Module):
         else:
             raise NameError(f'未知的 op={op} !')
 
-    def aux_layer(self, layer, *inputs, **kwargs):
-        # 解决外部调用内部layer精度不同的问题
-        if self.args.fp16:
-            return fp16_to_fp32(layer(*(fp32_to_fp16(inputs)), **kwargs))
-        else:
-            return layer(*inputs, **kwargs)
-
     def compute(self, teacher_models, t_hook_L, t_inter_vars_L, t_out_L, student_model, s_hook, s_inter_vars, s_out,
                 loss_mask=None, labels=None, **kwargs):
         loss_L = []
@@ -69,9 +61,9 @@ class AvgTeacher(torch.nn.Module):
         for i, (t_hook, t_inter_vars, t_out, t_model) in enumerate(zip(t_hook_L, t_inter_vars_L, t_out_L, teacher_models)):
             self.record_and_show(student_model, op='t_start', t_no=i)
             # pre_loss
-            pre_loss = student_model.pre_loss(s_out['logits'], t_out['logits'], s_out['loss'], loss_mask=loss_mask, labels=labels)
+            pre_loss = student_model.pre_loss(s_out['logits'], t_out['logits'], s_out['loss'], loss_mask=loss_mask, labels=labels, t_no=i)
             # inter_loss
-            inter_loss = student_model.inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, t_model=t_model, loss_mask=loss_mask, labels=labels)
+            inter_loss = student_model.inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, t_model=t_model, loss_mask=loss_mask, labels=labels, t_no=i)
             # loss
             loss = pre_loss + inter_loss
             loss_L.append(loss)
@@ -87,7 +79,7 @@ class AvgTeacher(torch.nn.Module):
 class MT_BERT(AvgTeacher):
     def __init__(self, args, **kwargs):
         super().__init__(args, **kwargs)
-        if args.mt_hidden_size:  # W
+        if args.mt_hidden_size and not args.mt_bert_wo_convert_layer:  # W
             mt_hidden_size = [int(i) for i in args.mt_hidden_size.split(':')]
             for i, hidden_size in enumerate(mt_hidden_size):
                 if args.mt_bert_fit_teacher:
@@ -103,26 +95,27 @@ class MT_BERT(AvgTeacher):
         for i, (t_hook, t_inter_vars, t_out, t_model) in enumerate(zip(t_hook_L, t_inter_vars_L, t_out_L, teacher_models)):
             self.record_and_show(student_model, op='t_start', t_no=i)
             if self.args.mt_bert_fit_teacher:
-                inter_vars = t_inter_vars.copy()  # 不修改 t_inter_vars_L
+                hook, inter_vars = t_hook, t_inter_vars.copy()  # 不修改 t_inter_vars_L
             else:
-                inter_vars = s_inter_vars.copy()  # 不修改 s_inter_vars
+                hook, inter_vars = s_hook, s_inter_vars.copy()  # 不修改 s_inter_vars
             # 教师/学生中间层 W
-            if self.args.mt_hidden_size and 'transformer' in s_hook and 'layers' in s_hook['transformer']:
+            if self.args.mt_hidden_size and 'transformer' in hook and 'layers' in hook['transformer'] \
+                and not self.args.mt_bert_wo_convert_layer:
                 fit_dense = getattr(self, f'fit_dense_{i}')
-                for v in s_hook['transformer']['layers'].values():
+                for v in hook['transformer']['layers'].values():
                     if 'layernorm_output' in v:
-                        inter_vars[v['layernorm_output']] = self.aux_layer(fit_dense, inter_vars[v['layernorm_output']])
-                if 'output' in s_hook['transformer']:
-                    inter_vars[s_hook['transformer']['output']] = self.aux_layer(fit_dense, inter_vars[s_hook['transformer']['output']])
+                        inter_vars[v['layernorm_output']] = aux_layer(self.args, fit_dense, inter_vars[v['layernorm_output']])
+                if 'output' in hook['transformer']:
+                    inter_vars[hook['transformer']['output']] = aux_layer(self.args, fit_dense, inter_vars[hook['transformer']['output']])
             # pre_loss
-            pre_loss = student_model.pre_loss(s_out['logits'], t_out['logits'], s_out['loss_batch'], loss_mask=loss_mask, labels=labels, keep_batch=True)
+            pre_loss = student_model.pre_loss(s_out['logits'], t_out['logits'], s_out['loss_batch'], loss_mask=loss_mask, labels=labels, keep_batch=True, t_no=i)
             pre_loss *= 1 / (1 + t_out['loss_batch'])  # 加权, 依赖参数 --mt_has_loss
             # inter_loss
             if self.args.mt_bert_fit_teacher:
                 s_iv, t_iv = s_inter_vars, inter_vars
             else:
                 s_iv, t_iv = inter_vars, t_inter_vars
-            inter_loss = student_model.inter_loss(s_iv, t_iv, s_hook, t_hook, t_model=t_model, loss_mask=loss_mask, labels=labels)
+            inter_loss = student_model.inter_loss(s_iv, t_iv, s_hook, t_hook, t_model=t_model, loss_mask=loss_mask, labels=labels, t_no=i)
             loss = pre_loss.mean() + inter_loss
             loss_L.append(loss)
             self.record_and_show(student_model, op='t_end', t_no=i, loss=loss)
@@ -181,11 +174,11 @@ class Uncertainty(AvgTeacher):
         for i, (t_hook, t_inter_vars, t_out, t_model) in enumerate(zip(t_hook_L, t_inter_vars_L, t_out_L, teacher_models)):
             self.record_and_show(student_model, op='t_start', t_no=i)
             # pre_loss
-            pre_loss = student_model.pre_loss(s_out['logits'], t_out['logits'], s_out['loss_batch'], loss_mask=loss_mask, labels=labels, keep_batch=True)
+            pre_loss = student_model.pre_loss(s_out['logits'], t_out['logits'], s_out['loss_batch'], loss_mask=loss_mask, labels=labels, keep_batch=True, t_no=i)
             pre_loss = (rate[...,t_seq[i]] * pre_loss)
             # inter_loss
             keep_batch = True if self.args.uncertainty_inter_entropy else False
-            inter_loss = student_model.inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, t_model=t_model, loss_mask=loss_mask, labels=labels, keep_batch=keep_batch)
+            inter_loss = student_model.inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, t_model=t_model, loss_mask=loss_mask, labels=labels, keep_batch=keep_batch, t_no=i)
             if self.args.uncertainty_inter_entropy:
                 inter_loss = (inter_loss * s_entropy).mean()
                 if inter_loss > 0:
@@ -264,9 +257,9 @@ class RL_KD(AvgTeacher):
                 s_loss, keep_batch = s_out['loss'], False
             else:
                 s_loss, keep_batch = s_out['loss_batch'], True
-            pre_loss = student_model.pre_loss(s_out['logits'], t_out['logits'], s_loss, loss_mask=loss_mask, labels=labels, keep_batch=keep_batch)
+            pre_loss = student_model.pre_loss(s_out['logits'], t_out['logits'], s_loss, loss_mask=loss_mask, labels=labels, keep_batch=keep_batch, t_no=i)
             # inter_loss
-            inter_loss = student_model.inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, t_model=t_model, loss_mask=loss_mask, labels=labels, keep_batch=keep_batch)
+            inter_loss = student_model.inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, t_model=t_model, loss_mask=loss_mask, labels=labels, keep_batch=keep_batch, t_no=i)
             # loss
             loss = pre_loss + inter_loss
             loss_L.append(loss)
@@ -278,8 +271,8 @@ class RL_KD(AvgTeacher):
             # Teacher Selector
             semantic_mt_loss_rep = torch.cat(semantic_mt_loss_rep, -1)
             mt_soft_rep = torch.cat(mt_soft_rep, -1)
-            s = self.aux_layer(self.agent_semantic_mt_loss, semantic_mt_loss_rep)
-            s += self.aux_layer(self.agent_mt_soft, mt_soft_rep)
+            s = aux_layer(self.args, self.agent_semantic_mt_loss, semantic_mt_loss_rep)
+            s += aux_layer(self.args, self.agent_mt_soft, mt_soft_rep)
             s = s.sigmoid()
             teacher_select = torch.rand(*s.shape, device=s.device) < s
             final_loss = torch.stack(loss_L, -1) * teacher_select
@@ -289,8 +282,8 @@ class RL_KD(AvgTeacher):
                 and self.mt_soft_rep is not None \
                 and self.teacher_select is not None \
                 :  # 隔代更新不用数据重复使用
-                s = self.aux_layer(self.agent_semantic_mt_loss, self.semantic_mt_loss_rep)
-                s += self.aux_layer(self.agent_mt_soft, self.mt_soft_rep)
+                s = aux_layer(self.args, self.agent_semantic_mt_loss, self.semantic_mt_loss_rep)
+                s += aux_layer(self.args, self.agent_mt_soft, self.mt_soft_rep)
                 s = s.sigmoid()
                 pi = s * self.teacher_select + (1 - s) * (1 - self.teacher_select * 1)
                 reward = [

@@ -273,36 +273,39 @@ class RL_KD(AvgTeacher):
             self.record_and_show(student_model, op='t_end', t_no=i, loss=loss)
         self.record_and_show(student_model, op='final_show')
         if self.args.rl_kd_only_avg:
-            return sum(loss_L) / len(loss_L)
-        # Teacher Selector
-        semantic_mt_loss_rep = torch.cat(semantic_mt_loss_rep, -1)
-        mt_soft_rep = torch.cat(mt_soft_rep, -1)
-        s = self.aux_layer(self.agent_semantic_mt_loss, semantic_mt_loss_rep)
-        s += self.aux_layer(self.agent_mt_soft, mt_soft_rep)
-        s = s.sigmoid()
-        teacher_select = torch.rand(*s.shape, device=s.device) < s
-        final_loss = torch.stack(loss_L, -1) * teacher_select
-        final_loss = final_loss.mean()
-        # Update agent
-        if self.semantic_mt_loss_rep is not None \
-            and self.mt_soft_rep is not None \
-            and self.teacher_select is not None \
-            :  # 隔代更新不用数据重复使用
-            s = self.aux_layer(self.agent_semantic_mt_loss, self.semantic_mt_loss_rep)
-            s += self.aux_layer(self.agent_mt_soft, self.mt_soft_rep)
+            final_loss = sum(loss_L) / len(loss_L)
+        else:
+            # Teacher Selector
+            semantic_mt_loss_rep = torch.cat(semantic_mt_loss_rep, -1)
+            mt_soft_rep = torch.cat(mt_soft_rep, -1)
+            s = self.aux_layer(self.agent_semantic_mt_loss, semantic_mt_loss_rep)
+            s += self.aux_layer(self.agent_mt_soft, mt_soft_rep)
             s = s.sigmoid()
-            pi = s * self.teacher_select + (1 - s) * (1 - self.teacher_select * 1)
-            reward = [
-                - s_out['loss'],
-                - s_out['loss'] - t_out['loss'],
-            ]
-            rl_loss = - pi.sum() * reward[self.args.rl_kd_reward - 1].detach().clone()
-            student_model.add_summary('multi_teacher_model/rl_loss', rl_loss)
-            final_loss = final_loss + rl_loss
-        self.semantic_mt_loss_rep = semantic_mt_loss_rep
-        self.mt_soft_rep = mt_soft_rep
-        self.teacher_select = teacher_select
-        return final_loss
+            teacher_select = torch.rand(*s.shape, device=s.device) < s
+            final_loss = torch.stack(loss_L, -1) * teacher_select
+            final_loss = final_loss.mean()
+            # Update agent
+            if self.semantic_mt_loss_rep is not None \
+                and self.mt_soft_rep is not None \
+                and self.teacher_select is not None \
+                :  # 隔代更新不用数据重复使用
+                s = self.aux_layer(self.agent_semantic_mt_loss, self.semantic_mt_loss_rep)
+                s += self.aux_layer(self.agent_mt_soft, self.mt_soft_rep)
+                s = s.sigmoid()
+                pi = s * self.teacher_select + (1 - s) * (1 - self.teacher_select * 1)
+                reward = [
+                    - s_out['loss'],
+                    - s_out['loss'] - t_out['loss'],
+                ]
+                rl_loss = - pi.sum() * reward[self.args.rl_kd_reward - 1].detach().clone()
+                student_model.add_summary('multi_teacher_model/rl_loss', rl_loss)
+                final_loss = final_loss + rl_loss
+            self.semantic_mt_loss_rep = semantic_mt_loss_rep
+            self.mt_soft_rep = mt_soft_rep
+            self.teacher_select = teacher_select
+        if self.args.rl_kd_wo_hard:
+            return final_loss
+        return final_loss * self.args.rl_kd_alpha + (1 - self.args.rl_kd_alpha) * s_out['loss']
 
 
 multi_teacher_model_D = {

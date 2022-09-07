@@ -21,6 +21,7 @@ def get_args():
     py_parser.add_argument('--distill_ft_hard', action='store_true', help='是否在微调蒸馏阶段使用硬标签')
     py_parser.add_argument('--distill_pt_soft', action='store_true', help='是否在预训练蒸馏阶段使用软标签')
     py_parser.add_argument('--distill_pt_hard', action='store_true', help='是否在预训练蒸馏阶段使用硬标签')
+    py_parser.add_argument('--distill_soft_rate', type=float, default=1., help='蒸馏阶段使用软标签的比例')
     py_parser.add_argument('--distill_hard_rate', type=float, default=1., help='蒸馏阶段使用硬标签的比例,可配合多教师')
     py_parser.add_argument('--distill_temperature', type=float, default=1., help='ce/kl散度蒸馏温度')
     py_parser.add_argument('--distill_wo_loss_mask', action='store_true', help='蒸馏软标签不mask')
@@ -90,6 +91,8 @@ def get_args():
     py_parser.add_argument('--rl_kd_reward', type=int, default=1, help='reward type')
     py_parser.add_argument('--rl_kd_semantic_model', type=int, default=None, help='第几个教师模型会拿来做Environment的Semantic Representation,这个教师模型将不参与其他计算,默认不使用Semantic')
     py_parser.add_argument('--rl_kd_only_avg', action='store_true', help='只使用平均教师loss不使用强化学习')
+    py_parser.add_argument('--rl_kd_wo_hard', action='store_true', help='取消默认自带的硬标签')
+    py_parser.add_argument('--rl_kd_alpha', type=float, default=0.5, help='非自带硬标签部分的权重,(1-权重)为自带硬标签的权重,保留默认自带的硬标签才生效')
 
     known, args_list = py_parser.parse_known_args()
     args = get_args_(args_list)

@@ -63,7 +63,7 @@ class GLMStudent(torch.nn.Module):
             self.pre_loss_description += '/mask_A_pad'
         if self.args.finetune:
             if self.args.distill_ft_soft:
-                self.pre_loss_description += ' + distill_ft_soft(T%s)'%T
+                self.pre_loss_description += ' + %s*distill_ft_soft(T%s)'%(self.args.distill_soft_rate,T)
                 if self.args.distill_ft_soft_mse:
                     l = F.mse_loss(s_logits * mask, t_logits * mask, reduction='none')
                     self.pre_loss_description += '(mse)'
@@ -76,17 +76,19 @@ class GLMStudent(torch.nn.Module):
                         l = (- targets_prob * student_likelihood)
                     l = l.sum(-1)
                 l = all_mean_custom(l, keep_batch, reduce=True)  # 可能等于加权(1/模型并行数)
+                l = l * self.args.distill_soft_rate
                 self.add_summary('pre_loss/ft_soft', l)
                 loss_ += l
                 loss_D['soft'] = l
             if self.args.distill_ft_hard:
                 self.pre_loss_description += ' + %s*distill_ft_hard'%self.args.distill_hard_rate
-                self.add_summary('pre_loss/ft_hard', loss)
-                loss_ += loss * self.args.distill_hard_rate
+                l = loss * self.args.distill_hard_rate
+                self.add_summary('pre_loss/ft_hard', l)
+                loss_ += l
                 loss_D['hard'] = l
         else:
             if self.args.distill_pt_soft:
-                self.pre_loss_description += ' + distill_pt_soft(T%s)'%T
+                self.pre_loss_description += ' + %s*distill_pt_soft(T%s)'%(self.args.distill_soft_rate,T)
                 if self.args.distill_pt_soft_mse:
                     l = F.mse_loss(s_logits * mask, t_logits * mask, reduction='none')
                     self.pre_loss_description += '(mse)'
@@ -99,13 +101,15 @@ class GLMStudent(torch.nn.Module):
                         l = F.kl_div(student_likelihood, targets_prob, reduction="none") * T ** 2
                     l = l.sum(-1)
                 l = all_mean_custom(l, keep_batch, reduce=True)  # 可能等于加权(1/模型并行数)
+                l = l * self.args.distill_soft_rate
                 self.add_summary('pre_loss/pt_soft', l)
                 loss_ += l
                 loss_D['soft'] = l
             if self.args.distill_pt_hard:
                 self.pre_loss_description += ' + %s*distill_pt_hard'%self.args.distill_hard_rate
-                self.add_summary('pre_loss/pt_hard', loss)
-                loss_ += loss * self.args.distill_hard_rate
+                l = loss * self.args.distill_hard_rate
+                self.add_summary('pre_loss/pt_hard', l)
+                loss_ += l
                 loss_D['hard'] = l
         loss_D['loss'] = loss_
         # show

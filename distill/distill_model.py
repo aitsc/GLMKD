@@ -522,14 +522,16 @@ class PKD(GLMStudent):
     def get_teacher_hook(self, **kwargs):
         layers_per_block = int(self.args.teacher_num_layers / self.args.num_layers)
         layers = tuple(range(0, self.args.teacher_num_layers + 1, layers_per_block))
+        x = 0 if self.args.pkd_use_embed else 1
         return {'transformer': {
-            'layers': {i: {'layernorm_output': None} for i in layers[1: -1]},
+            'layers': {i: {'layernorm_output': None} for i in layers[x: -1]},
             'output': None,
         }}
 
     def get_student_hook(self, **kwargs):
+        x = 0 if self.args.pkd_use_embed else 1
         return {'transformer': {
-            'layers': {i: {'layernorm_output': None} for i in range(1, self.args.num_layers)},
+            'layers': {i: {'layernorm_output': None} for i in range(x, self.args.num_layers)},
             'output': None,
         }}
 

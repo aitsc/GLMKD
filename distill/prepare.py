@@ -63,6 +63,7 @@ def get_args():
     py_parser.add_argument('--pkd_normalized_patience', action='store_true')
     py_parser.add_argument('--pkd_alpha', type=float, default=0.5, help="soft权重")
     py_parser.add_argument('--pkd_beta', type=float, default=100., help="中间层权重")
+    py_parser.add_argument('--pkd_use_embed', action='store_true', help="中间层是否包括嵌入层")
 
     # multi-teacher 多个教师的模型参数用冒号分隔, 优先级高于 teacher_ 参数
     py_parser.add_argument('--mt_num_attention_heads', type=str, default='')

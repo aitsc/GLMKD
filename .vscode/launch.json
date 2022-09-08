@@ -139,8 +139,8 @@
                 "--save-epoch=100000",
                 "--save=../GLM/data/checkpoints/finetune_checkpoints",
                 "--experiment-name=finetune_debug/自动时间", // date +"%y%m%d_%H%M%S"
-                "--load-pretrained=../GLM/data/checkpoints/distill/tiny6/distill12-6+wikibook19G",
-                "--load-pretrained=../GLM/data/checkpoints/distill/tiny6/random6",
+                "--load-pretrained=../GLM/data/checkpoints/distill/tiny6/distill12-6_wb19G_distilbert_maskp-woh",
+                // "--load-pretrained=../GLM/data/checkpoints/distill/tiny6/random6",
                 "--custom_first_eval",
                 // 蒸馏
                 // MT-BERT

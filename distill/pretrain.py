@@ -76,6 +76,7 @@ def forward_step(data_iterator, model, args, timers, mems, teacher_models=None):
     loss, loss_batch = compute_loss(logits)
 
     if is_distill:
+        student_model.add_summary('Train/hard_loss', loss)
         with NoneWith() if args.mt_has_grad else torch.no_grad():
             t_out_L = mt_repeat_operation(
                 zip(t_hook_L, t_inter_vars_L, teacher_models),
@@ -140,6 +141,13 @@ def main():
     teacher_models=get_teacher_model(args)
     glm_wrap_ = lambda **k: glm_wrap(**k, teacher_models=teacher_models)
     model, optimizer, lr_scheduler = setup_model_and_optimizer(args, glm_wrap=glm_wrap_)
+    is_load1 = mt_model_load(model, args.mt_model_load)
+    is_load2 = truncate_teacher_as_student(model, teacher_models, args)
+    if (is_load1 or is_load2) and args.fp16 and optimizer is not None:
+        if args.deepspeed:
+            optimizer.refresh_fp32_params()
+        else:
+            optimizer._model_params_to_master_params()
     if args.load is not None:
         with FileLock(os.path.join(pathlib.Path.home(), "checkpoint_lock"), timeout=-1):
             args.iteration = load_checkpoint(model, optimizer, lr_scheduler, args, no_deepspeed=args.no_deepspeed_load)
@@ -150,8 +158,6 @@ def main():
                 optimizer._model_params_to_master_params()
     else:
         args.iteration = 0
-    mt_model_load(model, args.mt_model_load)
-    truncate_teacher_as_student(model, teacher_models, args)
     torch.distributed.barrier()
     if args.switch_linear:
         lr_scheduler.switch_linear(args)

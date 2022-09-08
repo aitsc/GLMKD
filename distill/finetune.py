@@ -137,6 +137,7 @@ def finetune_forward_step(batch, model, args, timers, mems, teacher_models=None)
     loss, loss_batch = get_loss(logits)
 
     if is_distill:
+        student_model.add_summary('Train/hard_loss', loss)
         t_out_L = mt_repeat_operation(
             zip(t_hook_L, t_inter_vars_L, teacher_models),
             lambda h, i, m: get_logits(h, i, m, no_grad=not args.mt_has_grad),
@@ -271,6 +272,13 @@ def finetune(args, train_valid_datasets_provider, model_kwargs, forward_step=fin
                 optimizer.refresh_fp32_params()
             else:
                 optimizer._model_params_to_master_params()
+    is_load1 = mt_model_load(model, args.mt_model_load)
+    is_load2 = truncate_teacher_as_student(model, teacher_models, args)
+    if (is_load1 or is_load2) and args.fp16 and optimizer is not None:
+        if args.deepspeed:
+            optimizer.refresh_fp32_params()
+        else:
+            optimizer._model_params_to_master_params()
     if args.load is not None:
         with FileLock(os.path.join(pathlib.Path.home(), "checkpoint_lock"), timeout=-1):
             load_checkpoint(model, optimizer, lr_scheduler, args, no_deepspeed=args.no_deepspeed_load)
@@ -281,8 +289,6 @@ def finetune(args, train_valid_datasets_provider, model_kwargs, forward_step=fin
                 optimizer.refresh_fp32_params()
             else:
                 optimizer._model_params_to_master_params()
-    mt_model_load(model, args.mt_model_load)
-    truncate_teacher_as_student(model, teacher_models, args)
     torch.distributed.barrier()
     timers('pretrained checkpoint').stop()
     args.iteration = 0

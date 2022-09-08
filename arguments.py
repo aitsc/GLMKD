@@ -23,6 +23,7 @@ import json
 from utils import get_hostname
 import random
 import socket
+from datetime import datetime
 
 
 def add_model_config_args(parser):
@@ -495,6 +496,11 @@ def get_args(arg_list=None):
             optimizer_params_config = deepspeed_config["optimizer"].get("params", {})
             args.lr = optimizer_params_config.get("lr", args.lr)
             args.weight_decay = optimizer_params_config.get("weight_decay", args.weight_decay)
+
+    # 自定义
+    if '自动时间' in args.experiment_name:
+        args.experiment_name = args.experiment_name.replace('自动时间', datetime.now().strftime('%y%m%d_%H%M%S.%f'))
+        print('experiment_name-自动时间:', args.experiment_name)
     return args
 
 

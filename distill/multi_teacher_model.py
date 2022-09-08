@@ -123,6 +123,7 @@ class MT_BERT(AvgTeacher):
         if self.args.mt_bert_wo_hard:
             return sum(loss_L)
         else:
+            student_model.add_summary('multi_teacher_model/hard_loss', s_out['loss'])
             return sum(loss_L) + s_out['loss']  # 这里加入了硬标签, pre_loss 不应再有硬标签参数
 
 
@@ -203,7 +204,10 @@ class RL_KD(AvgTeacher):
         if args.custom_sample_shape:
             sample_shape = [int(i) for i in args.custom_sample_shape.split(',')]
         if len(sample_shape) == 2:  # 分类方式差异
-            semantic_len *= sample_shape[0]
+            if self.args.task.lower() in {'record'}:
+                semantic_len *= self.get_class_num()
+            else:
+                semantic_len *= sample_shape[0]
         self.agent_semantic_mt_loss = torch.nn.Linear(semantic_len + tn, tn)
         # Teacher soft labels
         class_dim = self.get_class_num() if self.get_class_num() else args.vocab_size
@@ -315,6 +319,7 @@ class RL_KD(AvgTeacher):
             self.teacher_select = teacher_select
         if self.args.rl_kd_wo_hard:
             return final_loss
+        student_model.add_summary('multi_teacher_model/hard_loss', (1 - self.args.rl_kd_alpha) * s_out['loss'])
         return final_loss * self.args.rl_kd_alpha + (1 - self.args.rl_kd_alpha) * s_out['loss']
 
 

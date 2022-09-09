@@ -39,7 +39,8 @@ def get_args():
     py_parser.add_argument('--teacher_fp16', action='store_true')
 
     # tinybert
-    py_parser.add_argument('--tinybert_inter_final', action='store_true', help="inter: final layer")
+    py_parser.add_argument('--tinybert_inter_final', action='store_true', help="只使用最后隐层做损失")
+    py_parser.add_argument('--tinybert_wo_att', action='store_true', help="不使用注意力矩阵的损失")
     py_parser.add_argument('--tinybert_wo_inter', action='store_true', help="不使用中间层,用于二次微调")
     py_parser.add_argument('--tinybert_fit_parallel', action='store_true', help='转换层是否使用模型并行')
     py_parser.add_argument('--tinybert_fit_compatible_mt', action='store_true', help='是否使用多个转换层兼容多教师')

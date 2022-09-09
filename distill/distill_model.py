@@ -213,7 +213,7 @@ class TinyBERT(GLMStudent):
         return {} if self.args.tinybert_wo_inter else {'transformer': {
             'layers': {} if self.args.tinybert_inter_final else {
                 **{i: {'layernorm_output': None} for i in layers[:-1]},
-                **{i - 1: {'attention_scores': None} for i in layers[1:]},
+                **({} if self.args.tinybert_wo_att else {i - 1: {'attention_scores': None} for i in layers[1:]}),
             },
             'output': None,
         }}
@@ -221,7 +221,8 @@ class TinyBERT(GLMStudent):
     def get_student_hook(self, **kwargs):
         return {} if self.args.tinybert_wo_inter else {'transformer': {
             'layers': {} if self.args.tinybert_inter_final else {i: {
-                'layernorm_output': None, 'attention_scores': None,
+                'layernorm_output': None,
+                **({} if self.args.tinybert_wo_att else {'attention_scores': None}),
             } for i in range(self.args.num_layers)},
             'output': None,
         }}
@@ -241,10 +242,6 @@ class TinyBERT(GLMStudent):
         loss_ = 0.
         if self.args.tinybert_wo_inter or len(s_inter_vars) == 0:
             return loss_
-        def get_layer_f(st, name):
-            inter_vars, hook = (s_inter_vars, s_hook) if st == 's' else (t_inter_vars, t_hook)
-            return [inter_vars[i[1][name]] for i in sorted(hook['transformer']['layers'].items()) if name in i[1]]
-
         # 学生中间层 W
         if self.args.tinybert_fit_compatible_mt and self.args.mt_hidden_size \
             and 'transformer' in s_hook and 'layers' in s_hook['transformer'] and t_no is not None:
@@ -255,8 +252,12 @@ class TinyBERT(GLMStudent):
                     s_inter_vars[v['layernorm_output']] = aux_layer(self.args, fit_dense, s_inter_vars[v['layernorm_output']])
             if 'output' in s_hook['transformer']:
                 s_inter_vars[s_hook['transformer']['output']] = aux_layer(self.args, fit_dense, s_inter_vars[s_hook['transformer']['output']])
+        def get_layer_f(st, name):
+            inter_vars, hook = (s_inter_vars, s_hook) if st == 's' else (t_inter_vars, t_hook)
+            return [inter_vars[i[1][name]] for i in sorted(hook['transformer']['layers'].items()) if name in i[1]]
+
         # attentions
-        if not self.args.tinybert_inter_final:
+        if not self.args.tinybert_inter_final and not self.args.tinybert_wo_att:
             student_reps = get_layer_f('s', 'attention_scores')
             teacher_reps = get_layer_f('t', 'attention_scores')
             for i, (student_rep, teacher_rep) in enumerate(zip(student_reps, teacher_reps)):

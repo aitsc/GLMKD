@@ -7,6 +7,7 @@ from utils import print_rank_0
 import mpu
 import math
 from distill.tools import all_mean_custom, aux_layer
+from apex.normalization.fused_layer_norm import FusedLayerNorm as LayerNorm
 
 
 class AvgTeacher(torch.nn.Module):
@@ -79,6 +80,7 @@ class AvgTeacher(torch.nn.Module):
 class MT_BERT(AvgTeacher):
     def __init__(self, args, **kwargs):
         super().__init__(args, **kwargs)
+        mt_hidden_size = [args.teacher_hidden_size]
         if args.mt_hidden_size and not args.mt_bert_wo_convert_layer:  # W
             mt_hidden_size = [int(i) for i in args.mt_hidden_size.split(':')]
             for i, hidden_size in enumerate(mt_hidden_size):
@@ -87,6 +89,11 @@ class MT_BERT(AvgTeacher):
                 else:
                     i_hs, o_hs = args.hidden_size, hidden_size
                 setattr(self, f'fit_dense_{i}', mpu.ColumnParallelLinear(i_hs, o_hs))
+        if self.args.mt_bert_fix_layernorm:
+            self.layernorm = LayerNorm(args.hidden_size)
+            for i, hidden_size in enumerate(mt_hidden_size):
+                setattr(self, f't_layernorm_{i}', LayerNorm(hidden_size))
+                getattr(self, f't_layernorm_{i}').requires_grad_(False)
 
     def compute(self, teacher_models, t_hook_L, t_inter_vars_L, t_out_L, student_model, s_hook, s_inter_vars, s_out,
                 loss_mask=None, labels=None, **kwargs):
@@ -94,11 +101,29 @@ class MT_BERT(AvgTeacher):
         self.record_and_show(student_model)
         for i, (t_hook, t_inter_vars, t_out, t_model) in enumerate(zip(t_hook_L, t_inter_vars_L, t_out_L, teacher_models)):
             self.record_and_show(student_model, op='t_start', t_no=i)
+            # mt_bert_fix_layernorm
+            if self.args.mt_bert_fix_layernorm:
+                if 'transformer' in s_hook:
+                    s_inter_vars = s_inter_vars.copy()
+                    if 'layers' in s_hook['transformer']:
+                        for v in s_hook['transformer']['layers'].values():
+                            if 'layernorm_output' in v:
+                                s_inter_vars[v['layernorm_output']] = aux_layer(self.args, self.layernorm, s_inter_vars[v['layernorm_output']])
+                    if 'output' in s_hook['transformer']:
+                        s_inter_vars[s_hook['transformer']['output']] = aux_layer(self.args, self.layernorm, s_inter_vars[s_hook['transformer']['output']])
+                if 'transformer' in t_hook:
+                    t_inter_vars = t_inter_vars.copy()
+                    if 'layers' in t_hook['transformer']:
+                        for v in t_hook['transformer']['layers'].values():
+                            if 'layernorm_output' in v:
+                                t_inter_vars[v['layernorm_output']] = aux_layer(self.args, getattr(self, f't_layernorm_{i}'), t_inter_vars[v['layernorm_output']])
+                    if 'output' in t_hook['transformer']:
+                        t_inter_vars[t_hook['transformer']['output']] = aux_layer(self.args, getattr(self, f't_layernorm_{i}'), t_inter_vars[t_hook['transformer']['output']])
+            # 教师/学生中间层 W
             if self.args.mt_bert_fit_teacher:
                 hook, inter_vars = t_hook, t_inter_vars.copy()  # 不修改 t_inter_vars_L
             else:
                 hook, inter_vars = s_hook, s_inter_vars.copy()  # 不修改 s_inter_vars
-            # 教师/学生中间层 W
             if self.args.mt_hidden_size and 'transformer' in hook and 'layers' in hook['transformer'] \
                 and not self.args.mt_bert_wo_convert_layer:
                 fit_dense = getattr(self, f'fit_dense_{i}')

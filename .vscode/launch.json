@@ -200,6 +200,12 @@
                 // "--mt_hidden_size=768:768",
                 // "--mt_num_attention_heads=12:12",
                 // "--mt_max_position_embeddings=512:512",
+                // 预训练多教师
+                // "--mt_load_pretrained=../GLM/data/checkpoints/pretrain/blocklm-base-blank:../GLM/data/checkpoints/pretrain/blocklm-large-blank",
+                // "--mt_num_layers=12:24",
+                // "--mt_hidden_size=768:1024",
+                // "--mt_num_attention_heads=12:16",
+                // "--mt_max_position_embeddings=512:512",
             ],
             "env": {
                 "NCCL_DEBUG":"info",

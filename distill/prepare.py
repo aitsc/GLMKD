@@ -83,6 +83,7 @@ def get_args():
     py_parser.add_argument('--mt_bert_fit_teacher', action='store_true', help='内层变换是否针对教师,否则是学生')
     py_parser.add_argument('--mt_bert_wo_hard', action='store_true', help='取消默认自带的硬标签')
     py_parser.add_argument('--mt_bert_wo_convert_layer', action='store_true', help='取消自带的神经网络层转换,可用于学生自带或相同隐层不需要')
+    py_parser.add_argument('--mt_bert_fix_layernorm', action='store_true')
     # uncertainty
     py_parser.add_argument('--uncertainty_wo_loss_mask', action='store_true', help='NLG的logits熵不mask')
     py_parser.add_argument('--uncertainty_only_mask_pad', action='store_true', help='NLG的logits熵只mask padding')

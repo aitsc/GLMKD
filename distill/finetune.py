@@ -236,7 +236,7 @@ def finetune(args, train_valid_datasets_provider, model_kwargs, forward_step=fin
     # any iteration (i.e., iteration is zero), then load the pretrained
     # checkpoint.
     timers('pretrained checkpoint').start()
-    if args.load_pretrained is not None and not args.pretrained_bert:
+    if args.load_pretrained and not args.pretrained_bert:
         task_tokens = None
         if args.continuous_prompt and args.prompt_init:
             if mpu.get_model_parallel_rank() == 0:

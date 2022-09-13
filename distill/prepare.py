@@ -30,6 +30,7 @@ def get_args():
     py_parser.add_argument('--distill_pt_soft_ce', action='store_true', help="使用交叉熵计算pt_soft")
     py_parser.add_argument('--distill_ft_soft_mse', action='store_true', help="使用mse计算ft_soft")
     py_parser.add_argument('--distill_pt_soft_mse', action='store_true', help="使用mse计算pt_soft")
+    py_parser.add_argument('--distill_logits_parallel', action='store_true', help='是否将logits_parallel当作inter_loss使用,无mask,只有在NLU的ft阶段有价值,其他重复时可能产生soft权重*2的效果')
     # teacher
     py_parser.add_argument('--teacher_num_attention_heads', type=int, default=16)
     py_parser.add_argument('--teacher_hidden_size', type=int, default=1024)

@@ -28,24 +28,42 @@ class GLMStudent(torch.nn.Module):
         self.inter_show_hooks = {}  # 用于滞后展示,例如多教师情况
 
     def get_teacher_hook(self, **kwargs):
+        if self.args.distill_logits_parallel:
+            return {'logits_parallel': None}
         return {}
 
     def get_student_hook(self, **kwargs):
+        if self.args.distill_logits_parallel:
+            return {'logits_parallel': None}
         return {}
 
     def forward(self, *inputs, **kwargs):
         return self.origin_model(*inputs, **kwargs)
 
     def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=False, t_no=None, **kwargs):
+        loss_ = 0.
+        # logits_parallel
+        if self.args.distill_logits_parallel and 'logits_parallel' in s_hook and s_inter_vars:
+            s_logits = s_inter_vars[s_hook['logits_parallel']]
+            t_logits = t_inter_vars[t_hook['logits_parallel']]
+            s_logits.distill = t_logits.distill = True
+            T = self.args.distill_temperature
+            student_likelihood = F.log_softmax(s_logits / T, dim=-1)
+            targets_prob = F.softmax(t_logits / T, dim=-1)
+            l = F.kl_div(student_likelihood, targets_prob, reduction="none") * T ** 2
+            l = l.sum(-1)
+            l = all_mean_custom(l, keep_batch, reduce=True)
+            self.add_summary('inter_loss/logits_parallel', l)
+            loss_ += l
+        # show
         self.inter_show_hooks = {
             'student': hook_reduce(s_hook, s_inter_vars, filter=None),
             'teacher': hook_reduce(t_hook, t_inter_vars, filter=None),
         }
-        # show
         if self.show_inter:
             print_rank_0(self.inter_show_hooks)
             self.show_inter = False
-        return 0.
+        return loss_
 
     def pre_loss(self, s_logits, t_logits, loss, loss_mask=None, return_dict=False, labels=False, keep_batch=False, t_no=None, **kwargs):
         loss_ = 0.
@@ -208,29 +226,41 @@ class TinyBERT(GLMStudent):
             self.fit_dense = Linear(args.hidden_size, args.teacher_hidden_size)
 
     def get_teacher_hook(self, **kwargs):
+        hook_L = [super().get_teacher_hook(**kwargs)]
         layers_per_block = int(self.args.teacher_num_layers / self.args.num_layers)
         layers = tuple(range(0, self.args.teacher_num_layers + 1, layers_per_block))
-        if self.args.tinybert_only_emb_final:
-            return {'transformer': {'layers': {0: {'layernorm_output': None}}, 'output': None}}
-        return {} if self.args.tinybert_wo_inter else {'transformer': {
-            'layers': {} if self.args.tinybert_inter_final else {
-                **{i: {'layernorm_output': None} for i in layers[:-1]},
-                **({} if self.args.tinybert_wo_att else {i - 1: {'attention_scores': None} for i in layers[1:]}),
-            },
-            'output': None,
-        }}
+        if self.args.tinybert_wo_inter:
+            hook = {}
+        elif self.args.tinybert_only_emb_final:
+            hook = {'transformer': {'layers': {0: {'layernorm_output': None}}, 'output': None}}
+        else:
+            hook ={'transformer': {
+                'layers': {} if self.args.tinybert_inter_final else {
+                    **{i: {'layernorm_output': None} for i in layers[:-1]},
+                    **({} if self.args.tinybert_wo_att else {i - 1: {'attention_scores': None} for i in layers[1:]}),
+                },
+                'output': None,
+            }}
+        hook_L.append(hook)
+        return merge_dict(hook_L)
 
     def get_student_hook(self, **kwargs):
+        hook_L = [super().get_student_hook(**kwargs)]
         layers = tuple(range(self.args.num_layers))
-        if self.args.tinybert_only_emb_final:
-            return {'transformer': {'layers': {0: {'layernorm_output': None}}, 'output': None}}
-        return {} if self.args.tinybert_wo_inter else {'transformer': {
-            'layers': {} if self.args.tinybert_inter_final else {i: {
-                'layernorm_output': None,
-                **({} if self.args.tinybert_wo_att else {'attention_scores': None}),
-            } for i in layers},
-            'output': None,
-        }}
+        if self.args.tinybert_wo_inter:
+            hook = {}
+        elif self.args.tinybert_only_emb_final:
+            hook = {'transformer': {'layers': {0: {'layernorm_output': None}}, 'output': None}}
+        else:
+            hook = {'transformer': {
+                'layers': {} if self.args.tinybert_inter_final else {i: {
+                    'layernorm_output': None,
+                    **({} if self.args.tinybert_wo_att else {'attention_scores': None}),
+                } for i in layers},
+                'output': None,
+            }}
+        hook_L.append(hook)
+        return merge_dict(hook_L)
 
     def forward(self, *inputs, hook=None, **kwargs):
         inter_vars = []
@@ -281,7 +311,7 @@ class TinyBERT(GLMStudent):
             l = all_mean_custom(l, keep_batch)
             super().add_summary(f'inter_loss/hidden_states.{i}', l)
             loss_ += l
-        super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook)
+        loss_ += super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=keep_batch, t_no=t_no, **kwargs)
         return loss_
 
 
@@ -290,18 +320,26 @@ class MiniLMv2(GLMStudent):
         super().__init__(language_model, args, **kwargs)
 
     def get_teacher_hook(self, **kwargs):
+        hook_L = [super().get_teacher_hook(**kwargs)]
         if self.args.minilmv2_wo_inter:
-            return {}
-        return {'transformer': {'layers': {self.args.minilmv2_teacher_layer - 1: {
-                'mixed_query_layer': None, 'mixed_key_layer': None, 'mixed_value_layer': None
-        }}}}
+            hook = {}
+        else:
+            hook = {'transformer': {'layers': {self.args.minilmv2_teacher_layer - 1: {
+                    'mixed_query_layer': None, 'mixed_key_layer': None, 'mixed_value_layer': None
+            }}}}
+        hook_L.append(hook)
+        return merge_dict(hook_L)
 
     def get_student_hook(self, **kwargs):
+        hook_L = [super().get_student_hook(**kwargs)]
         if self.args.minilmv2_wo_inter:
-            return {}
-        return {'transformer': {'layers': {self.args.num_layers - 1: {
-                'mixed_query_layer': None, 'mixed_key_layer': None, 'mixed_value_layer': None
-        }}}}
+            hook = {}
+        else:
+            hook = {'transformer': {'layers': {self.args.num_layers - 1: {
+                    'mixed_query_layer': None, 'mixed_key_layer': None, 'mixed_value_layer': None
+            }}}}
+        hook_L.append(hook)
+        return merge_dict(hook_L)
 
     def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=False, **kwargs):
         loss_ = 0.
@@ -323,7 +361,7 @@ class MiniLMv2(GLMStudent):
             kl_loss = kl_loss.sum(-1)
             kl_loss = all_mean_custom(kl_loss, keep_batch, reduce=True)
             loss_ += kl_loss
-        super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook)
+        loss_ += super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=keep_batch, **kwargs)
         return loss_
 
 
@@ -332,14 +370,20 @@ class MiniLM(GLMStudent):
         super().__init__(language_model, args, **kwargs)
 
     def get_teacher_hook(self, **kwargs):
-        return {'transformer': {'layers': {self.args.teacher_num_layers - 1: {
+        hook_L = [super().get_teacher_hook(**kwargs)]
+        hook = {'transformer': {'layers': {self.args.teacher_num_layers - 1: {
                 'attention_probs': None, 'value_layer': None
         }}}}
+        hook_L.append(hook)
+        return merge_dict(hook_L)
 
     def get_student_hook(self, **kwargs):
-        return {'transformer': {'layers': {self.args.num_layers - 1: {
+        hook_L = [super().get_student_hook(**kwargs)]
+        hook = {'transformer': {'layers': {self.args.num_layers - 1: {
                 'attention_probs': None, 'value_layer': None
         }}}}
+        hook_L.append(hook)
+        return merge_dict(hook_L)
 
     def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=False, **kwargs):
         loss_ = 0.
@@ -357,7 +401,7 @@ class MiniLM(GLMStudent):
         kl_loss = kl_loss.sum(-1)
         kl_loss = all_mean_custom(kl_loss, keep_batch, reduce=True)
         loss_ += kl_loss
-        super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook)
+        loss_ += super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=keep_batch, **kwargs)
         return loss_
 
 
@@ -370,12 +414,18 @@ class DistilBERT(GLMStudent):
             self.t_layernorm.requires_grad_(False)
 
     def get_teacher_hook(self, **kwargs):
-        return {'transformer': {'output': None} if not self.args.distilbert_fix_layernorm else {
+        hook_L = [super().get_teacher_hook(**kwargs)]
+        hook = {'transformer': {'output': None} if not self.args.distilbert_fix_layernorm else {
             'layers': {self.args.teacher_num_layers - 1: {'tf_output': None}}}}
+        hook_L.append(hook)
+        return merge_dict(hook_L)
 
     def get_student_hook(self, **kwargs):
-        return {'transformer': {'output': None} if not self.args.distilbert_fix_layernorm else {
+        hook_L = [super().get_student_hook(**kwargs)]
+        hook = {'transformer': {'output': None} if not self.args.distilbert_fix_layernorm else {
             'layers': {self.args.num_layers - 1: {'tf_output': None}}}}
+        hook_L.append(hook)
+        return merge_dict(hook_L)
 
     def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, loss_mask=None, labels=None, keep_batch=False, **kwargs):
         loss_ = 0.
@@ -408,7 +458,7 @@ class DistilBERT(GLMStudent):
         l = all_mean_custom(l, keep_batch)
         super().add_summary(f'inter_loss/distilbert_alpha_cos', l)
         loss_ += l
-        super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook)
+        loss_ += super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, loss_mask=loss_mask, labels=labels, keep_batch=keep_batch, **kwargs)
         return loss_
 
     def pre_loss(self, s_logits, t_logits, loss, loss_mask=None, labels=None, keep_batch=False, **kwargs):
@@ -464,15 +514,21 @@ class ERDistill(GLMStudent):
             **({'output': None} if self.args.erdistill_inter else {})}}
 
     def get_teacher_hook(self, **kwargs):
+        hook_L = [super().get_teacher_hook(**kwargs)]
         layers_per_block = int(self.args.teacher_num_layers / self.args.num_layers)
         layers = tuple(range(0, self.args.teacher_num_layers, layers_per_block))
-        return self.get_inter_hook(layers, st='t')
+        hook = self.get_inter_hook(layers, st='t')
+        hook_L.append(hook)
+        return merge_dict(hook_L)
 
     def get_student_hook(self, **kwargs):
+        hook_L = [super().get_student_hook(**kwargs)]
         layers = tuple(i for i in range(self.args.num_layers))
-        return self.get_inter_hook(layers, st='s')
+        hook = self.get_inter_hook(layers, st='s')
+        hook_L.append(hook)
+        return merge_dict(hook_L)
 
-    def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, t_model=None, **kwargs):
+    def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=False, t_model=None, **kwargs):
         loss_ = 0.
         if len(s_inter_vars) == 0 or self.args.erdistill_inter in {'', None}:
             return loss_
@@ -499,10 +555,11 @@ class ERDistill(GLMStudent):
                 s_rep.distill = True
                 s_rep = torch.matmul(s_rep, s_rep.transpose(-1,-2))
                 if self.args.erdistill_inter_mse:
-                    l = F.mse_loss(s_rep / s_rep.size(-1), t_rep)
+                    l = F.mse_loss(s_rep / s_rep.size(-1), t_rep, reduction='none')
                 else:
-                    l = F.kl_div(F.log_softmax(s_rep / math.sqrt(s_rep.size(-1)), dim=-1), t_rep, reduction="sum")
-                    l = l / t_rep.size(0) / t_rep.size(1) / t_rep.size(2)
+                    l = F.kl_div(F.log_softmax(s_rep / math.sqrt(s_rep.size(-1)), dim=-1), t_rep, reduction="none")
+                    l = l.sum(-1)
+                l = all_mean_custom(l, keep_batch)
                 super().add_summary(f'inter_loss/local.{i}', l)
                 l = l * 0.1 if i == 0 and self.args.erdistill_inter in {'1plus'} else l
                 loss_ += l
@@ -526,15 +583,15 @@ class ERDistill(GLMStudent):
                 s_rep = fp32_to_fp16(s_rep) if self.args.fp16 else s_rep
                 s_rep = F.linear(s_rep, s_emb_w)
                 if self.args.erdistill_inter_mse:
-                    l = F.mse_loss(s_rep, t_rep)
+                    l = F.mse_loss(s_rep, t_rep, reduction='none')
                 else:
-                    l = F.kl_div(F.log_softmax(s_rep, dim=-1), t_rep, reduction="sum")
-                    l = l / t_rep.size(0) / t_rep.size(1) / t_rep.size(2)
-                l = mpu.gather_from_model_parallel_region(l).mean()
+                    l = F.kl_div(F.log_softmax(s_rep, dim=-1), t_rep, reduction="none")
+                    l = l.sum(-1)
+                l = all_mean_custom(l, keep_batch, reduce=True)
                 super().add_summary(f'inter_loss/global.{i}', l)
                 l = l * 0.1 if i == 0 and self.args.erdistill_inter in {'1plus'} else l
                 loss_ += fp16_to_fp32(l)
-        super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook)
+        loss_ += super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=keep_batch, t_model=t_model, **kwargs)
         return loss_
 
 
@@ -552,16 +609,16 @@ class MixBaseline(GLMStudent):
             setattr(self, c, eval(c)(language_model, args, show_pre=False, show_inter=False, summary_loss=False))
 
     def get_teacher_hook(self, **kwargs):
-        if self.args.mixbaseline_wo_inter:
-            return {}
-        hooks = [getattr(self, c).get_teacher_hook() for c in self.inter_bl]
-        return merge_dict(hooks)
+        hook_L = [super().get_teacher_hook(**kwargs)]
+        if not self.args.mixbaseline_wo_inter:
+            hook_L += [getattr(self, c).get_teacher_hook() for c in self.inter_bl]
+        return merge_dict(hook_L)
 
     def get_student_hook(self, **kwargs):
-        if self.args.mixbaseline_wo_inter:
-            return {}
-        hooks = [getattr(self, c).get_student_hook() for c in self.inter_bl]
-        return merge_dict(hooks)
+        hook_L = [super().get_student_hook(**kwargs)]
+        if not self.args.mixbaseline_wo_inter:
+            hook_L += [getattr(self, c).get_student_hook() for c in self.inter_bl]
+        return merge_dict(hook_L)
 
     def forward(self, *inputs, **kwargs):
         if 'TinyBERT' in self.baselines:
@@ -573,6 +630,8 @@ class MixBaseline(GLMStudent):
         loss_ = 0.
         if len(s_inter_vars) == 0:
             return loss_
+        distill_logits_parallel = self.args.distill_logits_parallel
+        self.args.distill_logits_parallel = False  # 使得这个参数只执行一次
         for c in self.inter_bl:
             distill_temperature = self.args.distill_temperature
             if hasattr(self.args, f'mixbaseline_{c.lower()}_t'):
@@ -581,7 +640,8 @@ class MixBaseline(GLMStudent):
             super().add_summary(f'inter_loss/{c}', l)
             loss_ += l
             self.args.distill_temperature = distill_temperature
-        super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, **kwargs)
+        self.args.distill_logits_parallel = distill_logits_parallel
+        loss_ += super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, **kwargs)
         return loss_
 
     def pre_loss(self, s_logits, t_logits, loss, **kwargs):
@@ -623,20 +683,26 @@ class PKD(GLMStudent):
         super().__init__(language_model, args, **kwargs)
 
     def get_teacher_hook(self, **kwargs):
+        hook_L = [super().get_teacher_hook(**kwargs)]
         layers_per_block = int(self.args.teacher_num_layers / self.args.num_layers)
         layers = tuple(range(0, self.args.teacher_num_layers + 1, layers_per_block))
         x = 0 if self.args.pkd_use_embed else 1
-        return {'transformer': {
+        hook = {'transformer': {
             'layers': {i: {'layernorm_output': None} for i in layers[x: -1]},
             'output': None,
         }}
+        hook_L.append(hook)
+        return merge_dict(hook_L)
 
     def get_student_hook(self, **kwargs):
+        hook_L = [super().get_student_hook(**kwargs)]
         x = 0 if self.args.pkd_use_embed else 1
-        return {'transformer': {
+        hook = {'transformer': {
             'layers': {i: {'layernorm_output': None} for i in range(x, self.args.num_layers)},
             'output': None,
         }}
+        hook_L.append(hook)
+        return merge_dict(hook_L)
 
     def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=False, **kwargs):
         loss_ = 0.
@@ -657,7 +723,7 @@ class PKD(GLMStudent):
             l = all_mean_custom(l, keep_batch)
             super().add_summary(f'inter_loss/hidden_states.{i}', l)
             loss_ += l
-        super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook)
+        loss_ += super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=keep_batch, **kwargs)
         return loss_ * self.args.pkd_beta
 
     def pre_loss(self, s_logits, t_logits, loss, **kwargs):

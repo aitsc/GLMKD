@@ -93,6 +93,7 @@ def get_args():
     py_parser.add_argument('--uncertainty_inter_entropy', action='store_true', help='是否用信息熵方式处理inter_loss权重')
     py_parser.add_argument('--uncertainty_teacher_seq', type=str, default=None, help='教师模型从小到大的序号顺序(从0开始),默认mt_*参数是从小到大,冒号分隔')
     py_parser.add_argument('--uncertainty_hard', action='store_true', help='pre_loss Hard Selection,要求单卡batch size大于等于教师数量')
+    py_parser.add_argument('--uncertainty_wo_rate', action='store_true', help='是否不使用软标签的权重')
     # rl_kd
     py_parser.add_argument('--rl_kd_wo_loss_mask', action='store_true', help='用于agent-NLG的logits不mask')
     py_parser.add_argument('--rl_kd_only_mask_pad', action='store_true', help='用于agent-NLG的logits只mask padding')

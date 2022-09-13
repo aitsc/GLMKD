@@ -176,7 +176,7 @@ class Uncertainty(AvgTeacher):
             return norm_entropy
         s_entropy = norm_entropy_f(s_out['logits'])
         # rate: batch_size * teacher_num
-        if len(t_hook_L) > 1:
+        if len(t_hook_L) > 1 and not self.args.uncertainty_wo_rate:
             if self.args.uncertainty_hard and s_entropy.size(0) >= len(t_hook_L):
                 sort_i = (-s_entropy).sort(0).indices.sort(0).indices.unsqueeze(-1) + 1.
                 sort_i = sort_i / sort_i.size(0) * len(t_hook_L)

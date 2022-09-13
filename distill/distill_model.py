@@ -210,6 +210,8 @@ class TinyBERT(GLMStudent):
     def get_teacher_hook(self, **kwargs):
         layers_per_block = int(self.args.teacher_num_layers / self.args.num_layers)
         layers = tuple(range(0, self.args.teacher_num_layers + 1, layers_per_block))
+        if self.args.tinybert_only_emb_final:
+            return {'transformer': {'layers': {0: {'layernorm_output': None}}, 'output': None}}
         return {} if self.args.tinybert_wo_inter else {'transformer': {
             'layers': {} if self.args.tinybert_inter_final else {
                 **{i: {'layernorm_output': None} for i in layers[:-1]},
@@ -219,11 +221,14 @@ class TinyBERT(GLMStudent):
         }}
 
     def get_student_hook(self, **kwargs):
+        layers = tuple(range(self.args.num_layers))
+        if self.args.tinybert_only_emb_final:
+            return {'transformer': {'layers': {0: {'layernorm_output': None}}, 'output': None}}
         return {} if self.args.tinybert_wo_inter else {'transformer': {
             'layers': {} if self.args.tinybert_inter_final else {i: {
                 'layernorm_output': None,
                 **({} if self.args.tinybert_wo_att else {'attention_scores': None}),
-            } for i in range(self.args.num_layers)},
+            } for i in layers},
             'output': None,
         }}
 
@@ -257,7 +262,8 @@ class TinyBERT(GLMStudent):
             return [inter_vars[i[1][name]] for i in sorted(hook['transformer']['layers'].items()) if name in i[1]]
 
         # attentions
-        if not self.args.tinybert_inter_final and not self.args.tinybert_wo_att:
+        if not self.args.tinybert_inter_final and not self.args.tinybert_wo_att \
+            and not self.args.tinybert_only_emb_final:
             student_reps = get_layer_f('s', 'attention_scores')
             teacher_reps = get_layer_f('t', 'attention_scores')
             for i, (student_rep, teacher_rep) in enumerate(zip(student_reps, teacher_reps)):
@@ -284,18 +290,22 @@ class MiniLMv2(GLMStudent):
         super().__init__(language_model, args, **kwargs)
 
     def get_teacher_hook(self, **kwargs):
+        if self.args.minilmv2_wo_inter:
+            return {}
         return {'transformer': {'layers': {self.args.minilmv2_teacher_layer - 1: {
                 'mixed_query_layer': None, 'mixed_key_layer': None, 'mixed_value_layer': None
         }}}}
 
     def get_student_hook(self, **kwargs):
+        if self.args.minilmv2_wo_inter:
+            return {}
         return {'transformer': {'layers': {self.args.num_layers - 1: {
                 'mixed_query_layer': None, 'mixed_key_layer': None, 'mixed_value_layer': None
         }}}}
 
     def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=False, **kwargs):
         loss_ = 0.
-        if len(s_inter_vars) == 0:
+        if len(s_inter_vars) == 0 or self.args.minilmv2_wo_inter:
             return loss_
         s_qkv, t_qkv = [], []
         for i in ['mixed_query_layer', 'mixed_key_layer', 'mixed_value_layer']:
@@ -510,8 +520,8 @@ class MixBaseline(GLMStudent):
             pre_loss_description.append(f'\t{c} - {getattr(self, c).pre_loss_description}')
             self.args.distill_temperature = distill_temperature
         # show
+        self.pre_loss_description = '\n'.join(pre_loss_description)
         if show_pre:
-            self.pre_loss_description = '\n'.join(pre_loss_description)
             print_rank_0(self.pre_loss_description)
         return loss_
 

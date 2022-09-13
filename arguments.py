@@ -23,6 +23,7 @@ import json
 from utils import get_hostname
 import random
 import socket
+from datetime import datetime
 
 
 def add_model_config_args(parser):
@@ -419,6 +420,8 @@ def add_custom_args(parser: argparse.ArgumentParser):
     group.add_argument('--spare_port', type=int, default=get_random_port())
     group.add_argument('--custom_tmp_result', type=str, default=None)
     group.add_argument('--custom_first_eval', action='store_true')
+    group.add_argument('--custom_logits_paralle', action='store_true', help='forward_step中得到的logits是否是并行的,根据tasks自动设置,可用于蒸馏模型判断')
+    group.add_argument('--custom_sample_shape', type=str, default=None, help='训练集一个样本.text的形状,可方便获取输入单文本的维度(例如用于rl-kd方法的semantic_len构建),None则自动处理,逗号分隔维度')
     return parser
 
 
@@ -493,6 +496,11 @@ def get_args(arg_list=None):
             optimizer_params_config = deepspeed_config["optimizer"].get("params", {})
             args.lr = optimizer_params_config.get("lr", args.lr)
             args.weight_decay = optimizer_params_config.get("weight_decay", args.weight_decay)
+
+    # 自定义
+    if '自动时间' in args.experiment_name:
+        args.experiment_name = args.experiment_name.replace('自动时间', datetime.now().strftime('%y%m%d_%H%M%S.%f'))
+        print('experiment_name-自动时间:', args.experiment_name)
     return args
 
 

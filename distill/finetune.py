@@ -72,6 +72,7 @@ def finetune_forward_step(batch, model, args, timers, mems, teacher_models=None)
         m_kw = {}
         
     def get_logits(h, i, m, no_grad=False):
+        # 必须是 model 直出的结果, 防止和测试过程中的不一致
         if args.pretrained_bert:
             logits = model(tokens, token_type_ids=types, attention_mask=attention_mask, checkpoint_activations=True)
         elif args.cloze_eval:
@@ -88,15 +89,6 @@ def finetune_forward_step(batch, model, args, timers, mems, teacher_models=None)
         else:
             with torch.no_grad() if no_grad else NoneWith():
                 logits, *mems = hook_model(h, i, m, *m_in, **m_kw)
-        if not args.adapet:
-            if "segment_id" in data:
-                from torch_scatter import scatter_sum
-                if "loss_mask" in data:
-                    logits = logits * data["loss_mask"]
-                logits = scatter_sum(logits, data["segment_id"], dim=1)
-            elif "loss_mask" in data:
-                loss_mask = data["loss_mask"]
-                logits = logits * loss_mask - 10000.0 * (1.0 - loss_mask)
         return logits, mems
     logits, mems = get_logits(s_hook, s_inter_vars, model)
 
@@ -109,30 +101,43 @@ def finetune_forward_step(batch, model, args, timers, mems, teacher_models=None)
             if "loss_mask" in data:
                 loss_mask = data["loss_mask"]
                 label_mask = label_mask * loss_mask
-            loss = logits.contiguous().float() * label_mask
-            loss = loss.sum() / batch_size
+            loss_batch = logits.contiguous().float() * label_mask
+            loss = loss_batch.sum() / batch_size
         else:
+            if "segment_id" in data:
+                from torch_scatter import scatter_sum
+                if "loss_mask" in data:
+                    logits = logits * data["loss_mask"]
+                logits = scatter_sum(logits, data["segment_id"], dim=1)
+            elif "loss_mask" in data:
+                loss_mask = data["loss_mask"]
+                logits = logits * loss_mask - 10000.0 * (1.0 - loss_mask)
             if args.loss_func == "cross_entropy":
                 # Cross-entropy loss.
-                loss_func = torch.nn.CrossEntropyLoss()
-                loss = loss_func(logits.contiguous().float(), labels)
+                loss_func = torch.nn.CrossEntropyLoss(reduction='none')
+                loss_batch = loss_func(logits.contiguous().float(), labels)
+                loss = loss_batch.mean()
             elif args.loss_func == "hinge":
                 correct_logits = logits[range(logits.size(0)), labels]
                 hinge_loss = 1 + logits - correct_logits.unsqueeze(1)
                 hinge_loss[hinge_loss < 0.0] = 0.0
-                loss = hinge_loss.sum(dim=1).mean() - 1.0
+                loss_batch = hinge_loss.sum(dim=1) - 1.0
+                loss = loss_batch.mean()
             elif args.loss_func == "generative" or args.loss_func == "mix":
                 batch_size = logits.size(0)
-                loss = - logits[range(batch_size), labels].mean()
+                loss = - logits[range(batch_size), labels]
                 if args.loss_func == "mix":
-                    loss_func = torch.nn.CrossEntropyLoss()
+                    loss_func = torch.nn.CrossEntropyLoss(reduction='none')
                     loss = loss + loss_func(logits.contiguous().float(), labels)
+                loss_batch = loss
+                loss = loss.mean()
             else:
                 raise NotImplementedError
-        return loss
-    loss = get_loss(logits)
+        return loss, loss_batch
+    loss, loss_batch = get_loss(logits)
 
     if is_distill:
+        student_model.add_summary('Train/hard_loss', loss)
         t_out_L = mt_repeat_operation(
             zip(t_hook_L, t_inter_vars_L, teacher_models),
             lambda h, i, m: get_logits(h, i, m, no_grad=not args.mt_has_grad),
@@ -142,7 +147,7 @@ def finetune_forward_step(batch, model, args, timers, mems, teacher_models=None)
             t_out_L = [merge_dict([i, j]) for i, j in zip(mt_repeat_operation(
                 t_out_L,
                 lambda logits, **k: get_loss(logits),
-                lambda loss: {'loss': loss},
+                lambda ret: {'loss': ret[0], 'loss_batch': ret[1]},
             ), t_out_L)]
         loss = student_model.multi_teacher_model.compute(
             teacher_models = teacher_models,
@@ -152,7 +157,7 @@ def finetune_forward_step(batch, model, args, timers, mems, teacher_models=None)
             student_model = student_model,
             s_hook = s_hook,
             s_inter_vars = s_inter_vars,
-            s_out = {'logits': logits, 'loss': loss},
+            s_out = {'logits': logits, 'loss': loss, 'loss_batch': loss_batch},
             labels = labels,
         )
     return loss, mems, 'bert'
@@ -207,6 +212,8 @@ def finetune(args, train_valid_datasets_provider, model_kwargs, forward_step=fin
                 train_block_dataloader = FakeDataloader(args.train_iters)
                 valid_block_dataloader = FakeDataloader(None)
             train_block_dataloader, valid_block_dataloader = iter(train_block_dataloader), iter(valid_block_dataloader)
+    if train_dataloader is not None and not args.custom_sample_shape:
+        args.custom_sample_shape = ','.join((str(i) for i in train_dataloader.dataset[0]['text'].shape))
 
     timers('train/valid/test dataset/dataloder').stop()
     # Build calback function.
@@ -229,7 +236,7 @@ def finetune(args, train_valid_datasets_provider, model_kwargs, forward_step=fin
     # any iteration (i.e., iteration is zero), then load the pretrained
     # checkpoint.
     timers('pretrained checkpoint').start()
-    if args.load_pretrained is not None and not args.pretrained_bert:
+    if args.load_pretrained and not args.pretrained_bert:
         task_tokens = None
         if args.continuous_prompt and args.prompt_init:
             if mpu.get_model_parallel_rank() == 0:
@@ -265,6 +272,13 @@ def finetune(args, train_valid_datasets_provider, model_kwargs, forward_step=fin
                 optimizer.refresh_fp32_params()
             else:
                 optimizer._model_params_to_master_params()
+    is_load1 = mt_model_load(model, args.mt_model_load)
+    is_load2 = truncate_teacher_as_student(model, teacher_models, args)
+    if (is_load1 or is_load2) and args.fp16 and optimizer is not None:
+        if args.deepspeed:
+            optimizer.refresh_fp32_params()
+        else:
+            optimizer._model_params_to_master_params()
     if args.load is not None:
         with FileLock(os.path.join(pathlib.Path.home(), "checkpoint_lock"), timeout=-1):
             load_checkpoint(model, optimizer, lr_scheduler, args, no_deepspeed=args.no_deepspeed_load)
@@ -275,8 +289,6 @@ def finetune(args, train_valid_datasets_provider, model_kwargs, forward_step=fin
                 optimizer.refresh_fp32_params()
             else:
                 optimizer._model_params_to_master_params()
-    mt_model_load(model, args.mt_model_load)
-    truncate_teacher_as_student(model, teacher_models, args)
     torch.distributed.barrier()
     timers('pretrained checkpoint').stop()
     args.iteration = 0

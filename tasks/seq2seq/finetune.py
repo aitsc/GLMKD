@@ -56,8 +56,6 @@ def seq2seq_forward_step(data, model, args, timers, mems, teacher_models=None):
 
     # Forward model.
     logits, *mems = hook_model(s_hook, s_inter_vars, model, tokens, position_ids, attention_mask, *mems)
-    loss_mask_ = loss_mask
-    loss_mask = loss_mask.reshape(-1)
     # loss
     def get_loss(logits):
         # logits, loss_mask = logits[:, args.src_seq_length:], loss_mask[:, args.src_seq_length:]
@@ -68,9 +66,11 @@ def seq2seq_forward_step(data, model, args, timers, mems, teacher_models=None):
             smooth_loss = -torch.nn.functional.log_softmax(logits, dim=-1).mean(dim=-1)
             losses = (1 - epsilon) * losses + epsilon * smooth_loss
         # The loss is not normalized for fair comparison
-        loss = torch.sum(losses.reshape(-1) * loss_mask) / loss_mask.sum()
-        return loss
-    loss = get_loss(logits)
+        loss_batch = (losses * loss_mask).sum(-1)
+        loss = loss_batch.sum() / loss_mask.sum()
+        loss_batch = loss_batch / loss_mask.sum(-1)
+        return loss, loss_batch
+    loss, loss_batch = get_loss(logits)
 
     if is_distill:
         with NoneWith() if args.mt_has_grad else torch.no_grad():
@@ -83,7 +83,7 @@ def seq2seq_forward_step(data, model, args, timers, mems, teacher_models=None):
             t_out_L = [merge_dict([i, j]) for i, j in zip(mt_repeat_operation(
                 t_out_L,
                 lambda logits, **k: get_loss(logits),
-                lambda loss: {'loss': loss},
+                lambda ret: {'loss': ret[0], 'loss_batch': ret[1]},
             ), t_out_L)]
         loss = student_model.multi_teacher_model.compute(
             teacher_models = teacher_models,
@@ -93,8 +93,8 @@ def seq2seq_forward_step(data, model, args, timers, mems, teacher_models=None):
             student_model = student_model,
             s_hook = s_hook,
             s_inter_vars = s_inter_vars,
-            s_out = {'logits': logits, 'loss': loss},
-            loss_mask = loss_mask_,
+            s_out = {'logits': logits, 'loss': loss, 'loss_batch': loss_batch},
+            loss_mask = loss_mask,
             labels = labels,
         )
     return loss, mems, 'bert'
@@ -186,6 +186,7 @@ def main(args, ft=finetune):
         args.max_position_embeddings = args.src_seq_length
     if args.task.lower() in ['cnn_dm', 'cnn_dm_original', 'gigaword', 'blank', 'squad_generation', 'xsum',
                              'squad', 'squad_v1', 'extraction', 'cmrc']:
+        args.custom_logits_paralle = True
         ft(args, train_valid_datasets_provider, {}, end_of_epoch_callback_provider=metrics_func_provider,
                  forward_step=seq2seq_forward_step)
     else:

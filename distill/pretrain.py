@@ -64,18 +64,19 @@ def forward_step(data_iterator, model, args, timers, mems, teacher_models=None):
         t_hook_L = s_hook = None
         teacher_models = []
     logits, *mems = hook_model(s_hook, s_inter_vars, model, tokens, position_ids, attention_mask, *mems)
-    loss_mask_ = loss_mask
-    loss_mask = loss_mask.view(-1)
 
     def compute_loss(logits):
         losses = mpu.vocab_parallel_cross_entropy(logits.contiguous().float(), labels)
-        loss = torch.sum(losses.view(-1) * loss_mask)
+        loss_batch = (losses * loss_mask).sum(-1)
+        loss = loss_batch.sum()
         if loss_mask.sum().item() > 0:
             loss = loss / loss_mask.sum()
-        return loss
-    loss = compute_loss(logits)
+            loss_batch = loss_batch / loss_mask.sum(-1)
+        return loss, loss_batch
+    loss, loss_batch = compute_loss(logits)
 
     if is_distill:
+        student_model.add_summary('Train/hard_loss', loss)
         with NoneWith() if args.mt_has_grad else torch.no_grad():
             t_out_L = mt_repeat_operation(
                 zip(t_hook_L, t_inter_vars_L, teacher_models),
@@ -86,7 +87,7 @@ def forward_step(data_iterator, model, args, timers, mems, teacher_models=None):
             t_out_L = [merge_dict([i, j]) for i, j in zip(mt_repeat_operation(
                 t_out_L,
                 lambda logits, **k: compute_loss(logits),
-                lambda loss: {'loss': loss},
+                lambda ret: {'loss': ret[0], 'loss_batch': ret[1]},
             ), t_out_L)]
         loss = student_model.multi_teacher_model.compute(
             teacher_models = teacher_models,
@@ -96,8 +97,8 @@ def forward_step(data_iterator, model, args, timers, mems, teacher_models=None):
             student_model = student_model,
             s_hook = s_hook,
             s_inter_vars = s_inter_vars,
-            s_out = {'logits': logits, 'loss': loss},
-            loss_mask = loss_mask_,
+            s_out = {'logits': logits, 'loss': loss, 'loss_batch': loss_batch},
+            loss_mask = loss_mask,
             labels = labels,
         )
     return loss, mems, mode
@@ -133,11 +134,20 @@ def main():
     multi_train_data, multi_val_data = None, None
     if args.multi_task_ratio > 0.0:
         multi_train_data, multi_val_data = build_multi_task_dataset(args, tokenizer)
+    if train_data is not None and not args.custom_sample_shape:
+        args.custom_sample_shape = ','.join((str(i) for i in train_data.dataset[0]['text'].shape))
 
     # Model, optimizer, and learning rate.
     teacher_models=get_teacher_model(args)
     glm_wrap_ = lambda **k: glm_wrap(**k, teacher_models=teacher_models)
     model, optimizer, lr_scheduler = setup_model_and_optimizer(args, glm_wrap=glm_wrap_)
+    is_load1 = mt_model_load(model, args.mt_model_load)
+    is_load2 = truncate_teacher_as_student(model, teacher_models, args)
+    if (is_load1 or is_load2) and args.fp16 and optimizer is not None:
+        if args.deepspeed:
+            optimizer.refresh_fp32_params()
+        else:
+            optimizer._model_params_to_master_params()
     if args.load is not None:
         with FileLock(os.path.join(pathlib.Path.home(), "checkpoint_lock"), timeout=-1):
             args.iteration = load_checkpoint(model, optimizer, lr_scheduler, args, no_deepspeed=args.no_deepspeed_load)
@@ -148,8 +158,6 @@ def main():
                 optimizer._model_params_to_master_params()
     else:
         args.iteration = 0
-    mt_model_load(model, args.mt_model_load)
-    truncate_teacher_as_student(model, teacher_models, args)
     torch.distributed.barrier()
     if args.switch_linear:
         lr_scheduler.switch_linear(args)

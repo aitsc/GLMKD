@@ -113,10 +113,11 @@ def lm_forward_step(data, model, args, timers, mems, eval_metric=None, teacher_m
     def get_loss(logits):
         if eval_metric is None or eval_metric == 'loss':
             losses = mpu.vocab_parallel_cross_entropy(logits.contiguous().float(), labels)
-            loss_mask = loss_mask.view(-1)
             # The loss is not normalized for fair comparison
-            loss = torch.sum(losses.view(-1) * loss_mask)
+            loss_batch = (losses * loss_mask).sum(-1)
+            loss = loss_batch.sum()
             if eval_metric is None:
+                loss_batch = loss_batch / loss_mask.sum(-1)
                 loss = loss / loss_mask.sum()
         elif eval_metric == 'accuracy' or eval_metric == 'classify':
             logits = mpu.gather_from_model_parallel_region(logits)
@@ -124,13 +125,14 @@ def lm_forward_step(data, model, args, timers, mems, eval_metric=None, teacher_m
             correct = (outputs == labels).float()
             correct[(1 - loss_mask).bool()] = 1
             correct = correct.prod(-1)
+            loss_batch = correct
             if eval_metric == 'accuracy':
                 correct = correct.sum()
             loss = correct
         else:
             raise NotImplementedError("Metric {} not implemented".format(eval_metric))
-        return loss
-    loss = get_loss(logits)
+        return loss, loss_batch
+    loss, loss_batch = get_loss(logits)
 
     if is_distill:
         with NoneWith() if args.mt_has_grad else torch.no_grad():
@@ -143,7 +145,7 @@ def lm_forward_step(data, model, args, timers, mems, eval_metric=None, teacher_m
             t_out_L = [merge_dict([i, j]) for i, j in zip(mt_repeat_operation(
                 t_out_L,
                 lambda logits, **k: get_loss(logits),
-                lambda loss: {'loss': loss},
+                lambda ret: {'loss': ret[0], 'loss_batch': ret[1]},
             ), t_out_L)]
         loss = student_model.multi_teacher_model.compute(
             teacher_models = teacher_models,
@@ -153,7 +155,7 @@ def lm_forward_step(data, model, args, timers, mems, eval_metric=None, teacher_m
             student_model = student_model,
             s_hook = s_hook,
             s_inter_vars = s_inter_vars,
-            s_out = {'logits': logits, 'loss': loss},
+            s_out = {'logits': logits, 'loss': loss, 'loss_batch': loss_batch},
             labels = labels,
         )
     return loss, mems, 'bert'
@@ -275,4 +277,5 @@ def metrics_func_provider(args, tokenizer, is_test):
 
 def main(args, ft=finetune):
     """Main program."""
+    args.custom_logits_paralle = True
     ft(args, None, {}, end_of_epoch_callback_provider=metrics_func_provider, forward_step=lm_forward_step)

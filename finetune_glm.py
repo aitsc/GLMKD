@@ -229,6 +229,10 @@ def _train(model, optimizer, lr_scheduler, forward_step,
                             output.write(json.dumps(score_dict) + "\n")
                         with open(os.path.join(args.save, "best_checkpointed_iteration.txt"), "w") as output:
                             output.write(str(best_iteration))
+            if summary_writer is not None:
+                for k, v in list(model.state_dict().items()):
+                    name = '/'.join(k.split('.', 1))
+                    summary_writer.add_scalar(name, v.mean().item(), args.iteration)
 
         # Set the data loader epoch to shuffle the index iterator.
         if mpu.get_model_parallel_rank() == 0:
@@ -265,6 +269,10 @@ def _train(model, optimizer, lr_scheduler, forward_step,
                                          elapsed_time * 1000.0 / args.log_interval, args.iteration, args.train_iters,
                                          args, iter_loss=lm_loss_.item())
                 total_lm_loss = 0.0
+                if summary_writer is not None:
+                    for k, v in list(model.state_dict().items()):
+                        name = '/'.join(k.split('.', 1))
+                        summary_writer.add_scalar(name, v.mean().item(), args.iteration)
 
             # Evaluation
             if args.eval_interval and valid_dataloader is not None and args.iteration % args.eval_interval == 0:

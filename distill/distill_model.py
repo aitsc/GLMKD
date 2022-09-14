@@ -689,8 +689,9 @@ class PKD(GLMStudent):
         layers_per_block = int(self.args.teacher_num_layers / self.args.num_layers)
         layers = tuple(range(0, self.args.teacher_num_layers + 1, layers_per_block))
         x = 0 if self.args.pkd_use_embed else 1
+        y = -2 if self.args.pkd_wo_final else -1
         hook = {'transformer': {
-            'layers': {i: {'layernorm_output': None} for i in layers[x: -1]},
+            'layers': {i: {'layernorm_output': None} for i in layers[x: y]},
             'output': None,
         }}
         hook_L.append(hook)
@@ -698,9 +699,11 @@ class PKD(GLMStudent):
 
     def get_student_hook(self, **kwargs):
         hook_L = [super().get_student_hook(**kwargs)]
+        layers = tuple(range(self.args.num_layers + 1))
         x = 0 if self.args.pkd_use_embed else 1
+        y = -2 if self.args.pkd_wo_final else -1
         hook = {'transformer': {
-            'layers': {i: {'layernorm_output': None} for i in range(x, self.args.num_layers)},
+            'layers': {i: {'layernorm_output': None} for i in layers[x: y]},
             'output': None,
         }}
         hook_L.append(hook)

@@ -134,6 +134,7 @@ class GLMModel(torch.nn.Module):
             hook_add(hook, inter_vars, 'logits_parallel', logits_parallel)
 
             if self.parallel_output:
+                setattr(logits_parallel, 'model_parallel_need_gather', True)
                 ret = (logits_parallel, *outputs)
 
             ret = (mpu.gather_from_model_parallel_region(logits_parallel), *outputs)

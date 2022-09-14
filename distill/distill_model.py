@@ -269,6 +269,8 @@ class TinyBERT(GLMStudent):
             and not (self.args.tinybert_fit_compatible_mt and self.args.mt_hidden_size):
             # {'transformer': {'layers':{0:{'layernorm_output':,'attention_scores':},..},'output':,..},..}
             for v in hook['transformer']['layers'].values():
+                if 'layernorm_output' not in v:
+                    continue
                 inter_vars[v['layernorm_output']] = self.fit_dense(inter_vars[v['layernorm_output']])
             inter_vars[hook['transformer']['output']] = self.fit_dense(inter_vars[hook['transformer']['output']])
         return hook_return(hook, inter_vars, outputs)

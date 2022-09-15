@@ -71,6 +71,17 @@ def get_args():
     py_parser.add_argument('--pkd_beta', type=float, default=100., help="中间层权重")
     py_parser.add_argument('--pkd_use_embed', action='store_true', help="中间层是否包括嵌入层")
     py_parser.add_argument('--pkd_wo_final', action='store_true', help="中间层是否去除最后一层")
+    # rail_kd
+    py_parser.add_argument('--rail_kd_inter_rate', type=float, default=0.3334, help="中间层权重")
+    py_parser.add_argument('--rail_kd_layer_wise_alpha', type=float, default=1., help="Layer-wise RAIL-KD方法的权重alpha i")
+    py_parser.add_argument('--rail_kd_u', type=int, default=128, help="层变换后的维度")
+    py_parser.add_argument('--rail_kd_epochs', type=int, default=1, help="每几轮训练后随机选择层,大于0有效,优先")
+    py_parser.add_argument('--rail_kd_iters', type=int, default=5000, help="每几次迭代后随机选择层,大于0有效,rail_kd_epochs为0这个参数才有效")
+    py_parser.add_argument('--rail_kd_concatenated', action='store_true', help="是否使用Concatenated RAIL-KD方法")
+    py_parser.add_argument('--rail_kd_has_embed', action='store_true', help="中间层是否包括嵌入层")
+    py_parser.add_argument('--rail_kd_has_final', action='store_true', help="中间层是否包含最后一层")
+    py_parser.add_argument('--rail_kd_show_hook_change', action='store_true', help="显示每次随机后的教师取层")
+    py_parser.add_argument('--rail_kd_no_random', action='store_true', help="取消该方法的随机取层,变成隔层取")
 
     # multi-teacher 多个教师的模型参数用冒号分隔, 优先级高于 teacher_ 参数
     py_parser.add_argument('--mt_num_attention_heads', type=str, default='')
@@ -204,11 +215,11 @@ def get_teachers_hook(args, student_model=None):
     original_vars = [getattr(args, 'teacher_' + i) for i in transfer_vars]
     # 替换
     hooks = []
-    for vars in zip(*[getattr(args, 'mt_' + i).split(':') for i in transfer_vars]):
+    for i, vars in enumerate(zip(*[getattr(args, 'mt_' + i).split(':') for i in transfer_vars])):
         for name, v, original_v in zip(transfer_vars, vars, original_vars):
             original_v = '' if original_v is None else original_v
             setattr(args, 'teacher_' + name, type(original_v)(v))
-        hooks.append(student_model.get_teacher_hook())
+        hooks.append(student_model.get_teacher_hook(t_no=i))
     # 复原
     for v, name in zip(original_vars, transfer_vars):
         setattr(args, 'teacher_' + name, v)

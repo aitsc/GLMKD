@@ -12,6 +12,8 @@ from tsc_base import merge_dict
 from apex.normalization.fused_layer_norm import FusedLayerNorm as LayerNorm
 from fp16 import fp32_to_fp16, fp16_to_fp32
 from distill.tools import all_mean_custom, aux_layer
+import random
+import copy
 
 
 class GLMStudent(torch.nn.Module):
@@ -27,7 +29,7 @@ class GLMStudent(torch.nn.Module):
         self.summary_suffix = ''  # 可用于多教师时增加标注
         self.inter_show_hooks = {}  # 用于滞后展示,例如多教师情况
 
-    def get_teacher_hook(self, **kwargs):
+    def get_teacher_hook(self, t_no=0, **kwargs):
         if self.args.distill_logits_parallel:
             return {'logits_parallel': None}
         return {}
@@ -745,8 +747,9 @@ class PKD(GLMStudent):
             l = all_mean_custom(l, keep_batch)
             super().add_summary(f'inter_loss/hidden_states.{i}', l)
             loss_ += l
+        loss_ = loss_ * self.args.pkd_beta
         loss_ += super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=keep_batch, **kwargs)
-        return loss_ * self.args.pkd_beta
+        return loss_
 
     def pre_loss(self, s_logits, t_logits, loss, **kwargs):
         loss_D = super().pre_loss(s_logits, t_logits, loss, return_dict=True, **kwargs)
@@ -755,6 +758,126 @@ class PKD(GLMStudent):
             loss_ += (1 - self.args.pkd_alpha) * loss_D['hard']
         if 'soft' in loss_D:
             loss_ += self.args.pkd_alpha * loss_D['soft']
+        return loss_
+
+
+class RAIL_KD(GLMStudent):
+    def __init__(self, language_model, args, **kwargs):
+        super().__init__(language_model, args, **kwargs)
+        self.teachers_hook = {}  # {t_no:hook,..}; 用于hook更换前维持上次随机的hook
+        self.last_epoch = 0
+        self.last_iter = 0
+        Linear = mpu.ColumnParallelLinear
+        m = 1
+        if args.rail_kd_concatenated:
+            m = self.args.num_layers - 1
+            if args.rail_kd_has_embed:
+                m += 1
+            if args.rail_kd_has_final:
+                m += 1
+        # teacher fit_dense
+        mt_hidden_size = [int(i) for i in args.mt_hidden_size.split(':')] if args.mt_hidden_size else [args.teacher_hidden_size]
+        for i, hidden_size in enumerate(mt_hidden_size):
+            setattr(self, f't_fit_dense_{i}', Linear(hidden_size * m, args.rail_kd_u))
+        # student fit_dense
+        self.s_fit_dense = Linear(args.hidden_size * m, args.rail_kd_u)
+
+    def get_teacher_hook(self, t_no=0, **kwargs):
+        if t_no in self.teachers_hook:
+            if self.args.rail_kd_epochs:
+                if self.args.custom_current_epoch % self.args.rail_kd_epochs != 0 or \
+                    self.args.custom_current_epoch == self.last_epoch \
+                    :
+                    return copy.deepcopy(self.teachers_hook[t_no])
+            elif self.args.rail_kd_iters:
+                if self.args.iteration % self.args.rail_kd_iters != 0 or \
+                    self.args.iteration == self.last_iter \
+                    :
+                    return copy.deepcopy(self.teachers_hook[t_no])
+        self.last_epoch = self.args.custom_current_epoch
+        self.last_iter = self.args.iteration
+        # 重新生成hook
+        hook_L = [super().get_teacher_hook(**kwargs)]
+        if self.args.rail_kd_no_random:
+            layers_per_block = int(self.args.teacher_num_layers / self.args.num_layers)
+            layers = list(range(0, self.args.teacher_num_layers + 1, layers_per_block))[1: -1]
+        else:
+            layers = random.sample(range(1, self.args.teacher_num_layers), self.args.num_layers - 1)
+            layers.sort()
+        if self.args.rail_kd_has_embed:
+            layers.insert(0, 0)
+        hook = {'transformer': {
+            'layers': {i: {'layernorm_output': None} for i in layers},
+            **({'output': None} if self.args.rail_kd_has_final else {}),
+        }}
+        hook_L.append(hook)
+        self.teachers_hook[t_no] = merge_dict(hook_L)
+        # 提示
+        if self.args.rail_kd_show_hook_change:
+            layers_ = layers + (['final'] if self.args.rail_kd_has_final else [])
+            print_rank_0(f'RAIL_KD.get_teacher_hook(t_no={t_no})-new_layers: {layers_}')
+        return copy.deepcopy(self.teachers_hook[t_no])
+
+    def get_student_hook(self, **kwargs):
+        hook_L = [super().get_student_hook(**kwargs)]
+        layers = tuple(range(self.args.num_layers + 1))
+        x = 0 if self.args.rail_kd_has_embed else 1
+        hook = {'transformer': {
+            'layers': {i: {'layernorm_output': None} for i in layers[x: -1]},
+            **({'output': None} if self.args.rail_kd_has_final else {}),
+        }}
+        hook_L.append(hook)
+        return merge_dict(hook_L)
+
+    def forward(self, *inputs, hook=None, **kwargs):
+        inter_vars = []
+        outputs = hook_model(hook, inter_vars, self.origin_model, *inputs, **kwargs)
+        if hook is not None and inter_vars:
+            for v in hook['transformer']['layers'].values():
+                if 'layernorm_output' not in v:
+                    continue
+                inter_vars[v['layernorm_output']] = inter_vars[v['layernorm_output']].mean(1)
+            if 'output' in hook['transformer']:
+                inter_vars[hook['transformer']['output']] = inter_vars[hook['transformer']['output']].mean(1)
+        return hook_return(hook, inter_vars, outputs)
+
+    def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=False, t_no=0, **kwargs):
+        loss_ = 0.
+        if len(s_inter_vars) == 0:
+            return loss_
+        def get_layer_f(st, name):
+            inter_vars, hook = (s_inter_vars, s_hook) if st == 's' else (t_inter_vars, t_hook)
+            r = [inter_vars[i[1][name]] for i in sorted(hook['transformer']['layers'].items()) if name in i[1]]
+            return r
+
+        student_reps = get_layer_f('s', 'layernorm_output')
+        teacher_reps = get_layer_f('t', 'layernorm_output')
+        if 'transformer' in s_hook and 'output' in s_hook['transformer']:
+            s_inter_vars[s_hook['transformer']['output']].distill = True
+            student_reps += [s_inter_vars[s_hook['transformer']['output']]]
+            teacher_reps += [t_inter_vars[t_hook['transformer']['output']]]
+        for i, (student_rep, teacher_rep) in enumerate(zip(student_reps, teacher_reps)):
+            student_rep.distill = teacher_rep.distill = True
+        teacher_reps = [i.mean(1) for i in teacher_reps]
+        if self.args.rail_kd_concatenated:
+            student_reps = torch.cat(student_reps, 1)
+            teacher_reps = torch.cat(teacher_reps, 1)
+        else:
+            student_reps = torch.stack(student_reps, 1)
+            teacher_reps = torch.stack(teacher_reps, 1)
+        student_reps = aux_layer(self.args, self.s_fit_dense, student_reps)
+        teacher_reps = aux_layer(self.args, getattr(self, f't_fit_dense_{t_no}'), teacher_reps)
+        student_reps = F.normalize(student_reps, p=2, dim=-1)
+        teacher_reps = F.normalize(teacher_reps, p=2, dim=-1)
+        l = F.mse_loss(student_reps, teacher_reps, reduction='none')
+        if keep_batch:
+            l = l.sum(list(range(1, len(l.shape))))
+        else:
+            l = l.sum()
+        super().add_summary(f'inter_loss/hidden_states', l)
+        loss_ += l
+        loss_ = loss_ * self.args.rail_kd_inter_rate
+        loss_ += super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=keep_batch, **kwargs)
         return loss_
 
 
@@ -768,4 +891,5 @@ student_model_D = {
     'distilbert': DistilBERT,
     'mixbaseline': MixBaseline,
     'pkd': PKD,
+    'rail_kd': RAIL_KD,
 }

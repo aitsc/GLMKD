@@ -210,6 +210,7 @@ def _train(model, optimizer, lr_scheduler, forward_step,
     timers('interval time').start()
     for epoch in range(start_epoch, args.epochs):
         print_rank_0('working on epoch {} ...'.format(epoch))
+        args.custom_current_epoch = epoch
 
         # 上来先评估
         if end_of_epoch_callback is not None and epoch == start_epoch and args.custom_first_eval:

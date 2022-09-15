@@ -42,6 +42,7 @@ def get_args():
     # tinybert
     py_parser.add_argument('--tinybert_inter_final', action='store_true', help="只使用最后隐层做损失")
     py_parser.add_argument('--tinybert_only_emb_final', action='store_true', help="只使用嵌入层和最后隐层做损失")
+    py_parser.add_argument('--tinybert_only_emb', action='store_true', help="只使用嵌入层做损失")
     py_parser.add_argument('--tinybert_wo_att', action='store_true', help="不使用注意力矩阵的损失")
     py_parser.add_argument('--tinybert_wo_inter', action='store_true', help="不使用中间层,可用于二次微调")
     py_parser.add_argument('--tinybert_fit_parallel', action='store_true', help='转换层是否使用模型并行')

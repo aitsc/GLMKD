@@ -233,6 +233,8 @@ class TinyBERT(GLMStudent):
             hook = {}
         elif self.args.tinybert_only_emb_final:
             hook = {'transformer': {'layers': {0: {'layernorm_output': None}}, 'output': None}}
+        elif self.args.tinybert_only_emb:
+            hook = {'transformer': {'layers': {0: {'layernorm_output': None}}}}
         else:
             hook ={'transformer': {
                 'layers': {} if self.args.tinybert_inter_final else {
@@ -251,6 +253,8 @@ class TinyBERT(GLMStudent):
             hook = {}
         elif self.args.tinybert_only_emb_final:
             hook = {'transformer': {'layers': {0: {'layernorm_output': None}}, 'output': None}}
+        elif self.args.tinybert_only_emb:
+            hook = {'transformer': {'layers': {0: {'layernorm_output': None}}}}
         else:
             hook = {'transformer': {
                 'layers': {} if self.args.tinybert_inter_final else {i: {
@@ -272,7 +276,8 @@ class TinyBERT(GLMStudent):
                 if 'layernorm_output' not in v:
                     continue
                 inter_vars[v['layernorm_output']] = self.fit_dense(inter_vars[v['layernorm_output']])
-            inter_vars[hook['transformer']['output']] = self.fit_dense(inter_vars[hook['transformer']['output']])
+            if 'output' in hook['transformer']:
+                inter_vars[hook['transformer']['output']] = self.fit_dense(inter_vars[hook['transformer']['output']])
         return hook_return(hook, inter_vars, outputs)
 
     def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=False, t_no=None, **kwargs):
@@ -305,8 +310,11 @@ class TinyBERT(GLMStudent):
                 super().add_summary(f'inter_loss/attention_scores.{i}', l)
                 loss_ += l
         # emb + hidden_states
-        student_reps = get_layer_f('s', 'layernorm_output') + [s_inter_vars[s_hook['transformer']['output']]]
-        teacher_reps = get_layer_f('t', 'layernorm_output') + [t_inter_vars[t_hook['transformer']['output']]]
+        student_reps = get_layer_f('s', 'layernorm_output')
+        teacher_reps = get_layer_f('t', 'layernorm_output')
+        if 'transformer' in s_hook and 'output' in s_hook['transformer']:
+            student_reps += [s_inter_vars[s_hook['transformer']['output']]]
+            teacher_reps += [t_inter_vars[t_hook['transformer']['output']]]
         for i, (student_rep, teacher_rep) in enumerate(zip(student_reps, teacher_reps)):
             student_rep.distill = teacher_rep.distill = True
             l = F.mse_loss(student_rep, teacher_rep, reduction='none')
@@ -689,10 +697,9 @@ class PKD(GLMStudent):
         layers_per_block = int(self.args.teacher_num_layers / self.args.num_layers)
         layers = tuple(range(0, self.args.teacher_num_layers + 1, layers_per_block))
         x = 0 if self.args.pkd_use_embed else 1
-        y = -2 if self.args.pkd_wo_final else -1
         hook = {'transformer': {
-            'layers': {i: {'layernorm_output': None} for i in layers[x: y]},
-            'output': None,
+            'layers': {i: {'layernorm_output': None} for i in layers[x: -1]},
+            **({} if self.args.pkd_wo_final else {'output': None}),
         }}
         hook_L.append(hook)
         return merge_dict(hook_L)
@@ -701,10 +708,9 @@ class PKD(GLMStudent):
         hook_L = [super().get_student_hook(**kwargs)]
         layers = tuple(range(self.args.num_layers + 1))
         x = 0 if self.args.pkd_use_embed else 1
-        y = -2 if self.args.pkd_wo_final else -1
         hook = {'transformer': {
-            'layers': {i: {'layernorm_output': None} for i in layers[x: y]},
-            'output': None,
+            'layers': {i: {'layernorm_output': None} for i in layers[x: -1]},
+            **({} if self.args.pkd_wo_final else {'output': None}),
         }}
         hook_L.append(hook)
         return merge_dict(hook_L)
@@ -717,8 +723,11 @@ class PKD(GLMStudent):
             inter_vars, hook = (s_inter_vars, s_hook) if st == 's' else (t_inter_vars, t_hook)
             return [inter_vars[i[1][name]] for i in sorted(hook['transformer']['layers'].items()) if name in i[1]]
 
-        student_reps = get_layer_f('s', 'layernorm_output') + [s_inter_vars[s_hook['transformer']['output']]]
-        teacher_reps = get_layer_f('t', 'layernorm_output') + [t_inter_vars[t_hook['transformer']['output']]]
+        student_reps = get_layer_f('s', 'layernorm_output')
+        teacher_reps = get_layer_f('t', 'layernorm_output')
+        if 'transformer' in s_hook and 'output' in s_hook['transformer']:
+            student_reps += [s_inter_vars[s_hook['transformer']['output']]]
+            teacher_reps += [t_inter_vars[t_hook['transformer']['output']]]
         for i, (student_rep, teacher_rep) in enumerate(zip(student_reps, teacher_reps)):
             student_rep.distill = teacher_rep.distill = True
             if self.args.pkd_normalized_patience:

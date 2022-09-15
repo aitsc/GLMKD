@@ -243,6 +243,10 @@ class TinyBERT(GLMStudent):
                 },
                 'output': None,
             }}
+        if (self.args.tinybert_only_emb_final or self.args.tinybert_inter_final) and self.args.tinybert_custom_final > 1:
+            del hook['transformer']['output']
+            layer = self.args.teacher_num_layers - self.args.tinybert_custom_final + 1
+            hook['transformer']['layers'].setdefault(layer, {}).setdefault('layernorm_output', None)
         hook_L.append(hook)
         return merge_dict(hook_L)
 
@@ -263,6 +267,10 @@ class TinyBERT(GLMStudent):
                 } for i in layers},
                 'output': None,
             }}
+        if (self.args.tinybert_only_emb_final or self.args.tinybert_inter_final) and self.args.tinybert_custom_final > 1:
+            del hook['transformer']['output']
+            layer = self.args.num_layers - self.args.tinybert_custom_final + 1
+            hook['transformer']['layers'].setdefault(layer, {}).setdefault('layernorm_output', None)
         hook_L.append(hook)
         return merge_dict(hook_L)
 

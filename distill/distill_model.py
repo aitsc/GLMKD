@@ -226,11 +226,36 @@ class TinyBERT(GLMStudent):
                 setattr(self, f'fit_dense_{i}', Linear(args.hidden_size, hidden_size))
         else:
             self.fit_dense = Linear(args.hidden_size, args.teacher_hidden_size)
+        # add random hook 功能
+        self.teachers_hook = {}  # {t_no:hook,..}; 用于hook更换前维持上次随机的hook
+        self.last_epoch = 0
+        self.last_iter = 0
 
-    def get_teacher_hook(self, **kwargs):
+    def get_teacher_hook(self, t_no=0, **kwargs):
+        if t_no in self.teachers_hook and self.args.tinybert_random_layers:
+            if self.args.tinybert_random_e:
+                if self.args.custom_current_epoch % self.args.tinybert_random_e != 0 or \
+                    self.args.custom_current_epoch == self.last_epoch \
+                    :
+                    return copy.deepcopy(self.teachers_hook[t_no])
+            elif self.args.tinybert_random_i:
+                if self.args.iteration % self.args.tinybert_random_i != 0 or \
+                    self.args.iteration == self.last_iter \
+                    :
+                    return copy.deepcopy(self.teachers_hook[t_no])
+        self.last_epoch = self.args.custom_current_epoch
+        self.last_iter = self.args.iteration
+        # 重新生成hook
         hook_L = [super().get_teacher_hook(**kwargs)]
-        layers_per_block = int(self.args.teacher_num_layers / self.args.num_layers)
-        layers = tuple(range(0, self.args.teacher_num_layers + 1, layers_per_block))
+        if self.args.tinybert_random_layers:
+            layers = random.sample(range(1, self.args.teacher_num_layers), self.args.num_layers - 1)
+            layers.sort()
+            layers = [0] + layers + [self.args.teacher_num_layers]
+            if self.args.tinybert_random_show:
+                print_rank_0(f'TinyBERT.get_teacher_hook(t_no={t_no})-new_layers: {layers}')
+        else:
+            layers_per_block = int(self.args.teacher_num_layers / self.args.num_layers)
+            layers = tuple(range(0, self.args.teacher_num_layers + 1, layers_per_block))
         if self.args.tinybert_wo_inter:
             hook = {}
         elif self.args.tinybert_only_emb_final:
@@ -243,14 +268,16 @@ class TinyBERT(GLMStudent):
                     **{i: {'layernorm_output': None} for i in layers[:-1]},
                     **({} if self.args.tinybert_wo_att else {i - 1: {'attention_scores': None} for i in layers[1:]}),
                 },
-                'output': None,
+                **({} if self.args.tinybert_wo_final else {'output': None}),
             }}
         if (self.args.tinybert_only_emb_final or self.args.tinybert_inter_final) and self.args.tinybert_custom_final > 1:
-            del hook['transformer']['output']
+            if 'output' in hook['transformer']:
+                del hook['transformer']['output']
             layer = self.args.teacher_num_layers - self.args.tinybert_custom_final + 1
             hook['transformer']['layers'].setdefault(layer, {}).setdefault('layernorm_output', None)
         hook_L.append(hook)
-        return merge_dict(hook_L)
+        self.teachers_hook[t_no] = merge_dict(hook_L)
+        return copy.deepcopy(self.teachers_hook[t_no])
 
     def get_student_hook(self, **kwargs):
         hook_L = [super().get_student_hook(**kwargs)]
@@ -267,10 +294,11 @@ class TinyBERT(GLMStudent):
                     'layernorm_output': None,
                     **({} if self.args.tinybert_wo_att else {'attention_scores': None}),
                 } for i in layers},
-                'output': None,
+                **({} if self.args.tinybert_wo_final else {'output': None}),
             }}
         if (self.args.tinybert_only_emb_final or self.args.tinybert_inter_final) and self.args.tinybert_custom_final > 1:
-            del hook['transformer']['output']
+            if 'output' in hook['transformer']:
+                del hook['transformer']['output']
             layer = self.args.num_layers - self.args.tinybert_custom_final + 1
             hook['transformer']['layers'].setdefault(layer, {}).setdefault('layernorm_output', None)
         hook_L.append(hook)
@@ -280,12 +308,14 @@ class TinyBERT(GLMStudent):
         inter_vars = []
         outputs = hook_model(hook, inter_vars, self.origin_model, *inputs, **kwargs)
         if hook is not None and not self.args.tinybert_wo_inter and inter_vars \
-            and not (self.args.tinybert_fit_compatible_mt and self.args.mt_hidden_size):
+            and not (self.args.tinybert_fit_compatible_mt and self.args.mt_hidden_size) \
+            and 'transformer' in hook:
             # {'transformer': {'layers':{0:{'layernorm_output':,'attention_scores':},..},'output':,..},..}
-            for v in hook['transformer']['layers'].values():
-                if 'layernorm_output' not in v:
-                    continue
-                inter_vars[v['layernorm_output']] = self.fit_dense(inter_vars[v['layernorm_output']])
+            if 'layers' in hook['transformer']:
+                for v in hook['transformer']['layers'].values():
+                    if 'layernorm_output' not in v:
+                        continue
+                    inter_vars[v['layernorm_output']] = self.fit_dense(inter_vars[v['layernorm_output']])
             if 'output' in hook['transformer']:
                 inter_vars[hook['transformer']['output']] = self.fit_dense(inter_vars[hook['transformer']['output']])
         return hook_return(hook, inter_vars, outputs)
@@ -832,11 +862,12 @@ class RAIL_KD(GLMStudent):
     def forward(self, *inputs, hook=None, **kwargs):
         inter_vars = []
         outputs = hook_model(hook, inter_vars, self.origin_model, *inputs, **kwargs)
-        if hook is not None and inter_vars:
-            for v in hook['transformer']['layers'].values():
-                if 'layernorm_output' not in v:
-                    continue
-                inter_vars[v['layernorm_output']] = inter_vars[v['layernorm_output']].mean(1)
+        if hook is not None and inter_vars and 'transformer' in hook:
+            if 'layers' in hook['transformer']:
+                for v in hook['transformer']['layers'].values():
+                    if 'layernorm_output' not in v:
+                        continue
+                    inter_vars[v['layernorm_output']] = inter_vars[v['layernorm_output']].mean(1)
             if 'output' in hook['transformer']:
                 inter_vars[hook['transformer']['output']] = inter_vars[hook['transformer']['output']].mean(1)
         return hook_return(hook, inter_vars, outputs)

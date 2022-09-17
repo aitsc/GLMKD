@@ -250,9 +250,9 @@ class TinyBERT(GLMStudent):
         if self.args.tinybert_random_layers:
             layers = random.sample(range(1, self.args.teacher_num_layers), self.args.num_layers - 1)
             layers.sort()
-            layers = [0] + layers + [self.args.teacher_num_layers]
             if self.args.tinybert_random_show:
                 print_rank_0(f'TinyBERT.get_teacher_hook(t_no={t_no})-new_layers: {layers}')
+            layers = [0] + layers + [self.args.teacher_num_layers]
         else:
             layers_per_block = int(self.args.teacher_num_layers / self.args.num_layers)
             layers = tuple(range(0, self.args.teacher_num_layers + 1, layers_per_block))
@@ -265,7 +265,7 @@ class TinyBERT(GLMStudent):
         else:
             hook ={'transformer': {
                 'layers': {} if self.args.tinybert_inter_final else {
-                    **{i: {'layernorm_output': None} for i in layers[:-1]},
+                    **{i: {'layernorm_output': None} for i in layers[1 if self.args.tinybert_wo_emb else 0:-1]},
                     **({} if self.args.tinybert_wo_att else {i - 1: {'attention_scores': None} for i in layers[1:]}),
                 },
                 **({} if self.args.tinybert_wo_final else {'output': None}),
@@ -291,7 +291,7 @@ class TinyBERT(GLMStudent):
         else:
             hook = {'transformer': {
                 'layers': {} if self.args.tinybert_inter_final else {i: {
-                    'layernorm_output': None,
+                    **({} if i==0 and self.args.tinybert_wo_emb else {'layernorm_output': None}),
                     **({} if self.args.tinybert_wo_att else {'attention_scores': None}),
                 } for i in layers},
                 **({} if self.args.tinybert_wo_final else {'output': None}),

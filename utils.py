@@ -39,6 +39,8 @@ def get_sample_writer(log_dir, iteration=0, args=None):
     """Returns a tensorboard summary writer
     """
     if args is not None:
+        if args.custom_no_summary_writer:
+            return None
         log_dir = args.log_dir = os.path.join(args.save, 'tensorboard')
     return SummaryWriter(
         log_dir=log_dir, purge_step=iteration)
@@ -232,6 +234,8 @@ def save_zero_checkpoint(args, iteration, optimizer):
 def save_checkpoint(iteration, model, optimizer, lr_scheduler, args, tag=None, barrier=True,
                     only_changed_parameters=False, no_deepspeed=False, no_save_optim=False):
     """Save a model checkpoint."""
+    if args.custom_no_save_checkpoint:
+        return False
     if tag is None:
         tag = str(iteration)
     if args.deepspeed and not no_deepspeed:
@@ -281,6 +285,7 @@ def save_checkpoint(iteration, model, optimizer, lr_scheduler, args, tag=None, b
         tracker_filename = get_checkpoint_tracker_filename(args.save)
         with open(tracker_filename, 'w') as f:
             f.write(tag)
+    return True
 
 
 def save_ds_checkpoint(iteration, model, lr_scheduler, args, tag):

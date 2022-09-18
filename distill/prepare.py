@@ -88,6 +88,15 @@ def get_args():
     py_parser.add_argument('--rail_kd_has_final', action='store_true', help="中间层是否包含最后一层")
     py_parser.add_argument('--rail_kd_show_hook_change', action='store_true', help="显示每次随机后的教师取层")
     py_parser.add_argument('--rail_kd_no_random', action='store_true', help="取消该方法的随机取层,变成隔层取")
+    # mgskd
+    py_parser.add_argument('--mgskd_weight_sample', type=float, default=4., help="权重")
+    py_parser.add_argument('--mgskd_weight_token', type=float, default=1., help="权重")
+    py_parser.add_argument('--mgskd_weight_span', type=float, default=1., help="权重")
+    py_parser.add_argument('--mgskd_sample_level_m', type=int, default=2, help="从这个层开始使用sample损失,一般为学生层数/2")
+    py_parser.add_argument('--mgskd_triplet_k1', type=int, default=20, help="对注意力分数排名前几的向量使用 Triplet-wise Geometric Angle")
+    py_parser.add_argument('--mgskd_triplet_k2', type=int, default=20, help="对k1个向量中注意力分数排名前几的点拿出来组成新的矩阵")
+    py_parser.add_argument('--mgskd_multi_heads', type=int, default=64, help="隐层切分成多头的数量")
+    py_parser.add_argument('--mgskd_span_max_rate', type=float, default=0.4, help="大于0则随机分割词组使用,相对于整体序列长度的比例")
 
     # multi-teacher 多个教师的模型参数用冒号分隔, 优先级高于 teacher_ 参数
     py_parser.add_argument('--mt_num_attention_heads', type=str, default='')

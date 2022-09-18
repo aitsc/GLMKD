@@ -224,7 +224,7 @@ def _train(model, optimizer, lr_scheduler, forward_step,
                     print_rank_0(f"Found best {validation_metric} {best_score} at {best_iteration}")
                     save_checkpoint(args.iteration, model, optimizer, lr_scheduler, args, tag="best", barrier=False,
                                     only_changed_parameters=True, no_deepspeed=True, no_save_optim=True)
-                    if torch.distributed.get_rank() == 0:
+                    if torch.distributed.get_rank() == 0 and not args.custom_no_save_checkpoint:
                         score_dict.update({"type": "validation", "epoch": epoch})
                         with open(os.path.join(args.log_dir, "results.json"), "w") as output:
                             output.write(json.dumps(score_dict) + "\n")
@@ -298,7 +298,7 @@ def _train(model, optimizer, lr_scheduler, forward_step,
                     print_rank_0(f"Found best {validation_metric} {best_score} at {best_iteration}")
                     save_checkpoint(args.iteration, model, optimizer, lr_scheduler, args, tag="best", barrier=False,
                                     only_changed_parameters=True, no_deepspeed=True, no_save_optim=True)
-                    if torch.distributed.get_rank() == 0:
+                    if torch.distributed.get_rank() == 0 and not args.custom_no_save_checkpoint:
                         score_dict.update({"type": "validation", "epoch": epoch})
                         with open(os.path.join(args.log_dir, "results.json"), "w") as output:
                             output.write(json.dumps(score_dict) + "\n")

@@ -14,6 +14,7 @@ from fp16 import fp32_to_fp16, fp16_to_fp32
 from distill.tools import all_mean_custom, aux_layer
 import random
 import copy
+from cite_mgskd import SampleLoss, TokenPhraseLoss
 
 
 class GLMStudent(torch.nn.Module):
@@ -912,6 +913,90 @@ class RAIL_KD(GLMStudent):
         return loss_
 
 
+class MGSKD(GLMStudent):
+    def __init__(self, language_model, args, **kwargs):
+        super().__init__(language_model, args, **kwargs)
+        n_relation_heads = self.args.mgskd_multi_heads
+        k1 = self.args.mgskd_triplet_k1
+        k2 = self.args.mgskd_triplet_k2
+        # 外部调用, 多教师兼容性较差, 例如 keep_batch/no_grad 问题
+        self.sample_loss = SampleLoss(n_relation_heads)
+        self.tokenphrase_loss = TokenPhraseLoss(n_relation_heads, k1, k2)
+
+    def get_teacher_hook(self, **kwargs):
+        hook_L = [super().get_teacher_hook(**kwargs)]
+        layers_per_block = int(self.args.teacher_num_layers / self.args.num_layers)
+        layers = tuple(range(0, self.args.teacher_num_layers + 1, layers_per_block))
+        hook = {'transformer': {
+            'layers': {i: {'layernorm_output': None} for i in layers[: -1]},
+            'output': None,
+        }}
+        hook_L.append(hook)
+        return merge_dict(hook_L)
+
+    def get_student_hook(self, **kwargs):
+        hook_L = [super().get_student_hook(**kwargs)]
+        layers = tuple(range(self.args.num_layers + 1))
+        hook = {'transformer': {
+            'layers': {i: {'layernorm_output': None} for i in layers[: -1]},
+            'output': None,
+        }, 'position_ids': None}
+        hook_L.append(hook)
+        return merge_dict(hook_L)
+
+    def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=False, tokenizer=None, **kwargs):
+        loss_ = 0.
+        if len(s_inter_vars) == 0:
+            return loss_
+        def get_layer_f(st, name):
+            inter_vars, hook = (s_inter_vars, s_hook) if st == 's' else (t_inter_vars, t_hook)
+            return [inter_vars[i[1][name]] for i in sorted(hook['transformer']['layers'].items()) if name in i[1]]
+
+        student_reps = get_layer_f('s', 'layernorm_output')
+        teacher_reps = get_layer_f('t', 'layernorm_output')
+        if 'transformer' in s_hook and 'output' in s_hook['transformer']:
+            student_reps += [s_inter_vars[s_hook['transformer']['output']]]
+            teacher_reps += [t_inter_vars[t_hook['transformer']['output']]]
+        # mask
+        mask_pad_token = (s_inter_vars[s_hook['position_ids']][:, 0] > 0).int()
+        mask_pad_token[:, 0] = 1
+        if self.args.mgskd_span_max_rate:
+            seq_len = student_reps[0].size(1)
+            span_max_num = int(seq_len * self.args.mgskd_span_max_rate)
+            a = abs(torch.normal(0, 1, (span_max_num,)))
+            a = (a / a.sum() * (seq_len - span_max_num)).int() + 1
+            a[a.sum()-seq_len:] += 1
+            mask_pad_span = torch.split(mask_pad_token, a.tolist(), dim=1)
+            mask_pad_span = [rep.sum(1, keepdim=True) for rep in mask_pad_span]
+            mask_pad_span = (torch.cat(mask_pad_span, 1) > 0).int()
+        # loss
+        for i, (s_rep, t_rep) in enumerate(zip(student_reps, teacher_reps)):
+            s_rep.distill = t_rep.distill = True
+            token_loss = phrase_loss = sample_loss = 0.
+            # token span
+            if self.args.mgskd_sample_level_m < i:
+                if self.args.mgskd_span_max_rate:
+                    s_span = torch.split(s_rep, a.tolist(), dim=1)
+                    s_span = [rep.mean(1, keepdim=True) for rep in s_span]
+                    s_span = torch.cat(s_span, 1)
+                    t_span = torch.split(t_rep, a.tolist(), dim=1)
+                    t_span = [rep.mean(1, keepdim=True) for rep in t_span]
+                    t_span = torch.cat(t_span, 1)
+                else:
+                    ...
+                token_loss = self.tokenphrase_loss(s_rep, t_rep, mask_pad_token)
+                phrase_loss = self.tokenphrase_loss(s_span, t_span, mask_pad_span)
+            else:
+                sample_loss = self.sample_loss(s_rep, t_rep, mask_pad_token)
+            l = token_loss * self.args.mgskd_weight_token + \
+                phrase_loss * self.args.mgskd_weight_span + \
+                sample_loss * self.args.mgskd_weight_sample
+            super().add_summary(f'inter_loss/hidden_states.{i}', l)
+            loss_ += l
+        loss_ += super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=keep_batch, **kwargs)
+        return loss_
+
+
 student_model_D = {
     None: None,
     'kd': GLMStudent,
@@ -923,4 +1008,5 @@ student_model_D = {
     'mixbaseline': MixBaseline,
     'pkd': PKD,
     'rail_kd': RAIL_KD,
+    'mgskd': MGSKD,
 }

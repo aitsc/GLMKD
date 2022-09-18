@@ -97,6 +97,7 @@ def get_args():
     py_parser.add_argument('--mgskd_triplet_k2', type=int, default=20, help="对k1个向量中注意力分数排名前几的点拿出来组成新的矩阵")
     py_parser.add_argument('--mgskd_multi_heads', type=int, default=64, help="隐层切分成多头的数量")
     py_parser.add_argument('--mgskd_span_max_rate', type=float, default=0.4, help="大于0则随机分割词组使用,相对于整体序列长度的比例")
+    py_parser.add_argument('--mgskd_wo_inter', action='store_true', help="不使用中间层,可用于二次微调")
 
     # multi-teacher 多个教师的模型参数用冒号分隔, 优先级高于 teacher_ 参数
     py_parser.add_argument('--mt_num_attention_heads', type=str, default='')

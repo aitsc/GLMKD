@@ -927,7 +927,7 @@ class MGSKD(GLMStudent):
         hook_L = [super().get_teacher_hook(**kwargs)]
         layers_per_block = int(self.args.teacher_num_layers / self.args.num_layers)
         layers = tuple(range(0, self.args.teacher_num_layers + 1, layers_per_block))
-        hook = {'transformer': {
+        hook = {} if self.args.mgskd_wo_inter else {'transformer': {
             'layers': {i: {'layernorm_output': None} for i in layers[: -1]},
             'output': None,
         }}
@@ -937,7 +937,7 @@ class MGSKD(GLMStudent):
     def get_student_hook(self, **kwargs):
         hook_L = [super().get_student_hook(**kwargs)]
         layers = tuple(range(self.args.num_layers + 1))
-        hook = {'transformer': {
+        hook = {} if self.args.mgskd_wo_inter else {'transformer': {
             'layers': {i: {'layernorm_output': None} for i in layers[: -1]},
             'output': None,
         }, 'position_ids': None}
@@ -946,7 +946,7 @@ class MGSKD(GLMStudent):
 
     def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=False, tokenizer=None, **kwargs):
         loss_ = 0.
-        if len(s_inter_vars) == 0:
+        if len(s_inter_vars) == 0 or self.args.mgskd_wo_inter:
             return loss_
         def get_layer_f(st, name):
             inter_vars, hook = (s_inter_vars, s_hook) if st == 's' else (t_inter_vars, t_hook)

@@ -88,7 +88,7 @@ def print_and_save_args(args, verbose=True, log_dir=None):
         for arg in vars(args):
             dots = '.' * (29 - len(arg))
             print('  {} {} {}'.format(arg, dots, getattr(args, arg)), flush=True)
-    if log_dir is not None:
+    if log_dir is not None and not args.custom_no_summary_writer:
         json_file = os.path.join(log_dir, "config.json")
         with open(json_file, "w") as output:
             json.dump(vars(args), output, sort_keys=True)

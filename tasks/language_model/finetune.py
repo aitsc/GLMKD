@@ -35,7 +35,6 @@ global_tokenizer = None
 
 
 def lm_forward_step(data, model, args, timers, mems, eval_metric=None, teacher_models=None):
-    """Forward step."""
     # Get the batch.
     if timers is not None:
         timers('batch generator').start()
@@ -60,6 +59,25 @@ def lm_forward_step(data, model, args, timers, mems, eval_metric=None, teacher_m
         loss_mask = loss_mask.squeeze(1)
         attention_mask = attention_mask.squeeze(1)
         position_ids = position_ids.squeeze(1)
+
+    repeat_f = lambda : lm_forward_step_(
+        tokens, labels, loss_mask, attention_mask, position_ids,
+        data, model, args, timers, mems, eval_metric=eval_metric, teacher_models=teacher_models,
+    )
+    args.forward_repeat_current_n = 0
+    loss, mems = repeat_f()[:2]
+
+    if args.forward_repeat_num:
+        for i in range(args.forward_repeat_num):
+            args.forward_repeat_current_n = i + 1
+            loss = loss + repeat_f()[0]  # 注意返回的不是 loss 而是 correct 的情况问题
+        args.forward_repeat_current_n = 0
+    return loss, mems, 'bert'
+
+
+def lm_forward_step_(tokens, labels, loss_mask, attention_mask, position_ids,
+    data, model, args, timers, mems, eval_metric=None, teacher_models=None):
+    """Forward step."""
 
     def print_masked_text(batch_id):
         block_position_ids = position_ids[:, 1]
@@ -99,8 +117,10 @@ def lm_forward_step(data, model, args, timers, mems, eval_metric=None, teacher_m
         s_hook = student_model.get_student_hook()
         t_hook_L = get_teachers_hook(args, student_model)
         t_inter_vars_L = [[] for _ in range(len(t_hook_L))]
+        s_hook_op = student_model.get_student_hook_op()
+        t_hook_op_L = get_teachers_hook(args, student_model, is_op=True)
     else:
-        t_hook_L = s_hook = None
+        t_hook_L = s_hook = t_hook_op_L = s_hook_op = None
         teacher_models = []
 
     # Forward model.
@@ -108,7 +128,7 @@ def lm_forward_step(data, model, args, timers, mems, eval_metric=None, teacher_m
     m_kw = {}
     if args.continuous_prompt:
         m_kw['prompt_pos'] = data["prompt_pos"].long().cuda()
-    logits, *mems = hook_model(s_hook, s_inter_vars, model, *m_in, **m_kw)
+    logits, *mems = hook_model(s_hook, s_inter_vars, model, *m_in, **m_kw, hook_op=s_hook_op)
     # loss
     def get_loss(logits):
         if eval_metric is None or eval_metric == 'loss':
@@ -137,8 +157,8 @@ def lm_forward_step(data, model, args, timers, mems, eval_metric=None, teacher_m
     if is_distill:
         with NoneWith() if args.mt_has_grad else torch.no_grad():
             t_out_L = mt_repeat_operation(
-                zip(t_hook_L, t_inter_vars_L, teacher_models),
-                lambda h, i, m: hook_model(h, i, m, *m_in, **m_kw),
+                zip(t_hook_L, t_inter_vars_L, teacher_models, t_hook_op_L),
+                lambda h, i, m, h_op: hook_model(h, i, m, *m_in, **m_kw, hook_op=h_op),
                 lambda ret: {'logits': ret[0], 'mems': ret[1:]},
             )
         if args.mt_has_loss:

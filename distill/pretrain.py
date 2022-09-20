@@ -32,8 +32,6 @@ tokenizer = None
 
 
 def forward_step(data_iterator, model, args, timers, mems, teacher_models=None):
-    """Forward step."""
-
     # Get the batch.
     timers('batch generator').start()
     timers('data loader').start()
@@ -53,6 +51,25 @@ def forward_step(data_iterator, model, args, timers, mems, teacher_models=None):
     else:
         mode = 'bert'
 
+    repeat_f = lambda : forward_step_(
+        tokens, labels, loss_mask, attention_mask, position_ids,
+        data_iterator, model, args, timers, mems, teacher_models=teacher_models,
+    )
+    args.forward_repeat_current_n = 0
+    loss, mems = repeat_f()[:2]
+        
+    if args.forward_repeat_num:
+        for i in range(args.forward_repeat_num):
+            args.forward_repeat_current_n = i + 1
+            loss = loss + repeat_f()[0]
+        args.forward_repeat_current_n = 0
+    return loss, mems, mode
+
+
+def forward_step_(tokens, labels, loss_mask, attention_mask, position_ids,
+    data_iterator, model, args, timers, mems, teacher_models=None):
+    """Forward step."""
+
     is_distill = teacher_models is not None and len(teacher_models) > 0
     student_model = unpacking_student_model(model)
     s_inter_vars, t_inter_vars_L = [], []
@@ -60,10 +77,12 @@ def forward_step(data_iterator, model, args, timers, mems, teacher_models=None):
         s_hook = student_model.get_student_hook()
         t_hook_L = get_teachers_hook(args, student_model)
         t_inter_vars_L = [[] for _ in range(len(t_hook_L))]
+        s_hook_op = student_model.get_student_hook_op()
+        t_hook_op_L = get_teachers_hook(args, student_model, is_op=True)
     else:
-        t_hook_L = s_hook = None
+        t_hook_L = s_hook = t_hook_op_L = s_hook_op = None
         teacher_models = []
-    logits, *mems = hook_model(s_hook, s_inter_vars, model, tokens, position_ids, attention_mask, *mems)
+    logits, *mems = hook_model(s_hook, s_inter_vars, model, tokens, position_ids, attention_mask, *mems, hook_op=s_hook_op)
 
     def compute_loss(logits):
         losses = mpu.vocab_parallel_cross_entropy(logits.contiguous().float(), labels)
@@ -79,8 +98,8 @@ def forward_step(data_iterator, model, args, timers, mems, teacher_models=None):
         student_model.add_summary('Train/hard_loss', loss)
         with NoneWith() if args.mt_has_grad else torch.no_grad():
             t_out_L = mt_repeat_operation(
-                zip(t_hook_L, t_inter_vars_L, teacher_models),
-                lambda h, i, m: hook_model(h, i, m, tokens, position_ids, attention_mask, *mems),
+                zip(t_hook_L, t_inter_vars_L, teacher_models, t_hook_op_L),
+                lambda h, i, m, h_op: hook_model(h, i, m, tokens, position_ids, attention_mask, *mems, hook_op=h_op),
                 lambda ret: {'logits': ret[0], 'mems': ret[1:]},
             )
         if args.mt_has_loss:
@@ -101,7 +120,7 @@ def forward_step(data_iterator, model, args, timers, mems, teacher_models=None):
             loss_mask = loss_mask,
             labels = labels,
         )
-    return loss, mems, mode
+    return loss, mems
 
 
 def main():

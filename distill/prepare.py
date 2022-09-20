@@ -98,6 +98,17 @@ def get_args():
     py_parser.add_argument('--mgskd_multi_heads', type=int, default=64, help="隐层切分成多头的数量")
     py_parser.add_argument('--mgskd_span_max_rate', type=float, default=0.4, help="大于0则随机分割词组使用,相对于整体序列长度的比例")
     py_parser.add_argument('--mgskd_wo_inter', action='store_true', help="不使用中间层,可用于二次微调")
+    # diito
+    py_parser.add_argument('--diito_alignment', type=str, default='full', help='full,middle,late')
+    py_parser.add_argument('--diito_interchange_prop', type=float, default=0.3, help='')
+    py_parser.add_argument('--diito_interchange_way', type=str, default='consecutive', help='consecutive,masked,random')
+    py_parser.add_argument('--diito_interchange_max_token', type=int, default=-1, help='-1表示不限制交换长度')
+    py_parser.add_argument('--diito_alpha_mlm', type=float, default=1., help="类似 distill_pt_hard")
+    py_parser.add_argument('--diito_alpha_ce', type=float, default=1., help="类似 distill_pt_soft")
+    py_parser.add_argument('--diito_alpha_causal_ce', type=float, default=1.)
+    py_parser.add_argument('--diito_alpha_cos', type=float, default=1.)
+    py_parser.add_argument('--diito_alpha_causal_cos', type=float, default=1.)
+
 
     # multi-teacher 多个教师的模型参数用冒号分隔, 优先级高于 teacher_ 参数
     py_parser.add_argument('--mt_num_attention_heads', type=str, default='')
@@ -213,7 +224,7 @@ def get_teacher_model(args, **kwargs):
     return teacher_models
 
 
-def get_teachers_hook(args, student_model=None):
+def get_teachers_hook(args, student_model=None, is_op=False, **kwargs):
     # 学生模型针对多个教师模型生成hook
     transfer_vars = [
         'num_attention_heads',
@@ -226,8 +237,9 @@ def get_teachers_hook(args, student_model=None):
     assert check[0] * len(transfer_vars) == sum(check), 'args中的多教师参数不是一一对应!'
     if student_model is None:  # only check
         return None
+    get_teacher_hook = student_model.get_teacher_hook_op if is_op else student_model.get_teacher_hook
     if check[0] == 0:
-        return [student_model.get_teacher_hook()]
+        return [get_teacher_hook(**kwargs)]
     original_vars = [getattr(args, 'teacher_' + i) for i in transfer_vars]
     # 替换
     hooks = []
@@ -235,7 +247,7 @@ def get_teachers_hook(args, student_model=None):
         for name, v, original_v in zip(transfer_vars, vars, original_vars):
             original_v = '' if original_v is None else original_v
             setattr(args, 'teacher_' + name, type(original_v)(v))
-        hooks.append(student_model.get_teacher_hook(t_no=i))
+        hooks.append(get_teacher_hook(t_no=i, **kwargs))
     # 复原
     for v, name in zip(original_vars, transfer_vars):
         setattr(args, 'teacher_' + name, v)

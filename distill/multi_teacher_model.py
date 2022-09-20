@@ -16,6 +16,9 @@ class AvgTeacher(torch.nn.Module):
         self.args = args
         self.show_inter = show_inter
         self.show_pre = show_pre
+        self.max_forward_repeat_current_n = 0
+        self.show_inter_origin = show_inter
+        self.show_pre_origin = show_pre
 
     def record_and_show(self, student_model, op='init', t_no=-1, loss=0):
         # 初始化显示和记录的参数
@@ -28,6 +31,8 @@ class AvgTeacher(torch.nn.Module):
         # 计算单个教师模型结果之前的准备
         elif op == 't_start':
             student_model.summary_suffix = self.summary_suffix_s + f'_t{t_no}'
+            if self.args.forward_repeat_current_n > 0:
+                student_model.summary_suffix += f'_repeat{self.args.forward_repeat_current_n}'
         # 计算完教师模型结果之后的处理
         elif op == 't_end':
             # 记录loss联合方式
@@ -36,12 +41,19 @@ class AvgTeacher(torch.nn.Module):
                 self.inter_show_hooks[f't_{t_no}'] = self.inter_show_hooks['teacher']
             if 'student' in self.inter_show_hooks:
                 self.inter_show_hooks[f's_{t_no}'] = self.inter_show_hooks['student']
-            self.pre_loss_description.append(f's-t_{t_no}: ' + student_model.pre_loss_description)
+            prefix = f's-t_{t_no}'
+            if self.args.forward_repeat_current_n > 0:
+                prefix += f'_repeat{self.args.forward_repeat_current_n}'
+            self.pre_loss_description.append(f'{prefix}: ' + student_model.pre_loss_description)
             # 记录 tensorboard
             student_model.add_summary(f'teacher_loss/teacher_{t_no}', loss)
             student_model.summary_suffix = self.summary_suffix_s  # 复原
         # 最终处理展示
         elif op == 'final_show':
+            if self.args.forward_repeat_current_n > self.max_forward_repeat_current_n:
+                self.show_inter = self.show_inter_origin
+                self.show_pre = self.show_pre_origin
+                self.max_forward_repeat_current_n = self.args.forward_repeat_current_n
             if self.show_pre:
                 print_rank_0('\n'.join(self.pre_loss_description))
                 self.show_pre = False

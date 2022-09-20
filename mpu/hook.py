@@ -4,12 +4,12 @@ from copy import deepcopy
 from collections import OrderedDict 
 
 
-def hook_model(hook: dict, inter_vars: list, model, *input, **kwargs):
+def hook_model(hook: dict, inter_vars: list, model, *inputs, **kwargs):
     # 从模型 forward 的返回值中获取中间变量, 然后返回原来的返回值
     if model is None:
         return None
     if hook is None:
-        return model(*input, **kwargs)
+        return model(*inputs, **kwargs)
     def get_hook_no(hook: dict, no_L: list=[]):
         for k, v in hook.items():
             if type(v) in {dict, OrderedDict}:
@@ -19,7 +19,7 @@ def hook_model(hook: dict, inter_vars: list, model, *input, **kwargs):
         return no_L
     hook_new = hook_copy(hook)
     # model's return: (num,Tensor,..,is tuple?,Tensor,..)
-    out = model(*input, **kwargs, hook=hook_new)
+    out = model(*inputs, **kwargs, hook=hook_new)
     hook_offset(hook_new, len(inter_vars), hook)
     inter_vars += out[1: out[0] + 1]
     # check

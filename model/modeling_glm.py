@@ -107,7 +107,7 @@ class GLMModel(torch.nn.Module):
         print_rank_0(log_str)
 
     def forward(self, input_ids, position_ids, attention_mask, *mems, return_memory=False, detach_memory=True,
-                prompt_pos=None, hook=None):
+                prompt_pos=None, hook=None, hook_op=None):
         inter_vars = []
         # Embeddings.
         batch_size = input_ids.size(0)
@@ -123,7 +123,8 @@ class GLMModel(torch.nn.Module):
         # Transformer.
         transformer_output = hook_model(hook_child(hook, 'transformer'), inter_vars, self.transformer,
                                         embeddings, position_ids, attention_mask, mems,
-                                        return_memory=return_memory, detach_memory=detach_memory)
+                                        return_memory=return_memory, detach_memory=detach_memory,
+                                        hook_op=hook_child(hook_op, 'transformer'))
         logits, hidden_layers = transformer_output
         outputs = hidden_layers
 

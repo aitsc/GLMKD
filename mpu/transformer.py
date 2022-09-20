@@ -250,7 +250,7 @@ class ParallelSelfAttention(torch.nn.Module):
 
         return x
 
-    def forward(self, hidden_states, ltor_mask, position_embeddings=None, r_w_bias=None, r_r_bias=None, mem=None, hook=None):
+    def forward(self, hidden_states, ltor_mask, position_embeddings=None, r_w_bias=None, r_r_bias=None, mem=None, hook=None, hook_op=None):
         inter_vars = []
         # hidden_states: [b, s, h]
         # ltor_mask: [1, 1, s, s]
@@ -571,18 +571,20 @@ class ParallelTransformerLayer(torch.nn.Module):
             init_method,
             output_layer_init_method=output_layer_init_method)
 
-    def forward(self, hidden_states, ltor_mask, position_embeddings=None, r_w_bias=None, r_r_bias=None, mem=None, hook=None):
+    def forward(self, hidden_states, ltor_mask, position_embeddings=None, r_w_bias=None, r_r_bias=None, mem=None, hook=None, hook_op=None):
         inter_vars = []
         # hidden_states: [b, s, h]
         # ltor_mask: [1, 1, s, s]
 
         # Layer norm at the begining of the transformer layer.
         layernorm_output = self.input_layernorm(hidden_states)
+        if hook_op and 'layernorm_output' in hook_op and callable(hook_op['layernorm_output']):
+            layernorm_output = hook_op['layernorm_output'](layernorm_output=layernorm_output)
         hook_add(hook, inter_vars, 'layernorm_output', layernorm_output)
         mem = self.input_layernorm(mem) if mem is not None else None
         # Self attention.
         attention_output = hook_model(hook, inter_vars, self.attention,
-            layernorm_output, ltor_mask, position_embeddings, r_w_bias, r_r_bias, mem)
+            layernorm_output, ltor_mask, position_embeddings, r_w_bias, r_r_bias, mem, hook_op=hook_op)
         # Residual connection.
         layernorm_input = hidden_states + attention_output
         # Layer norm post the self attention.
@@ -756,7 +758,7 @@ class GPT2ParallelTransformer(torch.nn.Module):
             checkpoint = deepspeed.checkpointing.checkpoint
 
     def forward(self, hidden_states, position_ids, attention_mask, memory_states=None, encoder_states=None,
-                return_memory=False, detach_memory=True, hook=None):
+                return_memory=False, detach_memory=True, hook=None, hook_op=None):
         inter_vars = []
         batch_size, query_length = hidden_states.size()[:2]
         memory_length = memory_states[0].size(1) if memory_states else 0
@@ -818,7 +820,7 @@ class GPT2ParallelTransformer(torch.nn.Module):
             mem_layers = [check_detach(hidden_states)]
         else:
             mem_layers = []
-        def custom(start, end, hook=None):
+        def custom(start, end, hook=None, hook_op=None):
             def custom_forward(*inputs):
                 inter_vars = []
                 layers_ = self.layers[start:end]
@@ -829,7 +831,7 @@ class GPT2ParallelTransformer(torch.nn.Module):
                     inputs, mems_ = inputs[:1], inputs[1:]
                 for i, layer in enumerate(layers_):
                     mem_i_ = mems_[i] if mems_ else None
-                    x_ = hook_model(hook_child(hook, start + i), inter_vars, layer, x_, *inputs, mem=mem_i_)
+                    x_ = hook_model(hook_child(hook, start + i), inter_vars, layer, x_, *inputs, mem=mem_i_, hook_op=hook_child(hook_op, start + i))
                     if self.max_memory_length > 0 or return_memory:
                         mem_layers.append(check_detach(x_))
                 if hook is not None:
@@ -853,10 +855,12 @@ class GPT2ParallelTransformer(torch.nn.Module):
                     args += memory_states[l: l + chunk_length]
                 hidden_states = hook_model(
                     hook_child(hook, 'layers'), inter_vars,
-                    lambda args, hook=None: checkpoint(custom(l, l + chunk_length, hook), *args),
-                    args)
+                    lambda args, hook=None, hook_op=None: checkpoint(custom(l, l + chunk_length, hook, hook_op), *args),
+                    args, hook_op=hook_child(hook_op, 'layers'))
                 l += chunk_length
         else:
+            hook_ = hook_child(hook, 'layers')
+            hook_op_ = hook_child(hook_op, 'layers')
             for i, layer in enumerate(self.layers):
                 args = [hidden_states, attention_mask] if not self.use_decoder_layer else [hidden_states,
                                                                                            encoder_states,
@@ -864,12 +868,14 @@ class GPT2ParallelTransformer(torch.nn.Module):
                 if self.relative_encoding:
                     args += [position_embeddings, self.r_w_bias, self.r_r_bias]
                 mem_i = memory_states[i] if memory_states else None
-                hidden_states = hook_model(hook_child(hook, 'layers'), inter_vars, layer, *args, mem=mem_i)
+                hidden_states = hook_model(hook_child(hook_, i), inter_vars, layer, *args, mem=mem_i, hook_op=hook_child(hook_op_, i))
                 if self.max_memory_length > 0 or return_memory:
                     mem_layers.append(check_detach(hidden_states))
 
         # Final layer norm.
         output = self.final_layernorm(hidden_states)
+        if hook_op and 'output' in hook_op and callable(hook_op['output']):
+            output = hook_op['output'](output=output)
         hook_add(hook, inter_vars, 'output', output)
         if self.max_memory_length > 0 or return_memory:
             mem_layers = self.update_mems(mem_layers, memory_states, return_memory=return_memory)

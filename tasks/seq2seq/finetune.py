@@ -34,14 +34,31 @@ global_tokenizer = None
 
 
 def seq2seq_forward_step(data, model, args, timers, mems, teacher_models=None):
-    """Forward step."""
-
     # Get the batch.
     if timers is not None:
         timers('batch generator').start()
     tokens, labels, loss_mask, attention_mask, position_ids = get_batch(data, args)
     if timers is not None:
         timers('batch generator').stop()
+
+    repeat_f = lambda : seq2seq_forward_step_(
+        tokens, labels, loss_mask, attention_mask, position_ids,
+        data, model, args, timers, mems, teacher_models=teacher_models,
+    )
+    args.forward_repeat_current_n = 0
+    loss, mems = repeat_f()[:2]
+        
+    if args.forward_repeat_num:
+        for i in range(args.forward_repeat_num):
+            args.forward_repeat_current_n = i + 1
+            loss = loss + repeat_f()[0]
+        args.forward_repeat_current_n = 0
+    return loss, mems, 'bert'
+
+
+def seq2seq_forward_step_(tokens, labels, loss_mask, attention_mask, position_ids,
+    data, model, args, timers, mems, teacher_models=None):
+    """Forward step."""
 
     is_distill = teacher_models is not None and len(teacher_models) > 0
     student_model = unpacking_student_model(model)
@@ -50,12 +67,14 @@ def seq2seq_forward_step(data, model, args, timers, mems, teacher_models=None):
         s_hook = student_model.get_student_hook()
         t_hook_L = get_teachers_hook(args, student_model)
         t_inter_vars_L = [[] for _ in range(len(t_hook_L))]
+        s_hook_op = student_model.get_student_hook_op()
+        t_hook_op_L = get_teachers_hook(args, student_model, is_op=True)
     else:
-        t_hook_L = s_hook = None
+        t_hook_L = s_hook = t_hook_op_L = s_hook_op = None
         teacher_models = []
 
     # Forward model.
-    logits, *mems = hook_model(s_hook, s_inter_vars, model, tokens, position_ids, attention_mask, *mems)
+    logits, *mems = hook_model(s_hook, s_inter_vars, model, tokens, position_ids, attention_mask, *mems, hook_op=s_hook_op)
     # loss
     def get_loss(logits):
         # logits, loss_mask = logits[:, args.src_seq_length:], loss_mask[:, args.src_seq_length:]
@@ -75,8 +94,8 @@ def seq2seq_forward_step(data, model, args, timers, mems, teacher_models=None):
     if is_distill:
         with NoneWith() if args.mt_has_grad else torch.no_grad():
             t_out_L = mt_repeat_operation(
-                zip(t_hook_L, t_inter_vars_L, teacher_models),
-                lambda h, i, m: hook_model(h, i, m, tokens, position_ids, attention_mask, *mems),
+                zip(t_hook_L, t_inter_vars_L, teacher_models, t_hook_op_L),
+                lambda h, i, m, h_op: hook_model(h, i, m, tokens, position_ids, attention_mask, *mems, hook_op=h_op),
                 lambda ret: {'logits': ret[0], 'mems': ret[1:]},
             )
         if args.mt_has_loss:

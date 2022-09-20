@@ -18,7 +18,7 @@ from distill.distill_model import unpacking_student_model
 
 from utils import print_rank_0
 from utils import Timers
-from train_utils import setup_model_and_optimizer, train_step, load_pretrained
+from train_utils import setup_model_and_optimizer, load_pretrained
 from utils import load_checkpoint, save_checkpoint
 from configure_data import make_data_loader
 from finetune_glm import _train, _build_train_valid_dataloaders, process_batch, mix_forward_step
@@ -29,7 +29,6 @@ tokenizer = None
 
 
 def finetune_forward_step(batch, model, args, timers, mems, teacher_models=None):
-    """Simple forward step with cross-entropy loss."""
     # Get the batch.
     timers('batch generator').start()
     try:
@@ -40,6 +39,23 @@ def finetune_forward_step(batch, model, args, timers, mems, teacher_models=None)
     data = process_batch(batch_, args)
     timers('batch generator').stop()
 
+    repeat_f = lambda : finetune_forward_step_(
+        data, batch, model, args, timers, mems, teacher_models=teacher_models,
+    )
+    args.forward_repeat_current_n = 0
+    loss, mems = repeat_f()[:2]
+        
+    if args.forward_repeat_num:
+        for i in range(args.forward_repeat_num):
+            args.forward_repeat_current_n = i + 1
+            loss = loss + repeat_f()[0]
+        args.forward_repeat_current_n = 0
+    return loss, mems, 'bert'
+
+
+def finetune_forward_step_(data, batch, model, args, timers, mems, teacher_models=None):
+    """Simple forward step with cross-entropy loss."""
+
     is_distill = teacher_models is not None and len(teacher_models) > 0
     student_model = unpacking_student_model(model)
     s_inter_vars, t_inter_vars_L = [], []
@@ -47,8 +63,10 @@ def finetune_forward_step(batch, model, args, timers, mems, teacher_models=None)
         s_hook = student_model.get_student_hook()
         t_hook_L = get_teachers_hook(args, student_model)
         t_inter_vars_L = [[] for _ in range(len(t_hook_L))]
+        s_hook_op = student_model.get_student_hook_op()
+        t_hook_op_L = get_teachers_hook(args, student_model, is_op=True)
     else:
-        t_hook_L = s_hook = None
+        t_hook_L = s_hook = t_hook_op_L = s_hook_op = None
         teacher_models = []
         
     # Forward model.
@@ -71,14 +89,14 @@ def finetune_forward_step(batch, model, args, timers, mems, teacher_models=None)
         m_in = [tokens, position_ids, attention_mask]
         m_kw = {}
         
-    def get_logits(h, i, m, no_grad=False):
+    def get_logits(h, i, m, h_op, no_grad=False):
         # 必须是 model 直出的结果, 防止和测试过程中的不一致
         if args.pretrained_bert:
             logits = model(tokens, token_type_ids=types, attention_mask=attention_mask, checkpoint_activations=True)
         elif args.cloze_eval:
             if not args.fast_decode:
                 with torch.no_grad() if no_grad else NoneWith():
-                    result = hook_model(h, i, m, *m_in, **m_kw)
+                    result = hook_model(h, i, m, *m_in, **m_kw, hook_op=h_op)
                 if not args.multi_token:
                     logits, lm_logits, *mems = result
                 else:
@@ -88,9 +106,9 @@ def finetune_forward_step(batch, model, args, timers, mems, teacher_models=None)
                                     dec_attention_mask, dec_target_ids, dec_logit_mask)
         else:
             with torch.no_grad() if no_grad else NoneWith():
-                logits, *mems = hook_model(h, i, m, *m_in, **m_kw)
+                logits, *mems = hook_model(h, i, m, *m_in, **m_kw, hook_op=h_op)
         return logits, mems
-    logits, mems = get_logits(s_hook, s_inter_vars, model)
+    logits, mems = get_logits(s_hook, s_inter_vars, model, s_hook_op)
 
     # loss
     def get_loss(logits):
@@ -139,8 +157,8 @@ def finetune_forward_step(batch, model, args, timers, mems, teacher_models=None)
     if is_distill:
         student_model.add_summary('Train/hard_loss', loss)
         t_out_L = mt_repeat_operation(
-            zip(t_hook_L, t_inter_vars_L, teacher_models),
-            lambda h, i, m: get_logits(h, i, m, no_grad=not args.mt_has_grad),
+            zip(t_hook_L, t_inter_vars_L, teacher_models, t_hook_op_L),
+            lambda h, i, m, h_op: get_logits(h, i, m, h_op, no_grad=not args.mt_has_grad),
             lambda ret: {'logits': ret[0], 'mems': ret[1]},
         )
         if args.mt_has_loss:

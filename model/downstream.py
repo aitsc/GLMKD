@@ -24,10 +24,10 @@ class GLMForMultiTokenCloze(torch.nn.Module):
     def named_parameters(self, prefix: str = '', recurse: bool = True):
         return self.model.named_parameters(prefix=prefix, recurse=recurse)
 
-    def forward(self, input_ids, position_ids, attention_mask, target_ids=None, logit_mask=None, prompt_pos=None, hook=None):
+    def forward(self, input_ids, position_ids, attention_mask, target_ids=None, logit_mask=None, prompt_pos=None, hook=None, hook_op=None):
         inter_vars = []
         if target_ids == None:
-            return hook_model(hook, inter_vars, self.model, input_ids, position_ids, attention_mask)
+            return hook_model(hook, inter_vars, self.model, input_ids, position_ids, attention_mask, hook_op=hook_op)
         num_choices = None
         if len(input_ids.shape) == 3:
             batch_size, num_choices = input_ids.shape[:2]
@@ -39,7 +39,7 @@ class GLMForMultiTokenCloze(torch.nn.Module):
             if prompt_pos is not None:
                 prompt_pos = prompt_pos.reshape(-1, prompt_pos.size(-1))
         outputs, *mems = hook_model(hook, inter_vars, self.model, 
-                                    input_ids, position_ids, attention_mask, prompt_pos=prompt_pos)
+                                    input_ids, position_ids, attention_mask, prompt_pos=prompt_pos, hook_op=hook_op)
         if self.take_softmax:
             outputs = torch.nn.functional.log_softmax(outputs, dim=-1)
         # select the target logits
@@ -131,13 +131,13 @@ class GLMForSingleTokenCloze(torch.nn.Module):
     def named_parameters(self, prefix: str = '', recurse: bool = True):
         return self.model.named_parameters(prefix=prefix, recurse=recurse)
 
-    def forward(self, input_ids, position_ids, attention_mask, target_ids=None, logit_mask=None, prompt_pos=None, hook=None):
+    def forward(self, input_ids, position_ids, attention_mask, target_ids=None, logit_mask=None, prompt_pos=None, hook=None, hook_op=None):
         inter_vars = []
         if target_ids == None:
-            return hook_model(hook, inter_vars, self.model, input_ids, position_ids, attention_mask)
+            return hook_model(hook, inter_vars, self.model, input_ids, position_ids, attention_mask, hook_op=hook_op)
         assert len(input_ids.shape) == 2
         outputs, *mems = hook_model(hook, inter_vars, self.model,
-                                    input_ids, position_ids, attention_mask, prompt_pos=prompt_pos)
+                                    input_ids, position_ids, attention_mask, prompt_pos=prompt_pos, hook_op=hook_op)
         batch_ids = torch.arange(outputs.size(0), dtype=attention_mask.dtype, device=attention_mask.device)
         target_logits = outputs[batch_ids, attention_mask]
         if self.take_softmax:
@@ -161,7 +161,7 @@ class GLMForSequenceClassification(torch.nn.Module):
         self.multichoice_dropout = torch.nn.Dropout(hidden_dropout)
         self.multichoice_head = torch.nn.Linear(hidden_size, num_class)
 
-    def forward(self, input_ids, position_ids, attention_mask, hook=None):
+    def forward(self, input_ids, position_ids, attention_mask, hook=None, hook_op=None):
         inter_vars = []
         num_choices = None
         if len(input_ids.shape) == 3:
@@ -171,7 +171,7 @@ class GLMForSequenceClassification(torch.nn.Module):
             attention_mask = attention_mask.reshape(-1, *attention_mask.size()[2:])
             position_ids = position_ids.reshape(-1, *position_ids.size()[2:])
         outputs, *mems = hook_model(hook, inter_vars, self.model,
-                                    input_ids, position_ids, attention_mask)
+                                    input_ids, position_ids, attention_mask, hook_op=hook_op)
         if self.pool_token == 'start':
             output = outputs[
                 torch.arange(outputs.size(0), dtype=attention_mask.dtype, device=attention_mask.device), attention_mask]

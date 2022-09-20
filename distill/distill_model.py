@@ -27,7 +27,7 @@ class GLMStudent(torch.nn.Module):
         self.show_inter = show_inter
         self.summary_writer = None
         self.summary_loss = summary_loss
-        self.summary_suffix = ''  # 可用于多教师时增加标注
+        self.summary_suffix = ''  # 可用于多教师,多次数据等情况增加标注
         self.inter_show_hooks = {}  # 用于滞后展示,例如多教师情况
 
     def get_teacher_hook(self, t_no=0, **kwargs):
@@ -38,6 +38,12 @@ class GLMStudent(torch.nn.Module):
     def get_student_hook(self, **kwargs):
         if self.args.distill_logits_parallel:
             return {'logits_parallel': None}
+        return {}
+
+    def get_teacher_hook_op(self, t_no=0, **kwargs):
+        return {}
+
+    def get_student_hook_op(self, **kwargs):
         return {}
 
     def forward(self, *inputs, **kwargs):
@@ -83,7 +89,7 @@ class GLMStudent(torch.nn.Module):
             mask = loss_mask.view(*loss_mask.size(), 1)
             self.pre_loss_description += '/mask_A_pad'
         if self.args.finetune:
-            if self.args.distill_ft_soft:
+            if self.args.distill_ft_soft and self.args.distill_soft_rate:
                 self.pre_loss_description += ' + %s*distill_ft_soft(T%s)'%(self.args.distill_soft_rate,T)
                 if self.args.distill_ft_soft_mse:
                     l = F.mse_loss(s_logits * mask, t_logits * mask, reduction='none')
@@ -101,14 +107,14 @@ class GLMStudent(torch.nn.Module):
                 self.add_summary('pre_loss/ft_soft', l)
                 loss_ += l
                 loss_D['soft'] = l
-            if self.args.distill_ft_hard:
+            if self.args.distill_ft_hard and self.args.distill_hard_rate:
                 self.pre_loss_description += ' + %s*distill_ft_hard'%self.args.distill_hard_rate
                 l = loss * self.args.distill_hard_rate
                 self.add_summary('pre_loss/ft_hard', l)
                 loss_ += l
                 loss_D['hard'] = l
         else:
-            if self.args.distill_pt_soft:
+            if self.args.distill_pt_soft and self.args.distill_soft_rate:
                 self.pre_loss_description += ' + %s*distill_pt_soft(T%s)'%(self.args.distill_soft_rate,T)
                 if self.args.distill_pt_soft_mse:
                     l = F.mse_loss(s_logits * mask, t_logits * mask, reduction='none')
@@ -126,7 +132,7 @@ class GLMStudent(torch.nn.Module):
                 self.add_summary('pre_loss/pt_soft', l)
                 loss_ += l
                 loss_D['soft'] = l
-            if self.args.distill_pt_hard:
+            if self.args.distill_pt_hard and self.args.distill_hard_rate:
                 self.pre_loss_description += ' + %s*distill_pt_hard'%self.args.distill_hard_rate
                 l = loss * self.args.distill_hard_rate
                 self.add_summary('pre_loss/pt_hard', l)
@@ -247,7 +253,7 @@ class TinyBERT(GLMStudent):
         self.last_epoch = self.args.custom_current_epoch
         self.last_iter = self.args.iteration
         # 重新生成hook
-        hook_L = [super().get_teacher_hook(**kwargs)]
+        hook_L = [super().get_teacher_hook(t_no=0, **kwargs)]
         if self.args.tinybert_random_layers:
             layers = random.sample(range(1, self.args.teacher_num_layers), self.args.num_layers - 1)
             layers.sort()
@@ -828,7 +834,7 @@ class RAIL_KD(GLMStudent):
         self.last_epoch = self.args.custom_current_epoch
         self.last_iter = self.args.iteration
         # 重新生成hook
-        hook_L = [super().get_teacher_hook(**kwargs)]
+        hook_L = [super().get_teacher_hook(t_no=0, **kwargs)]
         if self.args.rail_kd_no_random:
             layers_per_block = int(self.args.teacher_num_layers / self.args.num_layers)
             layers = list(range(0, self.args.teacher_num_layers + 1, layers_per_block))[1: -1]
@@ -974,7 +980,7 @@ class MGSKD(GLMStudent):
             s_rep.distill = t_rep.distill = True
             token_loss = phrase_loss = sample_loss = 0.
             # token span
-            if self.args.mgskd_sample_level_m < i:
+            if i < self.args.mgskd_sample_level_m:
                 if self.args.mgskd_span_max_rate:
                     s_span = torch.split(s_rep, a.tolist(), dim=1)
                     s_span = [rep.mean(1, keepdim=True) for rep in s_span]
@@ -997,6 +1003,253 @@ class MGSKD(GLMStudent):
         return loss_
 
 
+class DIITO(GLMStudent):
+    def __init__(self, language_model, args, **kwargs):
+        super().__init__(language_model, args, **kwargs)
+        self.show_hook_op = True
+        self.last_iter = 0
+        self.s_alignment_layer = 0  # 用于保存这一批次随机生成的层,full情况下
+        # interchange
+        self.s_interchanged_variables = None  # {layer:tensor,..}
+        self.t_interchanged_variables = {}  # {t_no:{layer:tensor,..},..}
+        self.interchange_mask = None  # [16,512]; 原始mask
+        self.dual_interchange_mask = None  # [16,512]; 打乱后的mask
+
+    def get_hook(self, st='s', t_no=0, **kwargs):
+        # 获取需要抽取的中间层
+        if self.args.diito_alignment == 'full':
+            if self.args.iteration == self.last_iter and self.s_alignment_layer:
+                layer = self.s_alignment_layer
+            else:
+                layer = self.s_alignment_layer = random.choice(range(1, self.args.num_layers + 1))
+                super().add_summary(f'other/s_alignment_layer', layer)
+            if st=='s':
+                alignment_hook = {'transformer': {
+                    **({} if layer==self.args.num_layers else {'layers': {layer: {'layernorm_output': None}}}),
+                    **({'output': None} if layer==self.args.num_layers else {}),
+                }}
+            else:
+                layers_per_block = int(self.args.teacher_num_layers / self.args.num_layers)
+                layers = list(range((layer - 1) * layers_per_block + 1, layer * layers_per_block + 1))
+                alignment_hook = {'transformer': {
+                    'layers': {l: {'layernorm_output': None} for l in layers if l != self.args.teacher_num_layers},
+                    **({'output': None} if layers[-1]==self.args.teacher_num_layers else {}),
+                }}
+        elif self.args.diito_alignment == 'middle':
+            if st=='s':
+                alignment_hook = {'transformer': {
+                    'layers': {int(self.args.num_layers / 2) + 1: {'layernorm_output': None}},
+                }}
+            else:
+                alignment_hook = {'transformer': {
+                    'layers': {int(self.args.teacher_num_layers / 2) + 1: {'layernorm_output': None}},
+                }}
+        elif self.args.diito_alignment == 'late':
+            if st=='s':
+                alignment_hook = {'transformer': {
+                    'layers': {self.args.num_layers-1: {'layernorm_output': None}},
+                    'output': None
+                }}
+            else:
+                alignment_hook = {'transformer': {
+                    'layers': {self.args.teacher_num_layers-1: {'layernorm_output': None}},
+                    'output': None
+                }}
+        else:
+            raise NameError(f'error diito_alignment: {self.args.diito_alignment}')
+        self.last_iter = self.args.iteration
+        # 其他层
+        hook_L = []
+        if self.args.forward_repeat_current_n == 0:
+            hook_L.append(alignment_hook)
+            if self.args.diito_alpha_cos:
+                hook_L.append({'transformer': {'output': None}})
+        else:
+            if self.args.diito_alpha_causal_cos:
+                hook_L.append({'transformer': {'output': None}})
+        return merge_dict(hook_L)
+
+    def get_teacher_hook(self, t_no=0, **kwargs):
+        hook_L = [self.get_hook(st='t', t_no=t_no)]
+        if self.args.forward_repeat_current_n <= 0:
+            hook_L.append(super().get_teacher_hook(t_no=0, **kwargs))
+        return merge_dict(hook_L)
+
+    def get_student_hook(self, **kwargs):
+        hook_L = [self.get_hook(st='s')]
+        if self.args.forward_repeat_current_n <= 0:
+            hook_L.append(super().get_student_hook(**kwargs))
+        hook_L.append({'position_ids': None})
+        return merge_dict(hook_L)
+
+    def get_hook_op(self, interchanged_variables, st='s', t_no=0):
+        def hook_op(interchanged_variable, interchange_mask=self.interchange_mask, 
+            dual_interchange_mask=self.dual_interchange_mask, show=self.show_hook_op, st=st, t_no=t_no, layer=0):
+            if self.args.checkpoint_activations:  # compatible deepspeed backward
+                interchanged_variable = interchanged_variable.detach()
+            if self.args.fp16:
+                interchanged_variable = fp32_to_fp16(interchanged_variable)
+            def hook_op_(layernorm_output=None, output=None):
+                def stat_f(v):
+                    return {'shape': v.shape, 'mean': '%e'%v.mean().item(),}
+
+                var = layernorm_output if output is None else output
+                if show:
+                    print_rank_0(f'DIITO.{st}_{t_no}.layer({layer})_origin: {str(stat_f(var))}')
+                var[interchange_mask] = interchanged_variable[dual_interchange_mask]
+                if show:
+                    print_rank_0(f'DIITO.{st}_{t_no}.layer({layer}): {str(stat_f(var))}')
+                return var
+            return hook_op_
+        hook_ops = {'transformer': {'layers': {
+            k: {
+                'layernorm_output': hook_op(v, layer=k)
+            } for k, v in interchanged_variables.items() if k != 'output'
+        }, 'output': hook_op(
+            interchanged_variables['output'], layer='output'
+        ) if 'output' in interchanged_variables else None}}
+        return hook_ops
+
+    def get_teacher_hook_op(self, t_no=0, **kwargs):
+        if self.args.forward_repeat_current_n <= 0:
+            return {}
+        return self.get_hook_op(self.t_interchanged_variables[t_no], st='t', t_no=t_no)
+
+    def get_student_hook_op(self, **kwargs):
+        if self.args.forward_repeat_current_n <= 0:
+            return {}
+        return self.get_hook_op(self.s_interchanged_variables, st='s')
+
+    def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=False, t_no=0, **kwargs):
+        loss_ = 0.
+        if self.args.forward_repeat_current_n > 0:
+            self.show_hook_op = False
+        if len(s_inter_vars) == 0:
+            return loss_
+        # record interchange
+        mask = (s_inter_vars[s_hook['position_ids']][:, 0] > 0).int()
+        mask[:, 0] = 1
+        def get_interchanged_variables_f(st='s'):
+            ret = {}  # {layer:tensor,..}; layer == int or 'output'
+            inter_vars, hook = (s_inter_vars, s_hook) if st == 's' else (t_inter_vars, t_hook)
+            if 'transformer' in hook and 'layers' in hook['transformer']:
+                for i in sorted(hook['transformer']['layers'].items()):
+                    a = inter_vars[i[1]['layernorm_output']]
+                    ret[i[0]] = torch.cat([a[1:],a[0:1]])
+            if self.args.diito_alignment == 'full' and \
+                self.s_alignment_layer == self.args.num_layers or \
+                self.args.diito_alignment == 'late':
+                a = inter_vars[hook['transformer']['output']]
+                ret['output'] = torch.cat([a[1:],a[0:1]])
+            return ret
+
+        if self.args.forward_repeat_current_n <= 0:
+            if t_no==0:
+                lengths = mask.sum(-1)
+                self.interchange_mask, self.dual_interchange_mask = self.prepare_interchange_mask(
+                    lengths,
+                    dual_lengths=torch.cat([lengths[1:],lengths[0:1]]),
+                    pred_mask=mask,
+                    dual_pred_mask=torch.cat([mask[1:],mask[0:1]]),
+                )
+                self.s_interchanged_variables = get_interchanged_variables_f('s')
+            self.t_interchanged_variables[t_no] = get_interchanged_variables_f('t')
+        # loss
+        if self.args.forward_repeat_current_n > 0:
+            diito_alpha_cos = self.args.diito_alpha_causal_cos
+        else:
+            diito_alpha_cos = self.args.diito_alpha_cos
+        if diito_alpha_cos <= 0.:
+            return loss_
+        s_o = s_inter_vars[s_hook['transformer']['output']]
+        t_o = t_inter_vars[t_hook['transformer']['output']]
+        s_o.distill = t_o.distill = True
+        assert s_o.size() == t_o.size(), f'{s_o.size()} == {t_o.size()}'
+        mask = mask.unsqueeze(-1)
+        s_o = (s_o * mask).view(-1, s_o.size(-1))
+        t_o = (t_o * mask).view(-1, t_o.size(-1))
+        target = s_o.new(s_o.size(0)).fill_(1)
+        l = F.cosine_embedding_loss(s_o, t_o, target, reduction='none') * diito_alpha_cos
+        l = all_mean_custom(l, keep_batch)
+        super().add_summary(f'inter_loss/diito_alpha_cos_{self.args.forward_repeat_current_n}', l)
+        loss_ += l
+        loss_ += super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=keep_batch, **kwargs)
+        return loss_
+
+    def pre_loss(self, s_logits, t_logits, loss, **kwargs):
+        distill_soft_rate = self.args.distill_soft_rate
+        distill_hard_rate = self.args.distill_hard_rate
+        summary_suffix = self.summary_suffix
+        if self.args.forward_repeat_current_n > 0:
+            self.args.distill_soft_rate = self.args.diito_alpha_causal_ce
+            self.args.distill_hard_rate = 0.
+            self.summary_suffix += f'_causal{self.args.forward_repeat_current_n}'
+        else:
+            self.args.distill_soft_rate = self.args.diito_alpha_ce
+            self.args.distill_hard_rate = self.args.diito_alpha_mlm
+        loss_ = super().pre_loss(s_logits, t_logits, loss, **kwargs)
+        self.args.distill_soft_rate = distill_soft_rate
+        self.args.distill_hard_rate = distill_hard_rate
+        self.summary_suffix = summary_suffix
+        return loss_
+
+    def prepare_interchange_mask(self, lengths, dual_lengths, pred_mask, dual_pred_mask):
+        # params
+        interchange_prop = self.args.diito_interchange_prop
+        interchange_max_token = self.args.diito_interchange_max_token  # if -1 then we don't restrict on this.
+        interchange_masked_token_only = True if self.args.diito_interchange_way == 'masked' else False
+        interchange_consecutive_only = True if self.args.diito_interchange_way == 'consecutive' else False
+        # source: https://github.com/frankaging/Causal-Distill/blob/main/distillation/causal_distiller.py#L430
+        interchange_mask = torch.zeros_like(pred_mask, dtype=torch.bool)
+        dual_interchange_mask = torch.zeros_like(dual_pred_mask, dtype=torch.bool)
+        batch_size, max_seq_len = pred_mask.shape[0], pred_mask.shape[1]
+        _, dual_max_seq_len = dual_pred_mask.shape[0], dual_pred_mask.shape[1]
+        interchange_position = []
+        for i in range(0, batch_size):
+            min_len = min(lengths[i].tolist(), dual_lengths[i].tolist())
+            if interchange_consecutive_only:
+                if interchange_max_token != -1:
+                    interchange_count = min(interchange_max_token, int(min_len*interchange_prop))
+                else:
+                    interchange_count = int(min_len*interchange_prop)
+                start_index = random.randint(0, lengths[i].tolist()-interchange_count)
+                end_index = start_index + interchange_count
+                dual_start_index = random.randint(0, dual_lengths[i].tolist()-interchange_count)
+                dual_end_index = dual_start_index + interchange_count
+                interchange_mask[i][start_index:end_index] = 1
+                dual_interchange_mask[i][dual_start_index:dual_end_index] = 1
+            else:
+                # we follow these steps to sample the position:
+                # 1. sample positions in the main example
+                # 2. get the actual sampled positions
+                # 3. sample accordingly from the dual example
+                if interchange_masked_token_only:
+                    # a corner case we need to consider is that the masked token
+                    # numbers may differ across two examples.
+                    interchange_count = pred_mask[i].sum()
+                    if interchange_count > dual_lengths[i]:
+                        # not likely, but we need to handle this.
+                        interchange_count = dual_lengths[i]
+                    interchange_position = pred_mask[i].nonzero().view(-1).tolist()
+                    interchange_position = random.sample(interchange_position, interchange_count)
+                    interchange_mask[i][interchange_position] = 1
+                    dual_interchange_position = random.sample(range(dual_max_seq_len), interchange_count)
+                    dual_interchange_mask[i][dual_interchange_position] = 1
+                else:
+                    if interchange_max_token != -1:
+                        interchange_count = min(interchange_max_token, int(min_len*interchange_prop))
+                    else:
+                        interchange_count = int(min_len*interchange_prop)
+                    interchange_position = random.sample(range(max_seq_len), interchange_count)
+                    interchange_mask[i][interchange_position] = 1
+                    dual_interchange_position = random.sample(range(dual_max_seq_len), interchange_count)
+                    dual_interchange_mask[i][dual_interchange_position] = 1
+        # sanity checks
+        assert interchange_mask.long().sum(dim=-1).tolist() == \
+                dual_interchange_mask.long().sum(dim=-1).tolist()
+        return interchange_mask, dual_interchange_mask
+
+
 student_model_D = {
     None: None,
     'kd': GLMStudent,
@@ -1009,4 +1262,5 @@ student_model_D = {
     'pkd': PKD,
     'rail_kd': RAIL_KD,
     'mgskd': MGSKD,
+    'diito': DIITO,
 }

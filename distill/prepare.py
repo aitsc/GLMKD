@@ -56,8 +56,9 @@ def get_args():
     py_parser.add_argument('--tinybert_random_show', action='store_true', help="显示每次随机后的教师中间取层(不含emb/final)")
     # minilmv2
     py_parser.add_argument('--minilmv2_relation_heads', type=int, default=48, help="base=48,large=64")
-    py_parser.add_argument('--minilmv2_teacher_layer', type=int, default=12, help="start at one")
+    py_parser.add_argument('--minilmv2_teacher_layer', type=int, default=12, help="start at one,-1就代表倒数第一层")
     py_parser.add_argument('--minilmv2_wo_inter', action='store_true', help="不使用中间层,可用于二次微调")
+    py_parser.add_argument('--minilmv2_relation_heads_mt', type=str, default=None, help="针对多教师的配置,有值将忽略minilmv2_relation_heads,例如设置为48,64")
     # distilbert
     py_parser.add_argument('--distilbert_alpha_ce', type=float, default=1., help="类似 distill_pt_soft")
     py_parser.add_argument('--distilbert_alpha_mlm', type=float, default=1., help="类似 distill_pt_hard")
@@ -108,7 +109,6 @@ def get_args():
     py_parser.add_argument('--diito_alpha_causal_ce', type=float, default=1.)
     py_parser.add_argument('--diito_alpha_cos', type=float, default=1.)
     py_parser.add_argument('--diito_alpha_causal_cos', type=float, default=1.)
-
 
     # multi-teacher 多个教师的模型参数用冒号分隔, 优先级高于 teacher_ 参数
     py_parser.add_argument('--mt_num_attention_heads', type=str, default='')

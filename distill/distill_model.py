@@ -14,7 +14,7 @@ from fp16 import fp32_to_fp16, fp16_to_fp32
 from distill.tools import all_mean_custom, aux_layer
 import random
 import copy
-from cite_mgskd import SampleLoss, TokenPhraseLoss
+from distill.cite_mgskd import SampleLoss, TokenPhraseLoss
 
 
 class GLMStudent(torch.nn.Module):
@@ -381,7 +381,11 @@ class MiniLMv2(GLMStudent):
         if self.args.minilmv2_wo_inter:
             hook = {}
         else:
-            hook = {'transformer': {'layers': {self.args.minilmv2_teacher_layer - 1: {
+            if self.args.minilmv2_teacher_layer < 0:
+                minilmv2_teacher_layer = self.args.teacher_num_layers + self.args.minilmv2_teacher_layer
+            else:
+                minilmv2_teacher_layer = self.args.minilmv2_teacher_layer - 1
+            hook = {'transformer': {'layers': {minilmv2_teacher_layer: {
                     'mixed_query_layer': None, 'mixed_key_layer': None, 'mixed_value_layer': None
             }}}}
         hook_L.append(hook)
@@ -398,15 +402,23 @@ class MiniLMv2(GLMStudent):
         hook_L.append(hook)
         return merge_dict(hook_L)
 
-    def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=False, **kwargs):
+    def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=False, t_no=0, **kwargs):
         loss_ = 0.
         if len(s_inter_vars) == 0 or self.args.minilmv2_wo_inter:
             return loss_
         s_qkv, t_qkv = [], []
+        if self.args.minilmv2_teacher_layer < 0:
+            mt_num_layers = [int(i) for i in self.args.mt_num_layers.split(':')] if self.args.mt_num_layers else [self.args.teacher_num_layers]
+            minilmv2_teacher_layer = mt_num_layers[t_no] + self.args.minilmv2_teacher_layer
+        else:
+            minilmv2_teacher_layer = self.args.minilmv2_teacher_layer - 1
         for i in ['mixed_query_layer', 'mixed_key_layer', 'mixed_value_layer']:
             s_qkv.append(s_inter_vars[s_hook['transformer']['layers'][self.args.num_layers - 1][i]])
-            t_qkv.append(t_inter_vars[t_hook['transformer']['layers'][self.args.minilmv2_teacher_layer - 1][i]])
-        n_heads = int(self.args.minilmv2_relation_heads / mpu.get_model_parallel_world_size())
+            t_qkv.append(t_inter_vars[t_hook['transformer']['layers'][minilmv2_teacher_layer][i]])
+        relation_heads_mt = [
+            int(i) for i in self.args.minilmv2_relation_heads_mt.split(':')
+        ] if self.args.minilmv2_relation_heads_mt else [self.args.minilmv2_relation_heads]
+        n_heads = int(relation_heads_mt[t_no] / mpu.get_model_parallel_world_size())
         # q k v
         for s_rep, t_rep in zip(s_qkv, t_qkv):
             s_rep.distill = t_rep.distill = True

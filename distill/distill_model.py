@@ -8,7 +8,7 @@ import torch.nn.functional as F
 from mpu import hook_model, hook_return, hook_reduce, hook_add
 from utils import print_rank_0
 import math
-from tsc_base import merge_dict
+from tsc_base import merge_dict, fast_uniform_seg, cumulative_sum
 from apex.normalization.fused_layer_norm import FusedLayerNorm as LayerNorm
 from fp16 import fp32_to_fp16, fp16_to_fp32
 from distill.tools import all_mean_custom, aux_layer
@@ -261,8 +261,9 @@ class TinyBERT(GLMStudent):
                 print_rank_0(f'TinyBERT.get_teacher_hook(t_no={t_no})-new_layers: {layers}')
             layers = [0] + layers + [self.args.teacher_num_layers]
         else:
-            layers_per_block = int(self.args.teacher_num_layers / self.args.num_layers)
-            layers = tuple(range(0, self.args.teacher_num_layers + 1, layers_per_block))
+            layers = [0] + cumulative_sum(fast_uniform_seg(self.args.num_layers, [1] * self.args.teacher_num_layers))
+            # layers_per_block = int(self.args.teacher_num_layers / self.args.num_layers)
+            # layers = tuple(range(0, self.args.teacher_num_layers + 1, layers_per_block))
         if self.args.tinybert_wo_inter:
             hook = {}
         elif self.args.tinybert_only_emb_final:

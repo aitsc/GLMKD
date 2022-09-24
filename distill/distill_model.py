@@ -424,7 +424,7 @@ class MiniLMv2(GLMStudent):
             s_qkv.append(s_inter_vars[s_hook['transformer']['layers'][self.args.num_layers - 1][i]])
             t_qkv.append(t_inter_vars[t_hook['transformer']['layers'][minilmv2_teacher_layer][i]])
         relation_heads_mt = [
-            int(i) for i in self.args.minilmv2_relation_heads_mt.split(':')
+            int(i) for i in self.args.minilmv2_relation_heads_mt.split(',')
         ] if self.args.minilmv2_relation_heads_mt else [self.args.minilmv2_relation_heads]
         n_heads = int(relation_heads_mt[t_no] / mpu.get_model_parallel_world_size())
         # q k v

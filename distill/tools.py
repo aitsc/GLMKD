@@ -3,6 +3,7 @@ sys.path.append(os.getcwd())
 
 import mpu
 from fp16 import fp32_to_fp16, fp16_to_fp32
+from tsc_base import obj_to_flat_aux, flat_aux_to_obj
 
 
 def all_mean_custom(tensor, keep_batch=False, reduce=False):
@@ -25,3 +26,11 @@ def aux_layer(args, layer, *inputs, **kwargs):
         return fp16_to_fp32(layer(*(fp32_to_fp16(inputs)), **kwargs))
     else:
         return layer(*inputs, **kwargs)
+
+
+def get_checkpoint_forward_args(func, *args, **kwargs):
+    flat, aux = obj_to_flat_aux([args, kwargs])
+    def custom_forward(*inputs):
+        args, kwargs = flat_aux_to_obj(inputs, aux)
+        return func(*args, **kwargs)
+    return custom_forward, *flat

@@ -72,6 +72,7 @@ def get_args():
     py_parser.add_argument('--mixbaseline_inter_bl', type=str, default='', help='TinyBERT,MiniLMv2,MiniLM,DistilBERT')
     py_parser.add_argument('--mixbaseline_pre_bl_pt_soft', type=str, default='', help='DistilBERT,TinyBERT')
     py_parser.add_argument('--mixbaseline_pre_bl_ft_soft', type=str, default='', help='TinyBERT')
+    py_parser.add_argument('--mixbaseline_inter_checkpoint', action='store_true', help='可能改变运算,受全局参数/随机因素/二次执行问题的影响导致这个参数意义不大')
     # pkd
     py_parser.add_argument('--pkd_normalized_patience', action='store_true')
     py_parser.add_argument('--pkd_alpha', type=float, default=0.5, help="soft权重")
@@ -123,6 +124,9 @@ def get_args():
     py_parser.add_argument('--mt_has_grad', action='store_true', help='是否每个教师都需要梯度,是的话教师模型会作为学生模型的一部分进行更新')
     py_parser.add_argument('--student_use_empty_glm', action='store_true', help='学生模型中的glm模型置空,可配合mt_has_grad训练活的多教师')
     py_parser.add_argument('--mt_load_from_s', type=str, default=None, help='从整合多教师模型的学生模型路径中加载多教师的参数,将替代teacher_/mt_load_pretrained,mt_*参数中多教师顺序与当初保存的要一致')
+    # default
+    py_parser.add_argument('--avgmt_inter_checkpoint', action='store_true')
+    py_parser.add_argument('--avgmt_pre_checkpoint', action='store_true')
     # mt_bert
     py_parser.add_argument('--mt_bert_fit_teacher', action='store_true', help='内层变换是否针对教师,否则是学生')
     py_parser.add_argument('--mt_bert_wo_hard', action='store_true', help='取消默认自带的硬标签')

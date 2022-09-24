@@ -11,10 +11,12 @@ import math
 from tsc_base import merge_dict, fast_uniform_seg, cumulative_sum
 from apex.normalization.fused_layer_norm import FusedLayerNorm as LayerNorm
 from fp16 import fp32_to_fp16, fp16_to_fp32
-from distill.tools import all_mean_custom, aux_layer
+from distill.tools import all_mean_custom, aux_layer, get_checkpoint_forward_args
 import random
 import copy
 from distill.cite_mgskd import SampleLoss, TokenPhraseLoss
+from mpu import checkpoint, get_cuda_rng_tracker
+import deepspeed
 
 
 class GLMStudent(torch.nn.Module):
@@ -29,6 +31,11 @@ class GLMStudent(torch.nn.Module):
         self.summary_loss = summary_loss
         self.summary_suffix = ''  # 可用于多教师,多次数据等情况增加标注
         self.inter_show_hooks = {}  # 用于滞后展示,例如多教师情况
+
+        if deepspeed.checkpointing.is_configured():
+            global get_cuda_rng_tracker, checkpoint
+            get_cuda_rng_tracker = deepspeed.checkpointing.get_cuda_rng_tracker
+            checkpoint = deepspeed.checkpointing.checkpoint
 
     def get_teacher_hook(self, t_no=0, **kwargs):
         if self.args.distill_logits_parallel:
@@ -706,9 +713,17 @@ class MixBaseline(GLMStudent):
             distill_temperature = self.args.distill_temperature
             if hasattr(self.args, f'mixbaseline_{c.lower()}_t'):
                 self.args.distill_temperature = getattr(self.args, f'mixbaseline_{c.lower()}_t')
-            l = getattr(self, c).inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, **kwargs)
+            if self.args.mixbaseline_inter_checkpoint:
+                def custom(loss_, *inputs, **kwargs):
+                    l = getattr(self, c).inter_loss(*inputs, **kwargs)
+                    loss_ = loss_ + l
+                    return loss_, l
+                loss_, l = checkpoint(*get_checkpoint_forward_args(
+                    custom, loss_, s_inter_vars, t_inter_vars, s_hook, t_hook, **kwargs))
+            else:
+                l = getattr(self, c).inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, **kwargs)
+                loss_ += l
             super().add_summary(f'inter_loss/{c}', l)
-            loss_ += l
             self.args.distill_temperature = distill_temperature
         self.args.distill_logits_parallel = distill_logits_parallel
         loss_ += super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, **kwargs)

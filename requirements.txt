@@ -1,13 +1,12 @@
 botocore
 boto3
-deepspeed
+deepspeed==0.6.5
 filelock
 scipy
 nltk
 regex
 tqdm
 matplotlib
-mpi4py
 pandas
 requests
 sentencepiece
@@ -20,6 +19,6 @@ termcolor
 tldextract
 transformers
 rouge_score
-fasttext
+fasttext==0.9.1
 unidecode
 tsc-base

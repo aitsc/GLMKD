@@ -6,8 +6,10 @@ import torch.nn.functional as F
 from utils import print_rank_0
 import mpu
 import math
-from distill.tools import all_mean_custom, aux_layer
+from distill.tools import all_mean_custom, aux_layer, get_checkpoint_forward_args
 from apex.normalization.fused_layer_norm import FusedLayerNorm as LayerNorm
+from mpu import checkpoint, get_cuda_rng_tracker
+import deepspeed
 
 
 class AvgTeacher(torch.nn.Module):
@@ -19,6 +21,11 @@ class AvgTeacher(torch.nn.Module):
         self.max_forward_repeat_current_n = 0
         self.show_inter_origin = show_inter
         self.show_pre_origin = show_pre
+
+        if deepspeed.checkpointing.is_configured():
+            global get_cuda_rng_tracker, checkpoint
+            get_cuda_rng_tracker = deepspeed.checkpointing.get_cuda_rng_tracker
+            checkpoint = deepspeed.checkpointing.checkpoint
 
     def record_and_show(self, student_model, op='init', t_no=-1, loss=0):
         # 初始化显示和记录的参数

@@ -207,7 +207,7 @@ class Uncertainty(AvgTeacher):
                 rate = rate + s_entropy.unsqueeze(-1)
                 rate = rate / rate.sum(-1).unsqueeze(-1)
         else:
-            rate = s_entropy.new_ones(s_entropy.shape).unsqueeze(-1)
+            rate = s_entropy.new_ones([*s_entropy.shape, len(t_hook_L)])
         # 教师大小顺序
         if self.args.uncertainty_teacher_seq:
             t_seq = [int(i) for i in self.args.uncertainty_teacher_seq.split(':')]

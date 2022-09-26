@@ -6,10 +6,11 @@ import torch.nn.functional as F
 from utils import print_rank_0
 import mpu
 import math
-from distill.tools import all_mean_custom, aux_layer, get_checkpoint_forward_args
+from distill.tools import aux_layer, get_checkpoint_forward_args
 from apex.normalization.fused_layer_norm import FusedLayerNorm as LayerNorm
 from mpu import checkpoint, get_cuda_rng_tracker
 import deepspeed
+from distill.custom_loss import CustomLoss
 
 
 class AvgTeacher(torch.nn.Module):
@@ -187,10 +188,10 @@ class Uncertainty(AvgTeacher):
         else:
             mask = loss_mask.view(*loss_mask.size(), 1)
         # entropy
-        def norm_entropy_f(t):  # 交叉熵和信息熵在模型并行中计算不准确, 因为softmax分母不对
+        parallel = 'gather' if self.args.custom_logits_paralle else ''
+        def norm_entropy_f(t):  # norm 信息熵
             t = t * mask
-            entropy = (- F.softmax(t, -1) * F.log_softmax(t, -1)).sum(-1)
-            entropy = all_mean_custom(entropy, keep_batch=True, reduce=True)
+            entropy = CustomLoss.info_entropy(t, parallel=parallel, keep_batch=True)
             norm_entropy = entropy / math.log(t.size(-1))
             return norm_entropy
         s_entropy = norm_entropy_f(s_out['logits'])

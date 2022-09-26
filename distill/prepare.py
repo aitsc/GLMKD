@@ -176,7 +176,7 @@ def glm_wrap(model, args, teacher_models=None):
 
 def get_teacher_model(args, **kwargs):
     # 构建多个教师模型并加载
-    if not (args.teacher_load_pretrained or args.mt_num_attention_heads):
+    if not (args.teacher_load_pretrained or args.mt_num_attention_heads) or not args.student_model:
         return None
     transfer_vars = [
         'num_attention_heads',

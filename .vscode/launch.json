@@ -23,6 +23,7 @@
             "args": [
                 // deepspeed
                 "--master_port=10161",
+                "--include=localhost:1,6",
                 "--include=localhost:6",
                 "distill/pretrain.py",
                 "--deepspeed_config=config/config_block_tiny6.json",
@@ -55,7 +56,9 @@
                 "--no-lazy-loader",
                 "--resume-dataloader",
                 // 蒸馏
-                "--student_model=tinybert",
+                "--student_model=kd",
+                "--distill_pt_soft",
+                "--distill_temperature=2",
                 // "--mt_has_loss",
                 // "--student_truncate_tn=0",
                 // DIITO
@@ -75,6 +78,8 @@
                 // "--distill_temperature=2",
                 // 蒸馏 base
                 "--teacher_load_pretrained=../GLM/data/checkpoints/pretrain/blocklm-base-blank",
+                // "--model-parallel-size=2",
+                // "--teacher_load_pretrained=../GLM/data/checkpoints/pretrain/blocklm-base-blank_MP2",
                 "--teacher_num_layers=12",
                 "--teacher_hidden_size=768",
                 "--teacher_num_attention_heads=12",
@@ -171,7 +176,6 @@
                 "--distilbert_ce_mask_padding",
                 "--mixbaseline_inter_bl=MiniLMv2,MiniLM",
                 "--mixbaseline_pre_bl_ft_soft=",
-                "--mixbaseline_inter_checkpoint",
                 // DIITO
                 // "--student_model=diito",
                 // "--forward_repeat_num=1",

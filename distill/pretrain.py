@@ -157,6 +157,7 @@ def main():
         args.custom_sample_shape = ','.join((str(i) for i in train_data.dataset[0]['text'].shape))
 
     # Model, optimizer, and learning rate.
+    args.custom_logits_paralle = True
     teacher_models=get_teacher_model(args)
     glm_wrap_ = lambda **k: glm_wrap(**k, teacher_models=teacher_models)
     model, optimizer, lr_scheduler = setup_model_and_optimizer(args, glm_wrap=glm_wrap_)

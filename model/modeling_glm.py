@@ -136,10 +136,9 @@ class GLMModel(torch.nn.Module):
             hook_add(hook, inter_vars, 'logits_parallel', logits_parallel)
 
             if self.parallel_output:
-                setattr(logits_parallel, 'model_parallel_need_gather', True)
                 ret = (logits_parallel, *outputs)
-
-            ret = (mpu.gather_from_model_parallel_region(logits_parallel), *outputs)
+            else:
+                ret = (mpu.gather_from_model_parallel_region(logits_parallel), *outputs)
         else:
             ret = (logits, *outputs)
         return hook_return(hook, inter_vars, ret)
@@ -164,7 +163,8 @@ class GLMModel_empty(torch.nn.Module):
         if self.output_predict:
             if self.parallel_output:
                 dim = mpu.divide(self.vocab_size, mpu.get_model_parallel_world_size())
-            dim = self.vocab_size
+            else:
+                dim = self.vocab_size
         else:
             dim = self.hidden_size
         return hook_return(hook, inter_vars, (torch.ones([*input_ids.size(), dim], device=input_ids.device),))

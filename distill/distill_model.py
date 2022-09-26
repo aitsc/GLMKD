@@ -11,12 +11,13 @@ import math
 from tsc_base import merge_dict, fast_uniform_seg, cumulative_sum
 from apex.normalization.fused_layer_norm import FusedLayerNorm as LayerNorm
 from fp16 import fp32_to_fp16, fp16_to_fp32
-from distill.tools import all_mean_custom, aux_layer, get_checkpoint_forward_args
+from distill.tools import aux_layer, get_checkpoint_forward_args
 import random
 import copy
 from distill.cite_mgskd import SampleLoss, TokenPhraseLoss
 from mpu import checkpoint, get_cuda_rng_tracker
 import deepspeed
+from distill.custom_loss import CustomLoss
 
 
 class GLMStudent(torch.nn.Module):
@@ -64,11 +65,7 @@ class GLMStudent(torch.nn.Module):
             t_logits = t_inter_vars[t_hook['logits_parallel']]
             s_logits.distill = t_logits.distill = True
             T = self.args.distill_temperature
-            student_likelihood = F.log_softmax(s_logits / T, dim=-1)
-            targets_prob = F.softmax(t_logits / T, dim=-1)
-            l = F.kl_div(student_likelihood, targets_prob, reduction="none") * T ** 2
-            l = l.sum(-1)
-            l = all_mean_custom(l, keep_batch, reduce=True)
+            l = CustomLoss.kl_div(s_logits / T, t_logits / T, parallel='gather', keep_batch=keep_batch) * T ** 2
             self.add_summary('inter_loss/logits_parallel', l)
             loss_ += l
         # show
@@ -95,21 +92,20 @@ class GLMStudent(torch.nn.Module):
         else:  # 在 finetune 中一般用于 seq2seq_forward_step
             mask = loss_mask.view(*loss_mask.size(), 1)
             self.pre_loss_description += '/mask_A_pad'
+        parallel = 'gather' if self.args.custom_logits_paralle else ''
         if self.args.finetune:
             if self.args.distill_ft_soft and self.args.distill_soft_rate:
                 self.pre_loss_description += ' + %s*distill_ft_soft(T%s)'%(self.args.distill_soft_rate,T)
                 if self.args.distill_ft_soft_mse:
-                    l = F.mse_loss(s_logits * mask, t_logits * mask, reduction='none')
-                    self.pre_loss_description += '(mse)'
+                    l = CustomLoss.mse_loss(s_logits, t_logits, maks=mask, parallel=parallel, keep_batch=keep_batch)
+                    self.pre_loss_description += 'mse'
                 else:
-                    student_likelihood = F.log_softmax(s_logits * mask / T, dim=-1)
-                    targets_prob = F.softmax(t_logits * mask / T, dim=-1)
                     if self.args.distill_ft_soft_kl:
-                        l = F.kl_div(student_likelihood, targets_prob, reduction="none") * T ** 2
+                        l = CustomLoss.kl_div(s_logits / T, t_logits / T, input_mask=mask, parallel=parallel, keep_batch=keep_batch) * T ** 2
+                        self.pre_loss_description += 'kl'
                     else:
-                        l = (- targets_prob * student_likelihood)
-                    l = l.sum(-1)
-                l = all_mean_custom(l, keep_batch, reduce=True)  # 可能等于加权(1/模型并行数)
+                        l = CustomLoss.cross_entropy(s_logits / T, t_logits / T, input_mask=mask, parallel=parallel, keep_batch=keep_batch)
+                        self.pre_loss_description += 'ce'
                 l = l * self.args.distill_soft_rate
                 self.add_summary('pre_loss/ft_soft', l)
                 loss_ += l
@@ -124,17 +120,15 @@ class GLMStudent(torch.nn.Module):
             if self.args.distill_pt_soft and self.args.distill_soft_rate:
                 self.pre_loss_description += ' + %s*distill_pt_soft(T%s)'%(self.args.distill_soft_rate,T)
                 if self.args.distill_pt_soft_mse:
-                    l = F.mse_loss(s_logits * mask, t_logits * mask, reduction='none')
-                    self.pre_loss_description += '(mse)'
+                    l = CustomLoss.mse_loss(s_logits, t_logits, mask=mask, parallel=parallel, keep_batch=keep_batch)
+                    self.pre_loss_description += 'mse'
                 else:
-                    student_likelihood = F.log_softmax(s_logits * mask / T, dim=-1)
-                    targets_prob = F.softmax(t_logits * mask / T, dim=-1)
                     if self.args.distill_pt_soft_ce:
-                        l = (- targets_prob * student_likelihood)
+                        l = CustomLoss.cross_entropy(s_logits / T, t_logits / T, input_mask=mask, parallel=parallel, keep_batch=keep_batch)
+                        self.pre_loss_description += 'ce'
                     else:
-                        l = F.kl_div(student_likelihood, targets_prob, reduction="none") * T ** 2
-                    l = l.sum(-1)
-                l = all_mean_custom(l, keep_batch, reduce=True)  # 可能等于加权(1/模型并行数)
+                        l = CustomLoss.kl_div(s_logits / T, t_logits / T, input_mask=mask, parallel=parallel, keep_batch=keep_batch) * T ** 2
+                        self.pre_loss_description += 'kl'
                 l = l * self.args.distill_soft_rate
                 self.add_summary('pre_loss/pt_soft', l)
                 loss_ += l
@@ -360,8 +354,7 @@ class TinyBERT(GLMStudent):
             teacher_reps = get_layer_f('t', 'attention_scores')
             for i, (student_rep, teacher_rep) in enumerate(zip(student_reps, teacher_reps)):
                 student_rep.distill = teacher_rep.distill = True
-                l = F.mse_loss(student_rep, teacher_rep, reduction='none')
-                l = all_mean_custom(l, keep_batch, reduce=True)
+                l = CustomLoss.mse_loss(student_rep, teacher_rep, parallel='gather', keep_batch=keep_batch)
                 super().add_summary(f'inter_loss/attention_scores.{i}', l)
                 loss_ += l
         # emb + hidden_states
@@ -372,8 +365,7 @@ class TinyBERT(GLMStudent):
             teacher_reps += [t_inter_vars[t_hook['transformer']['output']]]
         for i, (student_rep, teacher_rep) in enumerate(zip(student_reps, teacher_reps)):
             student_rep.distill = teacher_rep.distill = True
-            l = F.mse_loss(student_rep, teacher_rep, reduction='none')
-            l = all_mean_custom(l, keep_batch)
+            l = CustomLoss.mse_loss(student_rep, teacher_rep, keep_batch=keep_batch)
             super().add_summary(f'inter_loss/hidden_states.{i}', l)
             loss_ += l
         loss_ += super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=keep_batch, t_no=t_no, **kwargs)
@@ -434,10 +426,8 @@ class MiniLMv2(GLMStudent):
             s_rep = torch.matmul(s_rep, s_rep.transpose(-1,-2)) / math.sqrt(s_rep.size(-1))
             t_rep = t_rep.view(*t_rep.size()[:-1], n_heads, -1).permute(0, 2, 1, 3)
             t_rep = torch.matmul(t_rep, t_rep.transpose(-1,-2)) / math.sqrt(t_rep.size(-1))
-            kl_loss = F.kl_div(F.log_softmax(s_rep, dim=-1), F.softmax(t_rep, dim=-1), reduction="none")
-            kl_loss = kl_loss.sum(-1)
-            kl_loss = all_mean_custom(kl_loss, keep_batch, reduce=True)
-            loss_ += kl_loss
+            l = CustomLoss.kl_div(s_rep, t_rep, parallel='gather', keep_batch=keep_batch)
+            loss_ += l
         loss_ += super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=keep_batch, **kwargs)
         return loss_
 
@@ -473,11 +463,9 @@ class MiniLM(GLMStudent):
         s_a.distill = s_v.distill = t_a.distill = t_v.distill = True
         s_v2 = torch.matmul(s_v, s_v.transpose(-1,-2)) / math.sqrt(s_v.size(-1))
         t_v2 = torch.matmul(t_v, t_v.transpose(-1,-2)) / math.sqrt(t_v.size(-1))
-        kl_loss = F.kl_div(F.log_softmax(s_a, dim=-1), F.softmax(t_a, dim=-1), reduction="none")
-        kl_loss += F.kl_div(F.log_softmax(s_v2, dim=-1), F.softmax(t_v2, dim=-1), reduction="none")
-        kl_loss = kl_loss.sum(-1)
-        kl_loss = all_mean_custom(kl_loss, keep_batch, reduce=True)
-        loss_ += kl_loss
+        l = CustomLoss.kl_div(s_a, t_a, parallel='gather', keep_batch=keep_batch)
+        l += CustomLoss.kl_div(s_v2, t_v2, parallel='gather', keep_batch=keep_batch)
+        loss_ += l
         loss_ += super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=keep_batch, **kwargs)
         return loss_
 
@@ -530,9 +518,7 @@ class DistilBERT(GLMStudent):
         loss_mask = loss_mask.view(*loss_mask.size(), 1)
         s_o = (s_o * loss_mask).view(-1, s_o.size(-1))
         t_o = (t_o * loss_mask).view(-1, t_o.size(-1))
-        target = s_o.new(s_o.size(0)).fill_(1)
-        l = F.cosine_embedding_loss(s_o, t_o, target, reduction='none') * self.args.distilbert_alpha_cos
-        l = all_mean_custom(l, keep_batch)
+        l = CustomLoss.cos_distance(s_o, t_o, keep_batch=keep_batch) * self.args.distilbert_alpha_cos
         super().add_summary(f'inter_loss/distilbert_alpha_cos', l)
         loss_ += l
         loss_ += super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, loss_mask=loss_mask, labels=labels, keep_batch=keep_batch, **kwargs)
@@ -553,12 +539,11 @@ class DistilBERT(GLMStudent):
             else:
                 loss_mask = loss_mask.view(*loss_mask.size(), 1)
                 self.pre_loss_description += '/mask_A_pad'
+            parallel = 'gather' if self.args.custom_logits_paralle else ''
             s_logits = (s_logits * loss_mask / T)
             t_logits = (t_logits * loss_mask / T)
-            kl_loss = F.kl_div(F.log_softmax(s_logits, dim=-1), F.softmax(t_logits, dim=-1), reduction="none")
-            kl_loss = kl_loss.sum(-1)
-            kl_loss = all_mean_custom(kl_loss, keep_batch, reduce=True)
-            l = kl_loss * T ** 2 * self.args.distilbert_alpha_ce
+            l = CustomLoss.kl_div(s_logits, t_logits, parallel=parallel, keep_batch=keep_batch)
+            l = l * T ** 2 * self.args.distilbert_alpha_ce
             super().add_summary(f'pre_loss/distilbert_alpha_ce', l)
             loss_ += l
         if self.args.distilbert_alpha_mlm > 0:
@@ -621,10 +606,6 @@ class ERDistill(GLMStudent):
             for t_rep in teacher_reps:
                 t_rep.distill = True
                 t_rep = torch.matmul(t_rep, t_rep.transpose(-1,-2))
-                if self.args.erdistill_inter_mse:
-                    t_rep = t_rep / t_rep.size(-1)
-                else:
-                    t_rep = F.softmax(t_rep / math.sqrt(t_rep.size(-1)), dim=-1)
                 t_reps.append(t_rep)
             if self.args.erdistill_inter in {'1plus'}:
                 t_reps += t_reps
@@ -632,11 +613,9 @@ class ERDistill(GLMStudent):
                 s_rep.distill = True
                 s_rep = torch.matmul(s_rep, s_rep.transpose(-1,-2))
                 if self.args.erdistill_inter_mse:
-                    l = F.mse_loss(s_rep / s_rep.size(-1), t_rep, reduction='none')
+                    l = CustomLoss.mse_loss(s_rep / s_rep.size(-1), t_rep / t_rep.size(-1), keep_batch=keep_batch)
                 else:
-                    l = F.kl_div(F.log_softmax(s_rep / math.sqrt(s_rep.size(-1)), dim=-1), t_rep, reduction="none")
-                    l = l.sum(-1)
-                l = all_mean_custom(l, keep_batch)
+                    l = CustomLoss.kl_div(s_rep / math.sqrt(s_rep.size(-1)), t_rep / math.sqrt(t_rep.size(-1)), keep_batch=keep_batch)
                 super().add_summary(f'inter_loss/local.{i}', l)
                 l = l * 0.1 if i == 0 and self.args.erdistill_inter in {'1plus'} else l
                 loss_ += l
@@ -650,7 +629,6 @@ class ERDistill(GLMStudent):
                 t_rep = mpu.copy_to_model_parallel_region(t_rep)
                 t_rep = fp32_to_fp16(t_rep) if self.args.fp16 else t_rep
                 t_rep = F.linear(t_rep, t_emb_w)
-                t_rep = t_rep if self.args.erdistill_inter_mse else F.softmax(t_rep, dim=-1)
                 t_reps.append(t_rep)
             if self.args.erdistill_inter in {'1plus'}:
                 t_reps += t_reps
@@ -660,11 +638,9 @@ class ERDistill(GLMStudent):
                 s_rep = fp32_to_fp16(s_rep) if self.args.fp16 else s_rep
                 s_rep = F.linear(s_rep, s_emb_w)
                 if self.args.erdistill_inter_mse:
-                    l = F.mse_loss(s_rep, t_rep, reduction='none')
+                    l = CustomLoss.mse_loss(s_rep, t_rep, parallel='gather', keep_batch=keep_batch)
                 else:
-                    l = F.kl_div(F.log_softmax(s_rep, dim=-1), t_rep, reduction="none")
-                    l = l.sum(-1)
-                l = all_mean_custom(l, keep_batch, reduce=True)
+                    l = CustomLoss.kl_div(s_rep, t_rep, parallel='gather', keep_batch=keep_batch)
                 super().add_summary(f'inter_loss/global.{i}', l)
                 l = l * 0.1 if i == 0 and self.args.erdistill_inter in {'1plus'} else l
                 loss_ += fp16_to_fp32(l)
@@ -808,8 +784,7 @@ class PKD(GLMStudent):
             if self.args.pkd_normalized_patience:
                 student_rep = F.normalize(student_rep, p=2, dim=-1)
                 teacher_rep = F.normalize(teacher_rep, p=2, dim=-1)
-            l = F.mse_loss(student_rep, teacher_rep, reduction='none')
-            l = all_mean_custom(l, keep_batch)
+            l = CustomLoss.mse_loss(student_rep, teacher_rep, keep_batch=keep_batch)
             super().add_summary(f'inter_loss/hidden_states.{i}', l)
             loss_ += l
         loss_ = loss_ * self.args.pkd_beta
@@ -1196,9 +1171,7 @@ class DIITO(GLMStudent):
         mask = mask.unsqueeze(-1)
         s_o = (s_o * mask).view(-1, s_o.size(-1))
         t_o = (t_o * mask).view(-1, t_o.size(-1))
-        target = s_o.new(s_o.size(0)).fill_(1)
-        l = F.cosine_embedding_loss(s_o, t_o, target, reduction='none') * diito_alpha_cos
-        l = all_mean_custom(l, keep_batch)
+        l = CustomLoss.cos_distance(s_o, t_o, keep_batch=keep_batch) * diito_alpha_cos
         super().add_summary(f'inter_loss/diito_alpha_cos_{self.args.forward_repeat_current_n}', l)
         loss_ += l
         loss_ += super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=keep_batch, **kwargs)

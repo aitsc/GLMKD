@@ -10,7 +10,9 @@ class CustomLoss:
         if input_mask is not None:
             inputs_ = []
             for i in inputs:
-                if len(i.shape) == len(input_mask.shape) + 1:
+                if isinstance(input_mask, (int, float)):
+                    ...
+                elif len(i.shape) == len(input_mask.shape) + 1:
                     input_mask = input_mask.unsqueeze(dim=-1)
                 elif len(i.shape) + 1 == len(input_mask.shape):
                     input_mask = input_mask.squeeze(dim=-1)
@@ -28,7 +30,9 @@ class CustomLoss:
     def loss_handling(loss, keep_batch=False, parallel='reduce/gather/', mask=None, last_dim_avg=True, **kwargs):
         # loss mask
         if mask is not None:
-            if len(loss.shape) == len(mask.shape) + 1:
+            if isinstance(mask, (int, float)):
+                ...
+            elif len(loss.shape) == len(mask.shape) + 1:
                 mask = mask.unsqueeze(dim=-1)
             elif len(loss.shape) + 1 == len(mask.shape):
                 mask = mask.squeeze(dim=-1)

@@ -1114,6 +1114,7 @@ class GPT2BPETokenizer(Tokenizer):
             return token.Id
         if type_token:
             return self.type_token_map[token].Id
+        token = token.strip()
         return self.text_tokenizer.encoder[token]
 
     def DecodeIds(self, Ids, type_token=False):

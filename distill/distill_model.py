@@ -76,7 +76,7 @@ class GLMStudent(torch.nn.Module):
             else:
                 mask = 1.
             if self.args.distill_logit_mse:
-                CustomLoss.mse_loss(s_logits / T, t_logits / T, parallel='gather', input_mask=mask, keep_batch=keep_batch)
+                l = CustomLoss.mse_loss(s_logits, t_logits, parallel='gather', input_mask=mask, keep_batch=keep_batch)
             else:
                 T = self.args.distill_temperature
                 l = CustomLoss.kl_div(s_logits / T, t_logits / T, parallel='gather', input_mask=mask, keep_batch=keep_batch) * T ** 2

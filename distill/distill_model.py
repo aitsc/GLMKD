@@ -39,14 +39,18 @@ class GLMStudent(torch.nn.Module):
             checkpoint = deepspeed.checkpointing.checkpoint
 
     def get_teacher_hook(self, t_no=0, **kwargs):
+        hook = {}
         if self.args.distill_logits_parallel:
-            return {'logits_parallel': None}
-        return {}
+            hook['logits_parallel'] = None
+        return hook
 
     def get_student_hook(self, **kwargs):
+        hook = {}
         if self.args.distill_logits_parallel:
-            return {'logits_parallel': None}
-        return {}
+            if self.args.distill_logit_mask_pad:
+                hook['position_ids'] = None
+            hook['logits_parallel'] = None
+        return hook
 
     def get_teacher_hook_op(self, t_no=0, **kwargs):
         return {}
@@ -64,8 +68,18 @@ class GLMStudent(torch.nn.Module):
             s_logits = s_inter_vars[s_hook['logits_parallel']]
             t_logits = t_inter_vars[t_hook['logits_parallel']]
             s_logits.distill = t_logits.distill = True
-            T = self.args.distill_temperature
-            l = CustomLoss.kl_div(s_logits / T, t_logits / T, parallel='gather', keep_batch=keep_batch) * T ** 2
+            if self.args.distill_logit_mask_pad:
+                position_ids = s_inter_vars[s_hook['position_ids']]
+                position_ids.distill = True
+                mask = (position_ids[:, 0] > 0).int()
+                mask[:, 0] = 1
+            else:
+                mask = 1.
+            if self.args.distill_logit_mse:
+                CustomLoss.mse_loss(s_logits / T, t_logits / T, parallel='gather', input_mask=mask, keep_batch=keep_batch)
+            else:
+                T = self.args.distill_temperature
+                l = CustomLoss.kl_div(s_logits / T, t_logits / T, parallel='gather', input_mask=mask, keep_batch=keep_batch) * T ** 2
             self.add_summary('inter_loss/logits_parallel', l)
             loss_ += l
         # show

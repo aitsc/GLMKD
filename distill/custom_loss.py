@@ -11,7 +11,9 @@ class CustomLoss:
             inputs_ = []
             for i in inputs:
                 if isinstance(input_mask, (int, float)):
-                    ...
+                    if input_mask == 1:
+                        inputs_.append(i)
+                        continue
                 elif len(i.shape) == len(input_mask.shape) + 1:
                     input_mask = input_mask.unsqueeze(dim=-1)
                 elif len(i.shape) + 1 == len(input_mask.shape):
@@ -31,12 +33,14 @@ class CustomLoss:
         # loss mask
         if mask is not None:
             if isinstance(mask, (int, float)):
-                ...
+                if mask == 1:
+                    mask = None
             elif len(loss.shape) == len(mask.shape) + 1:
                 mask = mask.unsqueeze(dim=-1)
             elif len(loss.shape) + 1 == len(mask.shape):
                 mask = mask.squeeze(dim=-1)
-            loss = loss * mask
+            if mask is not None:
+                loss = loss * mask
         # 平均张量, 可以保持 batch (第0个维度) 不被平均
         if keep_batch:
             if len(loss.shape) > 1:

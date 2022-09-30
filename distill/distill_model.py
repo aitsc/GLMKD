@@ -1265,6 +1265,103 @@ class DIITO(GLMStudent):
         return interchange_mask, dual_interchange_mask
 
 
+class LogitsDistil(GLMStudent):
+    def __init__(self, language_model: GLMModel, args, **kwargs):
+        super().__init__(language_model, args, **kwargs)
+
+    def get_teacher_hook(self, t_no=0, **kwargs):
+        hook = {'logits_parallel': None}
+        return hook
+
+    def get_student_hook(self, **kwargs):
+        hook = {'logits_parallel': None}
+        if self.args.logitsdistil_mask_pad:
+            hook['position_ids'] = None
+        return hook
+
+    def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=False, t_no=None, **kwargs):
+        loss_ = 0.
+        if len(s_inter_vars) == 0:
+            return loss_
+        s_logits = s_inter_vars[s_hook['logits_parallel']]
+        t_logits = t_inter_vars[t_hook['logits_parallel']]
+        s_logits.distill = t_logits.distill = True
+        if self.args.logitsdistil_mask_pad:
+            position_ids = s_inter_vars[s_hook['position_ids']]
+            position_ids.distill = True
+            mask = (position_ids[:, 0] > 0).int()
+            mask[:, 0] = 1
+            mask = mask.unsqueeze(dim=-1)
+            s_logits = s_logits * mask
+            t_logits = t_logits * mask
+        # logits 处理
+        top_n = self.args.logitsdistil_top_n
+        if top_n:
+            t_vals_parallel, t_indices_parallel = t_logits.topk(k=top_n, dim=-1, largest=True, sorted=True)
+            if self.args.logitsdistil_teacher_min:
+                t_vals_max_min = t_vals_parallel.min(dim=-1, keepdim=True)[0]
+                t_vals_min = t_logits.min(dim=-1, keepdim=True)[0]
+                if mpu.get_model_parallel_world_size() > 1:
+                    t_vals_max_min = mpu.gather_from_model_parallel_region(t_vals_max_min)
+                    t_vals_max_min = t_vals_max_min.min(dim=-1, keepdim=True)[0]
+                    t_vals_min = mpu.gather_from_model_parallel_region(t_vals_min)
+                    t_vals_min = t_vals_min.min(dim=-1, keepdim=True)[0]
+                s_logits_, parallel = s_logits, 'gather'
+                t_logits_ = torch.where(t_logits >= t_vals_max_min, t_logits, t_vals_min)
+            else:
+                s_vals_parallel = torch.gather(s_logits, -1, t_indices_parallel)
+                keep_batch_dim = -1 if keep_batch else []
+                if mpu.get_model_parallel_world_size() > 1:
+                    t_vals = mpu.gather_from_model_parallel_region(t_vals_parallel)
+                    s_vals = mpu.gather_from_model_parallel_region(s_vals_parallel)
+                    # logits_
+                    t_vals_top, t_vals_top_indices = t_vals.topk(k=top_n, dim=-1, largest=True, sorted=True)
+                    s_vals_top = torch.gather(s_vals, -1, t_vals_top_indices)
+                    s_logits_, t_logits_, parallel = s_vals_top, t_vals_top, ''
+                    # threshold loss 1
+                    threshold = s_vals_top.min(dim=-1, keepdim=True)[0]
+                    loss1 = torch.where(s_logits > threshold, s_logits - threshold, s_logits.new_zeros(s_logits.size()))
+                    loss1.scatter_(-1, t_indices_parallel, 0)
+                    count_nonzero = loss1.count_nonzero(keep_batch_dim)
+                    loss1 = loss1.sum(keep_batch_dim) / count_nonzero
+                    loss1 = mpu.reduce_from_model_parallel_region(loss1) / mpu.get_model_parallel_world_size()
+                    self.add_summary('inter_loss/s_logits_threshold', loss1)
+                    count_nonzero = mpu.reduce_from_model_parallel_region(count_nonzero)
+                    self.add_summary('inter_loss/s_logits_threshold_count_nonzero', count_nonzero)
+                    loss_ += loss1
+                    # threshold loss 2
+                    loss2 = torch.where(s_vals > threshold, s_vals - threshold, s_vals.new_zeros(s_vals.size()))
+                    loss2.scatter_(-1, t_vals_top_indices, 0)
+                    count_nonzero = loss2.count_nonzero(keep_batch_dim)
+                    loss2 = loss2.sum(keep_batch_dim) / count_nonzero
+                    self.add_summary('inter_loss/s_vals_threshold', loss2)
+                    self.add_summary('inter_loss/s_vals_threshold_count_nonzero', count_nonzero)
+                    loss_ += loss2
+                else:
+                    s_logits_, t_logits_, parallel = s_vals_parallel, t_vals_parallel, ''
+                    # threshold loss 1
+                    threshold = s_vals_parallel.min(dim=-1, keepdim=True)[0]
+                    loss1 = torch.where(s_logits > threshold, s_logits - threshold, s_logits.new_zeros(s_logits.size()))
+                    loss1.scatter_(-1, t_indices_parallel, 0)
+                    count_nonzero = loss1.count_nonzero(keep_batch_dim)
+                    loss1 = loss1.sum(keep_batch_dim) / count_nonzero
+                    self.add_summary('inter_loss/s_logits_threshold', loss1)
+                    self.add_summary('inter_loss/s_logits_threshold_count_nonzero', count_nonzero)
+                    loss_ += loss1
+        else:
+            s_logits_, t_logits_, parallel = s_logits, t_logits, 'gather'
+        # loss
+        if self.args.logitsdistil_mse:
+            l = CustomLoss.mse_loss(s_logits_, t_logits_, parallel=parallel, keep_batch=keep_batch)
+        else:
+            T = self.args.distill_temperature
+            l = CustomLoss.kl_div(s_logits_ / T, t_logits_ / T, parallel=parallel, keep_batch=keep_batch) * T ** 2
+        self.add_summary('inter_loss/logits_parallel', l)
+        loss_ += l
+        loss_ += super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=keep_batch, t_no=None, **kwargs)
+        return loss_
+
+
 student_model_D = {
     None: None,
     'kd': GLMStudent,
@@ -1278,4 +1375,5 @@ student_model_D = {
     'rail_kd': RAIL_KD,
     'mgskd': MGSKD,
     'diito': DIITO,
+    'logitsdistil': LogitsDistil,
 }

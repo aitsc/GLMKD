@@ -51,6 +51,20 @@
 - pretrain: ... --student_model=diito --forward_repeat_num=1 --diito_alignment=full --diito_interchange_prop=0.3 --diito_interchange_way=consecutive --diito_interchange_max_token=-1 --diito_alpha_mlm=0.25 --diito_alpha_ce=0.25 --diito_alpha_causal_ce=0.25 --diito_alpha_cos=0.25 --diito_alpha_causal_cos=0  --distill_pt_soft --distill_pt_hard --distill_temperature=2 --distill_only_mask_pad
     - --checkpoint-activations cannot be used when backpropagating interchanged_variable
 
+## LogitsDistil
+- old method
+    1. pretrain: ... --student_model=kd --distill_pt_soft --distill_temperature=15 --distill_wo_loss_mask
+        - --distill_only_mask_pad --distill_logits_parallel --distill_temperature=15
+    2. finetune: ... --student_model=kd --distill_logits_parallel --distill_temperature=15
+        - --distill_logit_mask_pad
+    3. finetune: ... --student_model=kd --distill_ft_soft
+- new method
+    1. pretrain: ... --student_model=logitsdistil --logitsdistil_top_n=20 --distill_temperature=15 --logitsdistil_teacher_min
+        - --logitsdistil_mask_pad --logitsdistil_mse
+    2. finetune: ... --student_model=logitsdistil --logitsdistil_top_n=20 --distill_temperature=15 --logitsdistil_teacher_min
+        - --logitsdistil_mask_pad --logitsdistil_mse
+    3. finetune: ... --student_model=logitsdistil --distill_ft_soft
+
 
 # Multi-teacher distillation
 - General parameters: ... --mt_num_attention_heads=a1:a2 --mt_hidden_size=h1:h2 --mt_num_layers=l1:l2 --mt_max_position_embeddings=m1:m2 --mt_load_pretrained=p1:p2 --teacher_fp16

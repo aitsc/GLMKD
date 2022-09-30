@@ -112,6 +112,11 @@ def get_args():
     py_parser.add_argument('--diito_alpha_causal_ce', type=float, default=1.)
     py_parser.add_argument('--diito_alpha_cos', type=float, default=1.)
     py_parser.add_argument('--diito_alpha_causal_cos', type=float, default=1.)
+    # logitsdistil
+    py_parser.add_argument('--logitsdistil_mask_pad', action='store_true', help='logits_parallel是否mask padding')
+    py_parser.add_argument('--logitsdistil_mse', action='store_true', help='logits_parallel是否用MSE计算')
+    py_parser.add_argument('--logitsdistil_top_n', type=int, default=None, help="大于0生效")
+    py_parser.add_argument('--logitsdistil_teacher_min', action='store_true', help="将教师logits中top_n之后的值都置为最小值,而不是对学生logits进行约束,避免长尾难以压制的问题")
 
     # multi-teacher 多个教师的模型参数用冒号分隔, 优先级高于 teacher_ 参数
     py_parser.add_argument('--mt_num_attention_heads', type=str, default='')

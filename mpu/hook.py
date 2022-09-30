@@ -89,9 +89,17 @@ def hook_reduce(hook: dict, inter_vars: list, offset=0, filter=lambda t: t, root
     # 将 hook 中模型的所有中间变量和名称对应起来
     hook_vars = deepcopy(hook) if root else hook
     if filter is None:
-        filter = lambda t: (
-            list(t.shape), t.type(), str(type(t.grad_fn)).split("'")[1], '%e'%t.mean().item()
-        ) if hasattr(t, 'distill') and t.distill else None
+        def filter_f(t):
+            if hasattr(t, 'distill') and t.distill:
+                ret = [list(t.shape), t.type(), str(type(t.grad_fn)).split("'")[1]]
+                try:
+                    ret.append('%e'%t.mean().item())
+                except:
+                    ret.append(None)
+                return tuple(ret)
+            else:
+                return None
+        filter = filter_f
     for k, v in list(hook_vars.items()):
         if type(v) in {dict, OrderedDict}:
             ret = hook_reduce(v, inter_vars, offset, filter, False)

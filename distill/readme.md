@@ -63,7 +63,7 @@
         - --logitsdistil_mask_pad --logitsdistil_mse
     2. finetune: ... --student_model=logitsdistil --logitsdistil_top_n=20 --distill_temperature=15 --logitsdistil_teacher_min
         - --logitsdistil_mask_pad --logitsdistil_mse
-    3. finetune: ... --student_model=logitsdistil --distill_ft_soft
+    3. finetune: ... --student_model=logitsdistil --distill_ft_soft --logitsdistil_wo_inter
 
 
 # Multi-teacher distillation

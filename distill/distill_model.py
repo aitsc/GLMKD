@@ -1269,19 +1269,25 @@ class LogitsDistil(GLMStudent):
     def __init__(self, language_model: GLMModel, args, **kwargs):
         super().__init__(language_model, args, **kwargs)
 
-    def get_teacher_hook(self, t_no=0, **kwargs):
-        hook = {'logits_parallel': None}
-        return hook
+    def get_teacher_hook(self, **kwargs):
+        hook_L = [super().get_teacher_hook(**kwargs)]
+        if not self.args.logitsdistil_wo_inter:
+            hook = {'logits_parallel': None}
+            hook_L.append(hook)
+        return merge_dict(hook_L)
 
     def get_student_hook(self, **kwargs):
-        hook = {'logits_parallel': None}
-        if self.args.logitsdistil_mask_pad:
-            hook['position_ids'] = None
-        return hook
+        hook_L = [super().get_student_hook(**kwargs)]
+        if not self.args.logitsdistil_wo_inter:
+            hook = {'logits_parallel': None}
+            if self.args.logitsdistil_mask_pad:
+                hook['position_ids'] = None
+            hook_L.append(hook)
+        return merge_dict(hook_L)
 
     def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=False, t_no=None, **kwargs):
         loss_ = 0.
-        if len(s_inter_vars) == 0:
+        if len(s_inter_vars) == 0 or self.args.logitsdistil_wo_inter:
             return loss_
         s_logits = s_inter_vars[s_hook['logits_parallel']]
         t_logits = t_inter_vars[t_hook['logits_parallel']]

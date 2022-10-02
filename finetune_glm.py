@@ -304,6 +304,9 @@ def _train(model, optimizer, lr_scheduler, forward_step,
                             output.write(json.dumps(score_dict) + "\n")
                         with open(os.path.join(args.save, "best_checkpointed_iteration.txt"), "w") as output:
                             output.write(str(best_iteration))
+    if args.save and args.ft_final_save:
+        save_checkpoint(args.iteration, model, optimizer, lr_scheduler, args, barrier=False,
+                        only_changed_parameters=True, no_deepspeed=True, no_save_optim=True)
     torch.distributed.barrier()
     return best_iteration
 

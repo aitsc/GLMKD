@@ -191,7 +191,7 @@ def main():
         print("Start GPU worker {} with {} jobs".format(gpu, job_queue.qsize()))
         multiprocessing.Process(target=_worker, args=(gpu, job_queue, done_queue, args)).start()
 
-    timestamp = datetime.datetime.now().strftime("%m-%d-%H-%M")
+    timestamp = datetime.datetime.now().strftime("%y%m%d_%H%M%S.%f")
     summary_path = LOG_PATH + f"grid_{args.model}-{args.task}_{timestamp}.txt"
 
     print("Summary path:", summary_path)

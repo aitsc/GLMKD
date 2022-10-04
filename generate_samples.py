@@ -268,7 +268,7 @@ def generate_samples(model, tokenizer, args, device):
     output_path = "./samples"
     if not os.path.exists(output_path):
         os.makedirs(output_path)
-    output_path = os.path.join(output_path, f"sample-{datetime.now().strftime('%m-%d-%H-%M')}.txt")
+    output_path = os.path.join(output_path, f"sample-{datetime.now().strftime('%y%m%d_%H%M%S.%f')}.txt")
     with torch.no_grad(), open(output_path, "w") as output:
         while True:
             torch.distributed.barrier(group=mpu.get_model_parallel_group())

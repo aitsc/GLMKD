@@ -560,7 +560,7 @@ def main():
     if args.load and not args.new_save_directory:
         args.experiment_name = os.path.basename(os.path.normpath(args.load))
     else:
-        args.experiment_name = args.experiment_name + datetime.now().strftime("%m-%d-%H-%M")
+        args.experiment_name = args.experiment_name + datetime.now().strftime("%y%m%d_%H%M%S.%f")
     if args.save:
         args.save = os.path.join(args.save, args.experiment_name)
     # Pytorch distributed.

@@ -25,6 +25,7 @@ from utils import get_sample_writer, get_log_dir, get_hostname
 import torch.distributed as dist
 from pretrain_glm import get_batch, evaluate_and_print_results, initialize_distributed, set_random_seed, get_train_val_test_data, train
 from distill.distill_model import unpacking_student_model
+from distill.tools import distill_random_data
 from mpu import hook_model
 from tsc_base import merge_dict
 
@@ -43,6 +44,7 @@ def forward_step(data_iterator, model, args, timers, mems, teacher_models=None):
         data = next(data_iterator[0]) if data_iterator[0] else None
     # print_rank_0("data iterator")
     timers('data loader').stop()
+    # (16,561) (16,561) (16,561) (16) (16,2,561)
     tokens, labels, loss_mask, attention_mask, position_ids = get_batch(data, args)
     timers('batch generator').stop()
 
@@ -51,17 +53,19 @@ def forward_step(data_iterator, model, args, timers, mems, teacher_models=None):
     else:
         mode = 'bert'
 
-    repeat_f = lambda : forward_step_(
-        tokens, labels, loss_mask, attention_mask, position_ids,
+    repeat_f = lambda data_: forward_step_(
+        *data_,
         data_iterator, model, args, timers, mems, teacher_models=teacher_models,
     )
+    ret = distill_random_data(args, [tokens], [labels, loss_mask, attention_mask, position_ids], 0)
     args.forward_repeat_current_n = 0
-    loss, mems = repeat_f()[:2]
+    loss, mems = repeat_f(ret[0] + ret[1])[:2]
         
     if args.forward_repeat_num:
         for i in range(args.forward_repeat_num):
             args.forward_repeat_current_n = i + 1
-            loss = loss + repeat_f()[0]
+            ret = distill_random_data(args, [tokens], [labels, loss_mask, attention_mask, position_ids], i + 1)
+            loss = loss + repeat_f(ret[0] + ret[1])[0]
         args.forward_repeat_current_n = 0
     return loss, mems, mode
 

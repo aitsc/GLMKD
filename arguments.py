@@ -425,7 +425,7 @@ def add_custom_args(parser: argparse.ArgumentParser):
     group.add_argument('--custom_current_epoch', type=int, default=0, help='当前的epoch,一般微调才有')
     group.add_argument('--custom_no_save_checkpoint', action='store_true', help='不保存检查点和预测值,意味着目录只读取')
     group.add_argument('--custom_no_summary_writer', action='store_true', help='不保tensorboard,意味着目录只读取')
-    group.add_argument('--forward_repeat_num', type=int, default=0, help='forward_step对相同数据多重复运行几次,运行loss结果累加,其他值取第一次结果')
+    group.add_argument('--forward_repeat_num', type=int, default=0, help='forward_step对相同数据多重复运行几次,1就代表数据会过2遍.运行loss结果累加,其他非loss值取第0次结果')
     group.add_argument('--forward_repeat_current_n', type=int, default=0, help='当前是重复的第几次,自动分配不用设置,0表示无重复,1表示重复的第一次')
     group.add_argument('--ft_final_save', action='store_true', help='是否在微调的最后一轮保存模型,将覆盖best模型latest_checkpointed_iteration')
     return parser

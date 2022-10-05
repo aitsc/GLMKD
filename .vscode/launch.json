@@ -24,7 +24,7 @@
                 // deepspeed
                 "--master_port=10161",
                 "--include=localhost:1,6",
-                "--include=localhost:4",
+                "--include=localhost:6",
                 "distill/pretrain.py",
                 "--deepspeed_config=config/config_block_tiny6.json",
                 "--deepspeed-activation-checkpointing",
@@ -56,9 +56,13 @@
                 "--no-lazy-loader",
                 "--resume-dataloader",
                 // 蒸馏
+                "--distill_random_data=replace",
+                "--distill_random_data_n=1",
+                "--forward_repeat_num=1",
+                "--distill_random_data_method=shuffle",
                 // LogitsDistil
                 "--student_model=logitsdistil",
-                "--logitsdistil_top_n=20",
+                "--logitsdistil_top_n=0",
                 "--distill_temperature=15",
                 "--logitsdistil_teacher_min",
                 // KD
@@ -123,7 +127,7 @@
             "args": [
                 // deepspeed
                 "--master_port=14161",
-                "--include=localhost:7",
+                "--include=localhost:6",
                 "distill/finetune.py",
                 "--deepspeed_config=config_tasks/config_blocklm_tiny6.json",
                 "--deepspeed-activation-checkpointing",
@@ -170,6 +174,10 @@
                 "--load-pretrained=../GLM/data/checkpoints/distill/tiny6/random6",
                 "--custom_first_eval",
                 // 蒸馏
+                "--distill_random_data=replace",
+                "--distill_random_data_n=1",
+                "--forward_repeat_num=0",
+                "--distill_random_data_method=sample",
                 // MixBaseline
                 "--student_model=mixbaseline",
                 "--distill_temperature=2",

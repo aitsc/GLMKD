@@ -33,6 +33,12 @@ def get_args():
     py_parser.add_argument('--distill_logits_parallel', action='store_true', help='是否将logits_parallel当作inter_loss使用,只有在NLU的ft阶段有价值,其他重复时可能产生soft权重*2的效果,注意一般受wo_inter类参数的约束')
     py_parser.add_argument('--distill_logit_mask_pad', action='store_true', help='--distill_logits_parallel 参数下是否mask padding')
     py_parser.add_argument('--distill_logit_mse', action='store_true', help='是否用MSE计算--distill_logits_parallel')
+    # 引入随机数据
+    py_parser.add_argument('--distill_random_data', type=str, default='', help='dual:数据batch size变成原来一倍,随机数据加载后面;replace:直接替换数据成随机数据;空则不使用随机数据')
+    py_parser.add_argument('--distill_random_data_n', type=str, default='0', help='针对args.forward_repeat_num的第几次重复引入随机数据,例如1或者0,1')
+    py_parser.add_argument('--distill_random_data_method', type=str, default='shuffle', help='shuffle:将要随机的token随机改变顺序;sample:将已有token随机替换为其他任何一个token')
+    # py_parser.add_argument('--distill_random_data_rate', type=float, default=1., help='随机的比例')
+    # py_parser.add_argument('--distill_random_data_only_a', action='store_true', help='是否只随机Part A,不让Part B和Padding部分也随机')
     # teacher
     py_parser.add_argument('--teacher_num_attention_heads', type=int, default=16)
     py_parser.add_argument('--teacher_hidden_size', type=int, default=1024)

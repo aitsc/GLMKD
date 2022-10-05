@@ -15,6 +15,7 @@ import torch
 import torch.utils.data
 from configure_data import prepare_tokenizer
 from distill.distill_model import unpacking_student_model
+from distill.tools import distill_random_data
 
 from utils import print_rank_0
 from utils import Timers
@@ -36,19 +37,32 @@ def finetune_forward_step(batch, model, args, timers, mems, teacher_models=None)
     except BaseException:
         batch_ = batch
 
+    # COPA: {'text': [16, 2, 256], 'label': [16], 'mask': [16, 2], 'position': [16, 2, 2, 256], 'target': [16, 2, 256], 'logit_mask': [16, 2, 256]}
     data = process_batch(batch_, args)
     timers('batch generator').stop()
+    
+    shuffle_objs = [data['text']] + ([data['dec_text']] if 'dec_text' in data else [])
+    ret = distill_random_data(args, shuffle_objs, [data], 0)
+    tokens, data_ = ret[0], ret[1][0]
+    data_['text'] = tokens[0]
+    if len(tokens) > 1:
+        data_['dec_text'] = tokens[1]
 
-    repeat_f = lambda : finetune_forward_step_(
-        data, batch, model, args, timers, mems, teacher_models=teacher_models,
+    repeat_f = lambda data_: finetune_forward_step_(
+        data_, batch, model, args, timers, mems, teacher_models=teacher_models,
     )
     args.forward_repeat_current_n = 0
-    loss, mems = repeat_f()[:2]
+    loss, mems = repeat_f(data_)[:2]
         
     if args.forward_repeat_num:
         for i in range(args.forward_repeat_num):
             args.forward_repeat_current_n = i + 1
-            loss = loss + repeat_f()[0]
+            ret = distill_random_data(args, shuffle_objs, [data], i + 1)
+            tokens, data_ = ret[0], ret[1][0]
+            data_['text'] = tokens[0]
+            if len(tokens) > 1:
+                data_['dec_text'] = tokens[1]
+            loss = loss + repeat_f(data_)[0]
         args.forward_repeat_current_n = 0
     return loss, mems, 'bert'
 

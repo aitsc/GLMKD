@@ -29,6 +29,7 @@ from mpu import hook_model
 from distill.distill_model import unpacking_student_model
 from tsc_base import merge_dict
 from distill.prepare import get_teachers_hook, mt_repeat_operation, NoneWith
+from distill.tools import distill_random_data
 
 global_tokenizer = None
 
@@ -41,17 +42,19 @@ def seq2seq_forward_step(data, model, args, timers, mems, teacher_models=None):
     if timers is not None:
         timers('batch generator').stop()
 
-    repeat_f = lambda : seq2seq_forward_step_(
-        tokens, labels, loss_mask, attention_mask, position_ids,
+    repeat_f = lambda data_: seq2seq_forward_step_(
+        *data_,
         data, model, args, timers, mems, teacher_models=teacher_models,
     )
+    ret = distill_random_data(args, [tokens], [labels, loss_mask, attention_mask, position_ids], 0)
     args.forward_repeat_current_n = 0
-    loss, mems = repeat_f()[:2]
+    loss, mems = repeat_f(ret[0] + ret[1])[:2]
         
     if args.forward_repeat_num:
         for i in range(args.forward_repeat_num):
             args.forward_repeat_current_n = i + 1
-            loss = loss + repeat_f()[0]
+            ret = distill_random_data(args, [tokens], [labels, loss_mask, attention_mask, position_ids], i + 1)
+            loss = loss + repeat_f(ret[0] + ret[1])[0]
         args.forward_repeat_current_n = 0
     return loss, mems, 'bert'
 

@@ -30,6 +30,7 @@ from mpu import hook_model
 from distill.distill_model import unpacking_student_model
 from tsc_base import merge_dict
 from distill.prepare import get_teachers_hook, mt_repeat_operation, NoneWith
+from distill.tools import distill_random_data
 
 global_tokenizer = None
 
@@ -60,17 +61,19 @@ def lm_forward_step(data, model, args, timers, mems, eval_metric=None, teacher_m
         attention_mask = attention_mask.squeeze(1)
         position_ids = position_ids.squeeze(1)
 
-    repeat_f = lambda : lm_forward_step_(
-        tokens, labels, loss_mask, attention_mask, position_ids,
+    repeat_f = lambda data_: lm_forward_step_(
+        *data_,
         data, model, args, timers, mems, eval_metric=eval_metric, teacher_models=teacher_models,
     )
+    ret = distill_random_data(args, [tokens], [labels, loss_mask, attention_mask, position_ids], 0)
     args.forward_repeat_current_n = 0
-    loss, mems = repeat_f()[:2]
+    loss, mems = repeat_f(ret[0] + ret[1])[:2]
 
     if args.forward_repeat_num:
         for i in range(args.forward_repeat_num):
             args.forward_repeat_current_n = i + 1
-            loss = loss + repeat_f()[0]  # 注意返回的不是 loss 而是 correct 的情况问题
+            ret = distill_random_data(args, [tokens], [labels, loss_mask, attention_mask, position_ids], i + 1)
+            loss = loss + repeat_f(ret[0] + ret[1])[0]  # 注意返回的不是 loss 而是 correct 的情况问题
         args.forward_repeat_current_n = 0
     return loss, mems, 'bert'
 

@@ -423,7 +423,7 @@ def add_custom_args(parser: argparse.ArgumentParser):
     group.add_argument('--custom_logits_paralle', action='store_true', help='forward_step中得到的logits是否是并行的,根据tasks自动设置,可用于蒸馏模型判断')
     group.add_argument('--custom_sample_shape', type=str, default=None, help='训练集一个样本.text的形状,可方便获取输入单文本的维度(例如用于rl-kd方法的semantic_len构建),None则自动处理,逗号分隔维度')
     group.add_argument('--custom_current_epoch', type=int, default=0, help='当前的epoch,一般微调才有')
-    group.add_argument('--custom_no_save_checkpoint', action='store_true', help='不保存检查点,意味着目录只读取')
+    group.add_argument('--custom_no_save_checkpoint', action='store_true', help='不保存检查点和预测值,意味着目录只读取')
     group.add_argument('--custom_no_summary_writer', action='store_true', help='不保tensorboard,意味着目录只读取')
     group.add_argument('--forward_repeat_num', type=int, default=0, help='forward_step对相同数据多重复运行几次,运行loss结果累加,其他值取第一次结果')
     group.add_argument('--forward_repeat_current_n', type=int, default=0, help='当前是重复的第几次,自动分配不用设置,0表示无重复,1表示重复的第一次')

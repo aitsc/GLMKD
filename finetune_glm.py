@@ -469,8 +469,9 @@ def finetune(args, train_valid_datasets_provider, model_kwargs, forward_step=fin
         from tasks.eval_utils import save_max_score_dict
         save_max_score_dict(args, score_dict, -1)
         score_dict.update({"type": "test"})
-        with open(os.path.join(args.log_dir, "test_results.json"), "w") as output:
-            output.write(json.dumps(score_dict) + "\n")
+        if not args.custom_no_save_checkpoint:
+            with open(os.path.join(args.log_dir, "test_results.json"), "w") as output:
+                output.write(json.dumps(score_dict) + "\n")
 
     print_rank_0('done :-)')
 

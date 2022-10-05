@@ -155,6 +155,8 @@ class DataProcessor(ABC):
         self.num_truncated = 0
 
     def output_prediction(self, predictions, examples, output_file):
+        if self.args.custom_no_save_checkpoint:
+            return
         with open(output_file, "w") as output:
             for prediction, example in zip(predictions, examples):
                 prediction = self.get_labels()[prediction]

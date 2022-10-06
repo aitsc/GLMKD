@@ -29,7 +29,7 @@ from tsc_base import merge_dict
 tokenizer = None
 
 
-def finetune_forward_step(batch, model, args, timers, mems, teacher_models=None):
+def finetune_forward_step(batch, model, args, timers, mems, teacher_models=None, is_eval=False):
     # Get the batch.
     timers('batch generator').start()
     try:
@@ -42,7 +42,7 @@ def finetune_forward_step(batch, model, args, timers, mems, teacher_models=None)
     timers('batch generator').stop()
     
     shuffle_objs = [data['text']] + ([data['dec_text']] if 'dec_text' in data else [])
-    ret = distill_random_data(args, shuffle_objs, [data], 0)
+    ret = distill_random_data(args, shuffle_objs, [data], 0, cancel=is_eval)
     tokens, data_ = ret[0], ret[1][0]
     data_['text'] = tokens[0]
     if len(tokens) > 1:
@@ -54,7 +54,7 @@ def finetune_forward_step(batch, model, args, timers, mems, teacher_models=None)
     args.forward_repeat_current_n = 0
     loss, mems = repeat_f(data_)[:2]
         
-    if args.forward_repeat_num:
+    if args.forward_repeat_num and not is_eval:
         for i in range(args.forward_repeat_num):
             args.forward_repeat_current_n = i + 1
             ret = distill_random_data(args, shuffle_objs, [data], i + 1)

@@ -24,9 +24,9 @@ def get_checkpoint_forward_args(func, *args, **kwargs):
     return custom_forward, *flat
 
 
-def distill_random_data(args, shuffle_objs: list, expand_objs: list, forward_repeat_num=0):
+def distill_random_data(args, shuffle_objs: list, expand_objs: list, forward_repeat_num=0, cancel=False):
     # 随机打乱数据
-    if not (hasattr(args, 'distill_random_data')\
+    if cancel or not (hasattr(args, 'distill_random_data')\
         and hasattr(args, 'distill_random_data_n')\
         and hasattr(args, 'distill_random_data_method')) or not args.distill_random_data:
         return shuffle_objs, expand_objs

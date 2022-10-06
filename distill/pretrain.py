@@ -32,7 +32,7 @@ from tsc_base import merge_dict
 tokenizer = None
 
 
-def forward_step(data_iterator, model, args, timers, mems, teacher_models=None):
+def forward_step(data_iterator, model, args, timers, mems, teacher_models=None, is_eval=False):
     # Get the batch.
     timers('batch generator').start()
     timers('data loader').start()
@@ -57,11 +57,11 @@ def forward_step(data_iterator, model, args, timers, mems, teacher_models=None):
         *data_,
         data_iterator, model, args, timers, mems, teacher_models=teacher_models,
     )
-    ret = distill_random_data(args, [tokens], [labels, loss_mask, attention_mask, position_ids], 0)
+    ret = distill_random_data(args, [tokens], [labels, loss_mask, attention_mask, position_ids], 0, cancel=is_eval)
     args.forward_repeat_current_n = 0
     loss, mems = repeat_f(ret[0] + ret[1])[:2]
         
-    if args.forward_repeat_num:
+    if args.forward_repeat_num and not is_eval:
         for i in range(args.forward_repeat_num):
             args.forward_repeat_current_n = i + 1
             ret = distill_random_data(args, [tokens], [labels, loss_mask, attention_mask, position_ids], i + 1)

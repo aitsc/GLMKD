@@ -404,7 +404,7 @@ def evaluate(data_iterator, model, args, timers, forward_step_func, verbose=Fals
             if verbose and iteration % args.log_interval == 0:
                 print_rank_0('Evaluating iter {}/{}'.format(iteration, args.eval_iters))
             # Forward evaluation.
-            lm_loss, mems, mode = forward_step_func(data_iterator, model, args, timers, mems=mems)
+            lm_loss, mems, mode = forward_step_func(data_iterator, model, args, timers, mems=mems, is_eval=True)
 
             '''when contiguous memory optimizations are enabled, the buffers
             allocated by the optimizations are deallocated during backward pass

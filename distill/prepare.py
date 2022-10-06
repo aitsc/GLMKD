@@ -34,7 +34,7 @@ def get_args():
     py_parser.add_argument('--distill_logit_mask_pad', action='store_true', help='--distill_logits_parallel 参数下是否mask padding')
     py_parser.add_argument('--distill_logit_mse', action='store_true', help='是否用MSE计算--distill_logits_parallel')
     # 引入随机数据
-    py_parser.add_argument('--distill_random_data', type=str, default='', help='dual:数据batch size变成原来一倍,随机数据加载后面;replace:直接替换数据成随机数据;空则不使用随机数据')
+    py_parser.add_argument('--distill_random_data', type=str, default='', help='dual:数据batch size变成原来一倍,随机数据加载后面;replace:直接替换数据成随机数据;空则不使用随机数据,评估时也不生效')
     py_parser.add_argument('--distill_random_data_n', type=str, default='0', help='针对args.forward_repeat_num的第几次重复引入随机数据,例如1或者0,1')
     py_parser.add_argument('--distill_random_data_method', type=str, default='shuffle', help='shuffle:将要随机的token随机改变顺序;sample:将已有token随机替换为其他任何一个token')
     # py_parser.add_argument('--distill_random_data_rate', type=float, default=1., help='随机的比例')

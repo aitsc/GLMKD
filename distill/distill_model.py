@@ -6,7 +6,7 @@ from model import GLMModel, GLMModel_empty
 import mpu
 import torch.nn.functional as F
 from mpu import hook_model, hook_return, hook_reduce, hook_add
-from utils import print_rank_0
+from utils import print_rank_0, find_model_inter_var
 import math
 from tsc_base import merge_dict, fast_uniform_seg, cumulative_sum
 from apex.normalization.fused_layer_norm import FusedLayerNorm as LayerNorm
@@ -68,6 +68,11 @@ class GLMStudent(torch.nn.Module):
             s_logits = s_inter_vars[s_hook['logits_parallel']]
             t_logits = t_inter_vars[t_hook['logits_parallel']]
             s_logits.distill = t_logits.distill = True
+            if self.args.distill_logit_mask_map and self.origin_model.map_vocab_size:
+                origin_id_mask_map = self.origin_model.map_vocab_paras['origin_id_mask_map']
+                origin_id_mask_map = mpu.scatter_to_model_parallel_region(origin_id_mask_map)
+                s_logits = torch.masked_select(s_logits, origin_id_mask_map)
+                t_logits = torch.masked_select(t_logits, origin_id_mask_map)
             if self.args.distill_logit_mask_pad:
                 position_ids = s_inter_vars[s_hook['position_ids']]
                 position_ids.distill = True
@@ -211,29 +216,6 @@ def unpacking_student_model(model, attrs=('origin_model', 'get_teacher_hook')):
             model = model.module
         elif hasattr(model, 'model'):
             model = model.model
-        else:
-            return None
-
-
-def find_model_inter_var(model, name):
-    # 找到模型内部的某个参数, 找不到会一直拆包
-    name_L = name.split('.')
-    while True:
-        has_find, m = False, model
-        for i, n in enumerate(name_L):
-            if hasattr(m, n):
-                m = getattr(m, n)
-                has_find = True if i == len(name_L) - 1 else False
-            else:
-                break
-        if has_find:
-            return m
-        if hasattr(model, 'module'):
-            model = model.module
-        elif hasattr(model, 'model'):
-            model = model.model
-        elif hasattr(model, 'origin_model'):
-            model = model.origin_model
         else:
             return None
 
@@ -1300,6 +1282,11 @@ class LogitsDistil(GLMStudent):
             mask = mask.unsqueeze(dim=-1)
             s_logits = s_logits * mask
             t_logits = t_logits * mask
+        if self.args.distill_logit_mask_map and self.origin_model.map_vocab_size:
+            origin_id_mask_map = self.origin_model.map_vocab_paras['origin_id_mask_map']
+            origin_id_mask_map = mpu.scatter_to_model_parallel_region(origin_id_mask_map)
+            s_logits = s_logits[..., origin_id_mask_map]
+            t_logits = t_logits[..., origin_id_mask_map]
         # logits 处理
         top_n = self.args.logitsdistil_top_n
         if top_n:

@@ -428,6 +428,7 @@ def add_custom_args(parser: argparse.ArgumentParser):
     group.add_argument('--forward_repeat_num', type=int, default=0, help='forward_step对相同数据多重复运行几次,1就代表数据会过2遍.运行loss结果累加,其他非loss值取第0次结果.evaluate的时候不会重复')
     group.add_argument('--forward_repeat_current_n', type=int, default=0, help='当前是重复的第几次,自动分配不用设置,0表示无重复,1表示重复的第一次')
     group.add_argument('--ft_final_save', action='store_true', help='是否在微调的最后一轮保存模型,将覆盖best模型latest_checkpointed_iteration')
+    group.add_argument('--map_vocab_size', type=float, default=None, help='映射的词数量,蒸馏或读取模型文件时使用.0-1表示占vacab-size的比例')
     return parser
 
 

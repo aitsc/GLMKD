@@ -231,6 +231,41 @@ def save_zero_checkpoint(args, iteration, optimizer):
     print('  successfully saved {}'.format(zero_checkpoint_name))
 
 
+def build_important_nonparameters(model, sd=None):
+    # 将重要的非优化参数保存到模型文件,或读取到模型内部
+    def tocuda(v):
+        if isinstance(v, list):
+            bar = range(len(v))
+        elif isinstance(v, dict):
+            bar = v.keys()
+        else:
+            return v
+        for i in bar:
+            if hasattr(v[i], 'to'):
+                v[i] = v[i].to(torch.cuda.current_device())
+            else:
+                v[i] = tocuda(v[i])
+        return v
+    # 保存到sd
+    if sd is None:
+        sd = {
+            'glm.map_vocab_paras': find_model_inter_var(model, 'map_vocab_paras'),
+        }
+        sd = {k: v for k, v in sd.items() if v is not None}
+        if sd:
+            print_rank_0('> 即将保存的非优化参数: {}'.format(list(sd.keys())))
+    # 读取到模型内部
+    else:
+        read_k = []
+        for k, v in sd.items():
+            if k == 'glm.map_vocab_paras' and v is not None:
+                glm = find_model_inter_var(model, 'map_vocab_paras', return_model=True)
+                glm.map_vocab_paras = tocuda(v)
+                read_k.append(k)
+        print_rank_0('> 读取非优化参数到模型: {}'.format(read_k))
+    return sd
+
+
 def save_checkpoint(iteration, model, optimizer, lr_scheduler, args, tag=None, barrier=True,
                     only_changed_parameters=False, no_deepspeed=False, no_save_optim=False):
     """Save a model checkpoint."""
@@ -247,7 +282,7 @@ def save_checkpoint(iteration, model, optimizer, lr_scheduler, args, tag=None, b
             checkpoint_name = get_checkpoint_name(args.save, tag)
             print('global rank {} is saving checkpoint at iteration {:7d} to {}'.
                   format(torch.distributed.get_rank(), iteration, checkpoint_name))
-            sd = {'iteration': iteration}
+            sd = {'iteration': iteration, 'important_nonparameters': build_important_nonparameters(model)}
             if args.deepspeed:
                 model = model.module
             state_dict = model.state_dict()
@@ -291,7 +326,7 @@ def save_checkpoint(iteration, model, optimizer, lr_scheduler, args, tag=None, b
 def save_ds_checkpoint(iteration, model, lr_scheduler, args, tag):
     """Save a model checkpoint."""
 
-    sd = {}
+    sd = {'important_nonparameters': build_important_nonparameters(model)}
     sd['iteration'] = iteration
     if lr_scheduler is not None:
         sd['client_lr_scheduler'] = lr_scheduler.state_dict()
@@ -390,6 +425,8 @@ def load_checkpoint(model, optimizer, lr_scheduler, args, no_deepspeed=False, no
                              'Specify --no-load-optim or --finetune to prevent '
                              'attempting to load the optimizer '
                              'state.'.format(checkpoint_name))
+    if 'important_nonparameters' in sd:
+        build_important_nonparameters(model, sd['important_nonparameters'])
 
     # Iterations.
     if args.finetune or release:
@@ -505,3 +542,37 @@ def debug_finetune_data(local_vars, batch_id, tokenizer):
     else:
         print(tokenizer.DecodeIds(target_ids[batch_id].tolist()))
     print(position_ids[batch_id][:, target_positions])
+
+
+def find_model_inter_var(model, name, return_model=False):
+    """找到模型内部的某个参数, 找不到会一直拆包
+
+    Args:
+        model (_type_): _description_
+        name (str): a.b.c 的形式
+        return_model (bool, optional): 是否返回该参数所属于的模型
+
+    Returns:
+        _type_: _description_
+    """
+    name_L = name.split('.')
+    while True:
+        has_find, m = False, model
+        for i, n in enumerate(name_L):
+            if hasattr(m, n):
+                m = getattr(m, n)
+                has_find = True if i == len(name_L) - 1 else False
+            else:
+                break
+        if has_find:
+            if return_model:
+                return model
+            return m
+        if hasattr(model, 'module'):
+            model = model.module
+        elif hasattr(model, 'model'):
+            model = model.model
+        elif hasattr(model, 'origin_model'):
+            model = model.origin_model
+        else:
+            return None

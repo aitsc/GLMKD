@@ -28,7 +28,7 @@ from utils import print_rank_0
 from itertools import accumulate
 from bisect import bisect_right
 from tasks.superglue.dataset import SuperGlueDataset
-
+import math
 import mpu
 
 
@@ -148,6 +148,16 @@ def prepare_tokenizer(args):
     num_tokens = token_counts[0].item()
     eod_token = token_counts[1].item()
     args.vocab_size, args.eod_token = num_tokens, eod_token
+    # map
+    if args.map_vocab_size:
+        if 0 < args.map_vocab_size < 1:
+            args.map_vocab_size = int(args.map_vocab_size * tokenizer.num_tokens)
+        else:
+            args.map_vocab_size = int(args.map_vocab_size)
+        args.map_vocab_size = math.ceil(args.map_vocab_size / args.make_vocab_size_divisible_by) * args.make_vocab_size_divisible_by
+        if args.map_vocab_size >= args.vocab_size:  # 比原来词表大没有必要映射
+            args.map_vocab_size = None
+        print_rank_0('> 设置 args.map_vocab_size = {}'.format(args.map_vocab_size))
     return tokenizer
 
 

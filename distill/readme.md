@@ -65,6 +65,11 @@
         - --logitsdistil_mask_pad --logitsdistil_mse
     3. finetune: ... --student_model=logitsdistil --distill_ft_soft --logitsdistil_wo_inter
 
+## VocabDistil
+1. pretrain: ... --student_model=logitsdistil --distill_temperature=15 --map_vocab_size=0.5 --student_build_map_vocab --student_map_vocab_tn=0 --distill_logit_mask_map
+2. finetune: ... --student_model=logitsdistil --distill_temperature=1 --map_vocab_size=0.5 --distill_logit_mask_map
+3. finetune: ... --student_model=logitsdistil --distill_ft_soft --logitsdistil_wo_inter --map_vocab_size=0.5
+
 
 # Multi-teacher distillation
 - General parameters: ... --mt_num_attention_heads=a1:a2 --mt_hidden_size=h1:h2 --mt_num_layers=l1:l2 --mt_max_position_embeddings=m1:m2 --mt_load_pretrained=p1:p2 --teacher_fp16

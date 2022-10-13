@@ -205,7 +205,7 @@ def get_batch(data, args):
 tokenizer = None
 
 
-def forward_step(data_iterator, model, args, timers, mems):
+def forward_step(data_iterator, model, args, timers, mems, **kwargs):
     """Forward step."""
 
     # Get the batch.

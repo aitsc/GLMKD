@@ -62,7 +62,7 @@ def process_batch(batch, args):
 tokenizer = None
 
 
-def mix_forward_step(batch_and_dataloader, model, args, times, mems):
+def mix_forward_step(batch_and_dataloader, model, args, times, mems, **kwargs):
     use_blocklm = 0
     if args.block_lm_ratio > 0.0:
         if mpu.get_model_parallel_rank() == 0:
@@ -78,7 +78,7 @@ def mix_forward_step(batch_and_dataloader, model, args, times, mems):
         return finetune_forward_step(batch_and_dataloader[0], model, args, times, mems)
 
 
-def finetune_forward_step(batch, model, args, timers, mems):
+def finetune_forward_step(batch, model, args, timers, mems, **kwargs):
     """Simple forward step with cross-entropy loss."""
     # Get the batch.
     timers('batch generator').start()

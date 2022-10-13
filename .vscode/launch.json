@@ -24,12 +24,13 @@
                 // deepspeed
                 "--master_port=10161",
                 "--include=localhost:1,6",
-                "--include=localhost:6",
+                "--include=localhost:0",
                 "distill/pretrain.py",
                 "--deepspeed_config=config/config_block_tiny6.json",
                 "--deepspeed-activation-checkpointing",
                 "--deepspeed",
                 // "--load=",
+                // "--load-pretrained=../GLM/data/checkpoints/distill/tiny6/test221013_210714.960125",
                 "--block-lm",
                 "--num-layers=6",
                 "--hidden-size=768",
@@ -56,10 +57,14 @@
                 "--no-lazy-loader",
                 "--resume-dataloader",
                 // 蒸馏
-                "--distill_random_data=replace",
-                "--distill_random_data_n=1",
-                "--forward_repeat_num=1",
-                "--distill_random_data_method=shuffle",
+                "--map_vocab_size=0.5", // 映射
+                "--student_build_map_vocab", // 构建映射, 一般不与load混用
+                "--student_map_vocab_tn=0",
+                "--distill_logit_mask_map",
+                // "--distill_random_data=replace",
+                // "--distill_random_data_n=1",
+                // "--forward_repeat_num=1",
+                // "--distill_random_data_method=shuffle",
                 // LogitsDistil
                 "--student_model=logitsdistil",
                 "--logitsdistil_top_n=0",

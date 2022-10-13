@@ -12,7 +12,7 @@ from contextlib import ExitStack
 from configure_data import configure_data, prepare_tokenizer, build_multi_task_dataset
 import mpu
 import pathlib
-from distill.prepare import get_args, get_teacher_model, get_teachers_hook, mt_repeat_operation, glm_wrap, mt_model_load, NoneWith, truncate_teacher_as_student
+from distill.prepare import get_args, get_teacher_model, get_teachers_hook, mt_repeat_operation, glm_wrap, mt_model_load, NoneWith, truncate_teacher_as_student, build_map_vocab_for_student
 
 from train_utils import setup_model_and_optimizer, load_pretrained
 from utils import Timers
@@ -166,11 +166,12 @@ def main():
     glm_wrap_ = lambda **k: glm_wrap(**k, teacher_models=teacher_models)
     model, optimizer, lr_scheduler = setup_model_and_optimizer(args, glm_wrap=glm_wrap_)
     if args.load_pretrained:
-        print_rank_0("Load only pre-trained model parameters...")
+        print_rank_0("> Load only pre-trained model parameters...")
         with FileLock(os.path.join(pathlib.Path.home(), "checkpoint_lock"), timeout=-1):
             load_pretrained(model, args.load_pretrained, args)
     is_load1 = mt_model_load(model, args.mt_model_load)
     is_load2 = truncate_teacher_as_student(model, teacher_models, args)
+    build_map_vocab_for_student(model, teacher_models, args, tokenizer)
     if (is_load1 or is_load2 or args.load_pretrained) and args.fp16 and optimizer is not None:
         if args.deepspeed:
             optimizer.refresh_fp32_params()

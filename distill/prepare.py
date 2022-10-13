@@ -4,19 +4,23 @@ sys.path.append(os.getcwd())
 from arguments import get_args as get_args_
 import argparse
 from train_utils import get_model
-from utils import print_rank_0, get_checkpoint_name, get_checkpoint_iteration
+from utils import print_rank_0, get_checkpoint_name, get_checkpoint_iteration, find_model_inter_var
 from train_utils import load_pretrained
 from distill.distill_model import student_model_D, unpacking_student_model
 from distill.multi_teacher_model import multi_teacher_model_D
 import torch
 import time
+import mpu
 
 
 def get_args():
     py_parser = argparse.ArgumentParser(add_help=False)
     # generic
     py_parser.add_argument('--student_model', type=str, default=None, help='学生模型类型,没有则是原生模型')
-    py_parser.add_argument('--student_truncate_tn', type=int, default=None, help='非None或不小于0的话代表选择第几个教师前面层截断作为初始化(长于学生的维度靠前截断参数,短于学生的维度默认学生参数不变)')
+    py_parser.add_argument('--student_truncate_tn', type=int, default=None, help='非None或不小于0的话代表选择第n个教师前面层截断作为初始化(长于学生的维度靠前截断参数,短于学生的维度默认学生参数不变)')
+    py_parser.add_argument('--student_build_map_vocab', action='store_true', help='是否重新构建映射词表.通常只有预训练(且不加载已有学生参数)时需要构建初始映射')
+    py_parser.add_argument('--student_map_vocab_tn', type=int, default=None, help='非None或不小于0的话代表选择第n个教师的word_embeddings计算省去token的最大相似token作为替代,否则使用unk作为替代')
+    py_parser.add_argument('--student_map_vocab_method', type=str, default='decoder', help='cosine/euclidean/decoder,指定student_map_vocab_tn的情况下使用什么相似度计算')
     py_parser.add_argument('--distill_ft_soft', action='store_true', help='是否在微调蒸馏阶段使用软标签')
     py_parser.add_argument('--distill_ft_hard', action='store_true', help='是否在微调蒸馏阶段使用硬标签')
     py_parser.add_argument('--distill_pt_soft', action='store_true', help='是否在预训练蒸馏阶段使用软标签')
@@ -32,6 +36,7 @@ def get_args():
     py_parser.add_argument('--distill_pt_soft_mse', action='store_true', help="使用mse计算pt_soft")
     py_parser.add_argument('--distill_logits_parallel', action='store_true', help='是否将logits_parallel当作inter_loss使用,只有在NLU的ft阶段有价值,其他重复时可能产生soft权重*2的效果,注意一般受wo_inter类参数的约束')
     py_parser.add_argument('--distill_logit_mask_pad', action='store_true', help='--distill_logits_parallel 参数下是否mask padding')
+    py_parser.add_argument('--distill_logit_mask_map', action='store_true', help='使用logits_parallel计算并且学生有map_vocab时,是否忽略映射token的相似度计算')
     py_parser.add_argument('--distill_logit_mse', action='store_true', help='是否用MSE计算--distill_logits_parallel')
     # 引入随机数据
     py_parser.add_argument('--distill_random_data', type=str, default='', help='dual:数据batch size变成原来一倍,随机数据加载后面;replace:直接替换数据成随机数据;空则不使用随机数据,评估时也不生效')
@@ -210,6 +215,7 @@ def get_teacher_model(args, **kwargs):
         sd = {}
     # 替换
     args.fp16 = args.teacher_fp16
+    map_vocab_size, args.map_vocab_size = args.map_vocab_size, None
     teacher_models = []
     if args.mt_num_attention_heads:
         paras = zip(*[getattr(args, 'mt_' + i).split(':') for i in transfer_vars])
@@ -239,6 +245,7 @@ def get_teacher_model(args, **kwargs):
     for v, name in zip(original_vars, transfer_vars):
         setattr(args, name, v)
     args.fp16 = fp16
+    args.map_vocab_size = map_vocab_size
     return teacher_models
 
 
@@ -331,6 +338,82 @@ def truncate_teacher_as_student(model, teacher_models, args):
         time.sleep(3)
     return True
 
+def build_map_vocab_for_student(model, teacher_models, args, tokenizer):
+    # 初始化学生模型的词表映射参数, args 需要先经过 prepare_tokenizer 处理
+    path = f'.pytorch_pretrained_bert/{args.tokenizer_type}_{args.tokenizer_model_type}.txt'
+    if not args.map_vocab_size or not os.path.exists(path) or not args.student_build_map_vocab:
+        return False
+    # 获取排序的映射关系
+    origin_no_L = []  # 顺序就是教师词表的id,里面的值表示学生word_embeddings的序号
+    sort_id_L = []  # word_embeddings的序号对应的id
+    with open(path, 'r', encoding='utf8') as f:
+        head_no = {h: i for i, h in enumerate(f.readline().strip().split('\t'))}
+        for line in f:
+            line = line.strip().split('\t')
+            origin_no_L.append(int(line[head_no['origin_no']]))
+            sort_id_L.append(int(line[head_no['sort_id']]))
+            assert line[head_no['token']] == tokenizer.IdToToken(sort_id_L[-1]), 'tokenizer 与 map_vocab 不一致!'
+    for i in range(len(sort_id_L)):
+        assert sort_id_L[origin_no_L[i]] == i, 'origin_no 和 sort_id 不对应! {}'.format(i)
+    assert len(set(origin_no_L)) == len(origin_no_L), 'origin_no_L 出现重复错误!'
+    for i in range(len(sort_id_L), args.vocab_size):  # 补充因整数延长的id
+        sort_id_L.append(i)
+        origin_no_L.append(i)
+    # map_origin
+    map_origin_pos_to_target_id = torch.tensor(sort_id_L, device=torch.cuda.current_device())
+    map_origin_id_to_target_pos = torch.tensor(origin_no_L, device=torch.cuda.current_device())
+    # other 替换
+    other_id = map_origin_pos_to_target_id[args.map_vocab_size:]
+    if args.student_map_vocab_tn is None or len(teacher_models) <= args.student_map_vocab_tn:
+        map_origin_id_to_target_pos[other_id] = origin_no_L[tokenizer.get_command('unk').Id]
+        other_map_id = [tokenizer.get_command('unk').Id] * (args.vocab_size - args.map_vocab_size)
+        other_map_id = torch.tensor(other_map_id, device=torch.cuda.current_device())
+    else:
+        t_model = teacher_models[args.student_map_vocab_tn]
+        t_word_embeddings = find_model_inter_var(t_model, 'word_embeddings')
+        save_id = map_origin_pos_to_target_id[:args.map_vocab_size]
+        start_index, end_index = mpu.VocabUtility.vocab_range_from_global_vocab_size(
+            args.vocab_size - args.map_vocab_size,
+            mpu.get_model_parallel_rank(), mpu.get_model_parallel_world_size())
+        other_embeddings = t_word_embeddings(other_id[start_index: end_index])
+        save_embeddings = t_word_embeddings(save_id)
+        if args.student_map_vocab_method == 'decoder':
+            other_save = torch.matmul(other_embeddings, save_embeddings.T)
+        else:
+            a2 = (other_embeddings ** 2).sum(-1, keepdim=True)
+            b2 = (save_embeddings ** 2).sum(-1, keepdim=True)
+            ab = torch.matmul(other_embeddings, save_embeddings.T)
+            if args.student_map_vocab_method == 'euclidean':
+                # - (Euclidean distance) ** 2
+                other_save = - (a2 + b2.T - 2 * ab)
+            elif args.student_map_vocab_method == 'cosine':
+                # Cosine similarity
+                other_save = ab / (a2 * b2.T) ** 0.5
+            else:
+                raise Exception("Invalid --student_map_vocab_method={}".format(args.student_map_vocab_method))
+        other_save = other_save.argmax(dim=-1)
+        other_save = mpu.gather_from_model_parallel_region(other_save)
+        other_map_id = torch.gather(save_id, dim=0, index=other_save)
+        map_origin_id_to_target_pos[other_id] = map_origin_id_to_target_pos[other_map_id]
+    origin_id_mask_map = torch.ones(args.vocab_size, dtype=torch.bool, device=torch.cuda.current_device())
+    origin_id_mask_map[other_id] = False
+    map_origin_pos_to_target_id[args.map_vocab_size:] = other_map_id
+    # show
+    show_top = 20
+    print_rank_0('> 展示map_vocab中后半截[{},{})前{}个被替换的id和token:'.format(
+        args.map_vocab_size, args.vocab_size, show_top))
+    print_rank_0('替换前的id token\t替换后的id token')
+    for old_id, new_id in zip(other_id, other_map_id[:show_top]):
+        old_id, new_id = int(old_id), int(new_id)
+        print_rank_0('{} {}\t{} {}'.format(
+            old_id, tokenizer.IdToToken(old_id), new_id, tokenizer.IdToToken(new_id)))
+    print_rank_0('> {}种token被替换为{}种'.format(len(other_map_id), len(set(int(i) for i in other_map_id))))
+    # load
+    s_model = unpacking_student_model(model).origin_model
+    s_model.map_vocab_paras['origin_id_to_target_pos'] = map_origin_id_to_target_pos
+    s_model.map_vocab_paras['origin_id_mask_map'] = origin_id_mask_map
+    s_model.map_vocab_paras['target_pos_to_origin_id'] = map_origin_pos_to_target_id
+    return True
 
 class NoneWith:
     def __enter__(*x): ...

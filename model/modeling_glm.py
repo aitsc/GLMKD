@@ -64,6 +64,7 @@ class GLMModel(torch.nn.Module):
                  spell_length=None,
                  spell_func='lstm',
                  attention_scale=1.0,
+                 map_vocab_size=None,
                  ):
 
         super(GLMModel, self).__init__()
@@ -72,12 +73,26 @@ class GLMModel(torch.nn.Module):
         self.output_predict = output_predict
         self.hidden_size = hidden_size
         self.vocab_size = vocab_size
+        self.map_vocab_size = map_vocab_size
 
         init_method = init_method_normal(std=0.02)
 
         # Word embeddings (parallel).
-        self.word_embeddings = mpu.VocabParallelEmbedding(
-            vocab_size, hidden_size, init_method=init_method)
+        if map_vocab_size:
+            self.word_embeddings = mpu.VocabParallelEmbedding(
+                map_vocab_size, hidden_size, init_method=init_method)
+            # 初始化映射, 无法直接使用, 需要外部赋值或加载已有数据
+            self.map_vocab_paras = {
+                # origin_id等价于origin_pos, 用途: 原始词表id映射到本地词表位置; 本地词表嵌入还原到原始词表嵌入顺序
+                'origin_id_to_target_pos': torch.ones(vocab_size, dtype=torch.int64) * map_vocab_size,
+                # True表示该词在词表中,False表示该词是映射词
+                'origin_id_mask_map': torch.ones(vocab_size, dtype=torch.bool),
+                # 位置 [map_vocab_size,vocab_size) 之间的token是映射的token
+                'target_pos_to_origin_id': torch.ones(vocab_size, dtype=torch.int64) * map_vocab_size,
+            }
+        else:
+            self.word_embeddings = mpu.VocabParallelEmbedding(
+                vocab_size, hidden_size, init_method=init_method)
 
         # Transformer
         self.transformer = mpu.GPT2ParallelTransformer(num_layers,
@@ -110,6 +125,7 @@ class GLMModel(torch.nn.Module):
                 prompt_pos=None, hook=None, hook_op=None):
         inter_vars = []
         # Embeddings.
+        input_ids = self.map_input_ids(input_ids)
         batch_size = input_ids.size(0)
         words_embeddings = self.word_embeddings(input_ids)
         hook_add(hook, inter_vars, 'words_embeddings', words_embeddings)
@@ -130,9 +146,7 @@ class GLMModel(torch.nn.Module):
 
         if self.output_predict:
             # Parallel logits.
-            logits_parallel = mpu.copy_to_model_parallel_region(
-                logits)
-            logits_parallel = F.linear(logits_parallel, self.word_embeddings.weight)
+            logits_parallel = self.map_logits_linear(logits)
             hook_add(hook, inter_vars, 'logits_parallel', logits_parallel)
 
             if self.parallel_output:
@@ -142,6 +156,28 @@ class GLMModel(torch.nn.Module):
         else:
             ret = (logits, *outputs)
         return hook_return(hook, inter_vars, ret)
+    
+    def map_input_ids(self, input_ids):
+        # 词表映射到转换的 word_embeddings
+        if not self.map_vocab_size:
+            return input_ids
+        origin_id_to_target_pos = self.map_vocab_paras['origin_id_to_target_pos']
+        return F.embedding(input_ids, origin_id_to_target_pos.unsqueeze(-1)).squeeze(-1)
+
+    def map_logits_linear(self, logits):
+        # 还原原始 word_embeddings 进行线性变换得到 logits_parallel
+        logits_parallel = mpu.copy_to_model_parallel_region(logits)
+        if self.map_vocab_size:
+            origin_id_to_target_pos = self.map_vocab_paras['origin_id_to_target_pos']
+            if mpu.get_model_parallel_world_size() == 1:  # 有微小偏差
+                logits = F.linear(logits_parallel, self.word_embeddings.weight)
+                return logits[..., origin_id_to_target_pos]
+            else:
+                origin_id_to_target_pos = mpu.scatter_to_model_parallel_region(origin_id_to_target_pos)
+                weight = self.word_embeddings(origin_id_to_target_pos)
+                return F.linear(logits_parallel, weight)
+        else:
+            return F.linear(logits_parallel, self.word_embeddings.weight)
 
 
 class GLMModel_empty(torch.nn.Module):

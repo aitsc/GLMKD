@@ -51,7 +51,7 @@ preserve_keys = [
     "torch_rng_state",
     "cuda_rng_state",
     "rng_tracker_states",
-
+    "important_nonparameters",
 ]
 
 if target_mp < len(filenames):

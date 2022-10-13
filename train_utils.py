@@ -10,7 +10,7 @@ from model import GLMModel, glm_get_params_for_weight_decay_optimization
 from model import GLMForMultiTokenCloze, GLMForMultiTokenClozeFast, GLMForSingleTokenCloze, GLMForSequenceClassification
 from model import PyTorchDistributedDataParallel as TorchDDP, DistributedDataParallel as LocalDDP
 from model.modeling_bert import BertForMultipleChoice, BertForSequenceClassification
-from utils import print_rank_0, get_checkpoint_name, get_checkpoint_iteration
+from utils import print_rank_0, get_checkpoint_name, get_checkpoint_iteration, build_important_nonparameters
 import time
 
 
@@ -54,6 +54,8 @@ def load_pretrained(model, checkpoint_path, args, task_tokens=None, sd=None):
                     block_position_weights,
                     model.state_dict()["transformer.block_position_embeddings.weight"].data)
                 print_rank_0(f"Extend block position embedding to {args.max_position_embeddings + 1}")
+    if 'important_nonparameters' in sd:
+        build_important_nonparameters(model, sd['important_nonparameters'])
     missing_keys, unexpected_keys = model.load_state_dict(sd['module'], strict=False)
     if missing_keys or unexpected_keys:
         print_rank_0(f"Missing keys {missing_keys}, unexpected keys {unexpected_keys}")
@@ -106,7 +108,8 @@ def get_model(args, model_type=None, multi_token=True, num_labels=None, spell_le
                          output_predict=output_predict,
                          spell_length=spell_length,
                          spell_func=args.prompt_func,
-                         attention_scale=args.attention_scale)
+                         attention_scale=args.attention_scale,
+                         map_vocab_size=args.map_vocab_size)
         if args.freeze_transformer:
             model.freeze_transformer(tune_prefix_layers=args.tune_prefix_layers)
         if glm_wrap is not None:

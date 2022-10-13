@@ -66,7 +66,7 @@
     3. finetune: ... --student_model=logitsdistil --distill_ft_soft --logitsdistil_wo_inter
 
 ## VocabDistil
-1. pretrain: ... --student_model=logitsdistil --distill_temperature=15 --map_vocab_size=0.5 --student_build_map_vocab --student_map_vocab_tn=0 --distill_logit_mask_map
+1. pretrain: ... --student_model=logitsdistil --distill_temperature=15 --map_vocab_size=0.5 --distill_logit_mask_map --student_build_map_vocab --student_map_vocab_tn=0 --student_map_vocab_method=decoder
 2. finetune: ... --student_model=logitsdistil --distill_temperature=1 --map_vocab_size=0.5 --distill_logit_mask_map
 3. finetune: ... --student_model=logitsdistil --distill_ft_soft --logitsdistil_wo_inter --map_vocab_size=0.5
 

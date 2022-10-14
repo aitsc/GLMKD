@@ -363,7 +363,7 @@ def build_map_vocab_for_student(model, teacher_models, args, tokenizer):
     map_origin_pos_to_target_id = torch.tensor(sort_id_L, device=torch.cuda.current_device())
     map_origin_id_to_target_pos = torch.tensor(origin_no_L, device=torch.cuda.current_device())
     # other 替换
-    other_id = map_origin_pos_to_target_id[args.map_vocab_size:]
+    other_id = map_origin_pos_to_target_id[args.map_vocab_size:].clone()
     if args.student_map_vocab_tn is None or len(teacher_models) <= args.student_map_vocab_tn:
         map_origin_id_to_target_pos[other_id] = origin_no_L[tokenizer.get_command('unk').Id]
         other_map_id = [tokenizer.get_command('unk').Id] * (args.vocab_size - args.map_vocab_size)
@@ -371,7 +371,7 @@ def build_map_vocab_for_student(model, teacher_models, args, tokenizer):
     else:
         t_model = teacher_models[args.student_map_vocab_tn]
         t_word_embeddings = find_model_inter_var(t_model, 'word_embeddings')
-        save_id = map_origin_pos_to_target_id[:args.map_vocab_size]
+        save_id = map_origin_pos_to_target_id[:args.map_vocab_size].clone()
         start_index, end_index = mpu.VocabUtility.vocab_range_from_global_vocab_size(
             args.vocab_size - args.map_vocab_size,
             mpu.get_model_parallel_rank(), mpu.get_model_parallel_world_size())

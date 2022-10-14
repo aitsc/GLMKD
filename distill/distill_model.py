@@ -1250,6 +1250,7 @@ class DIITO(GLMStudent):
 class LogitsDistil(GLMStudent):
     def __init__(self, language_model: GLMModel, args, **kwargs):
         super().__init__(language_model, args, **kwargs)
+        self.origin_id_to_origin_id = None  # 不在学生词表中的id被替换为替换的id
 
     def get_teacher_hook(self, **kwargs):
         hook_L = [super().get_teacher_hook(**kwargs)]
@@ -1266,6 +1267,23 @@ class LogitsDistil(GLMStudent):
                 hook['position_ids'] = None
             hook_L.append(hook)
         return merge_dict(hook_L)
+
+    def get_teacher_hook_op(self, t_no=0, **kwargs):
+        if not (self.origin_model.map_vocab_size and self.args.logitsdistil_teacher_input_ids_map):
+            return {}
+        if self.origin_id_to_origin_id is None:
+            origin_id_mask_map = self.origin_model.map_vocab_paras['origin_id_mask_map']
+            origin_id_to_target_pos = self.origin_model.map_vocab_paras['origin_id_to_target_pos']
+            target_pos_to_origin_id = self.origin_model.map_vocab_paras['target_pos_to_origin_id']
+            origin_id_to_origin_id = torch.arange(
+                0, len(origin_id_to_target_pos), 
+                dtype=origin_id_to_target_pos.dtype, 
+                device=origin_id_to_target_pos.device)
+            origin_id_to_origin_id[~origin_id_mask_map] = target_pos_to_origin_id[origin_id_to_target_pos[~origin_id_mask_map]]
+            self.origin_id_to_origin_id = origin_id_to_origin_id
+        def map_input_ids(input_ids, **kw):
+            return F.embedding(input_ids, self.origin_id_to_origin_id.unsqueeze(-1)).squeeze(-1)
+        return {'input_ids': map_input_ids}
 
     def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=False, t_no=None, **kwargs):
         loss_ = 0.

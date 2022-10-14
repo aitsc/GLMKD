@@ -125,6 +125,8 @@ class GLMModel(torch.nn.Module):
                 prompt_pos=None, hook=None, hook_op=None):
         inter_vars = []
         # Embeddings.
+        if hook_op and 'input_ids' in hook_op and callable(hook_op['input_ids']):
+            input_ids = hook_op['input_ids'](input_ids=input_ids)
         input_ids = self.map_input_ids(input_ids)
         batch_size = input_ids.size(0)
         words_embeddings = self.word_embeddings(input_ids)

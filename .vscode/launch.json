@@ -24,7 +24,7 @@
                 // deepspeed
                 "--master_port=10161",
                 "--include=localhost:1,6",
-                "--include=localhost:0",
+                "--include=localhost:1",
                 "distill/pretrain.py",
                 "--deepspeed_config=config/config_block_tiny6.json",
                 "--deepspeed-activation-checkpointing",
@@ -70,6 +70,7 @@
                 "--logitsdistil_top_n=0",
                 "--distill_temperature=15",
                 "--logitsdistil_teacher_min",
+                "--logitsdistil_teacher_input_ids_map",
                 // KD
                 // "--student_model=kd",
                 // "--distill_pt_soft",

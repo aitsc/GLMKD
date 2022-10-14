@@ -129,6 +129,7 @@ def get_args():
     py_parser.add_argument('--logitsdistil_top_n', type=int, default=None, help="大于0生效")
     py_parser.add_argument('--logitsdistil_teacher_min', action='store_true', help="将教师logits中top_n之后的值都置为最小值,而不是对学生logits进行约束,避免长尾难以压制的问题")
     py_parser.add_argument('--logitsdistil_wo_inter', action='store_true', help="不使用中间层,可用于二次微调")
+    py_parser.add_argument('--logitsdistil_teacher_input_ids_map', action='store_true', help="在学生map_vocab状态下,是否也对教师输入映射token,使得学生和教师输入一样")
 
     # multi-teacher 多个教师的模型参数用冒号分隔, 优先级高于 teacher_ 参数
     py_parser.add_argument('--mt_num_attention_heads', type=str, default='')

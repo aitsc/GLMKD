@@ -11,3 +11,4 @@ settings.json
 __pycache__/
 test*
 results.json
+samples/

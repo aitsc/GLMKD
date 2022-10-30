@@ -12,3 +12,4 @@ __pycache__/
 test*
 results.json
 samples/
+tmp_*

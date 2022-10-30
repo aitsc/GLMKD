@@ -9,6 +9,8 @@ import random
 import argparse
 import time
 import copy
+from tsc_base import put, get
+import random
 
 ap = 'data'  # 总目录
 
@@ -28,6 +30,7 @@ class Models:
             ('--tokenizer-type', 'BertWordPieceTokenizer'), 
             ('--load-pretrained', env['MODEL_PATH']),
             ('--fp16', None),
+            # ('--fp32-allreduce', None),
         ])
         if env.get('deepspeed_config') is None:
             suffix = env['deepspeed_config_suffix'] if 'deepspeed_config_suffix' in env else ''
@@ -129,7 +132,8 @@ class Models_pre:
             ('--num-attention-heads', '12'),
             ('--seq-length', '512'),
             ('--max-position-embeddings', '512'), 
-            ('--save', '{ap}/checkpoints/pretrain/block_tiny6'),
+            ('--save', '{ap}/checkpoints/pretrain/block_tiny6'),  # 模型保存位置
+            # f'--load', '{ap}/checkpoints/pretrain/block_tiny6/blocklm-blank07-31-07-36'),  # 保存文件夹名会和这个一样
             ('--resume-dataloader', None),
             ('--train-data', 'wiki'),
             ('--no-lazy-loader', None),
@@ -142,7 +146,8 @@ class Models_pre:
             ('--train-iters', '150000'),
             ('--lr-decay-ratio', '0.05'),
             ('--warmup', '.05'),
-            ('--fp16', None),
+            ('--fp16', None),  # 用 ds 还需要设置 deepspeed_config 中的 fp16
+            # ('--fp32-allreduce', None),
         ])
         if env.get('deepspeed_config') is None:
             suffix = env['deepspeed_config_suffix'] if 'deepspeed_config_suffix' in env else ''
@@ -160,7 +165,8 @@ class Models_pre:
             ('--num-attention-heads', '12'),
             ('--seq-length', '512'),
             ('--max-position-embeddings', '512'), 
-            ('--save', f'{ap}/checkpoints/pretrain/block_base'),
+            ('--save', f'{ap}/checkpoints/pretrain/block_base'),  # 模型保存位置
+            # ('--load', f'{ap}/checkpoints/pretrain/blocklm-base-blank'),  # 续跑
             ('--resume-dataloader', None),
             ('--train-data', 'bert-base'),
             ('--no-lazy-loader', None),
@@ -173,7 +179,8 @@ class Models_pre:
             ('--train-iters', '150000'),  # 迭代几次
             ('--lr-decay-ratio', '0.05'),
             ('--warmup', '.05'),
-            ('--fp16', None),
+            ('--fp16', None),  # 用 ds 还需要设置 deepspeed_config 中的 fp16
+            # ('--fp32-allreduce', None),
         ])
         if env.get('deepspeed_config') is None:
             suffix = env['deepspeed_config_suffix'] if 'deepspeed_config_suffix' in env else ''
@@ -672,7 +679,7 @@ class Scripts:
             ('--epochs', env['EPOCH_SINGLE']),
             ('--lr', env['LR_SINGLE']),
             ('--overwrite', None),
-            # ('--num-workers', '0'),
+            # ('--num-workers', '0'),  # 不使用多进程数据加载器方便调试
         ])
         return py_args
 
@@ -822,6 +829,10 @@ def ensure_directory_exists(filename):
         os.makedirs(dirname, exist_ok=True)
 
 
+def generate_unique():
+    return datetime.now().strftime('%y%m%d_%H%M%S.%f') + '_' + str(random.random())[2:]
+
+
 def auto_tune():
     global ap
     ap = os.path.expanduser('../GLM/data')
@@ -840,6 +851,10 @@ def auto_tune():
     py_parser.add_argument('--big_task_gpus', type=str, default=None, help='这个有值就会专门针对显存需求大的任务使用gpus和deepspeed_config')
     py_parser.add_argument('--big_task', type=str, default='record', help='针对这些任务(必须属于参数tasks)使用专门的gpus和deepspeed_config')
     py_parser.add_argument('--big_task_dsc_suffix', type=str, default='_big_task', help='大任务的 deepspeed_config 补充后缀')
+    # deepspeed_config 重构,会新建一个json文件用于模型调用
+    py_parser.add_argument('--ds_train_micro_batch_size_per_gpu', type=int, default=None, help='')
+    py_parser.add_argument('--ds_gradient_accumulation_steps', type=int, default=None, help='')
+    py_parser.add_argument('--ds_optimizer__params__lr', type=float, default=None, help='')
     # 不同任务微调可以选择特定的模型加载
     for t in [
         'copa', 'wsc_generative', 'cb', 'rte', 'boolq', 'wic', 'wsc', 'multirc', 'record',
@@ -1025,6 +1040,21 @@ def auto_tune():
                 ('--teacher_fp16', None),
             ]
         },
+        # 用于 distill24.1024_18.896_12.768-6.768_rl_kd
+        'distill24.1024_18.896_12.768-6.768_rl_kd': {
+            'args': lambda t: [
+                ('--mt_load_pretrained', ':'.join([
+                    f'{ap}/checkpoints/pretrain/blocklm-base-blank',
+                    task_t_load['tune_221009_173050.702880'][t], 
+                    task_t_load['tune_221006_170005.145602'][t], 
+                    task_t_load['large'][t]])),
+                ('--mt_num_layers', '12:12:18:24'),
+                ('--mt_hidden_size', '768:768:896:1024'),
+                ('--mt_num_attention_heads', '12:12:14:16'),
+                ('--mt_max_position_embeddings', '512:512:512:512'),
+                ('--teacher_fp16', None),
+            ]
+        },
     }
 
     max_output_L = []
@@ -1049,12 +1079,12 @@ def auto_tune():
             },
             'save_sub': args.save_sub,
         }
-        cmds = []
+        py_args_L = []
         py_args = create_cmd(**create_cmd_paras) + args_other
         if args.task_t_load:
             print('distill')
             teacher_args = task_t_load[args.task_t_load]['args'](task)
-            cmds.append(py_args_to_line(py_args + teacher_args))
+            py_args_L.append(py_args + teacher_args)
             create_cmd_paras['env']['MODEL_PATH'] = os.path.join(OrderedDict(py_args)['--save'], OrderedDict(py_args)['--experiment-name'])
             for again in [f'again_{i}__' for i in range(10)]:
                 again_args = [('--' + k.split('__', 1)[1], v) for k, v in args_again if re.search(f'^--{again}', k)]
@@ -1067,12 +1097,47 @@ def auto_tune():
                 again_args = [i for i in again_args if i not in same_S]
                 for same in same_S:
                     print('del', same)
+                # 修改 teacher_args
+                teacher_args_ = teacher_args
+                again_args, again_args_ = [], again_args
+                for k, v in again_args_:
+                    if k == '--task_t_load':
+                        teacher_args_ = task_t_load[v]['args'](task)
+                    else:
+                        again_args.append((k, v))
                 time.sleep(1.1)
-                py_args_pre = create_cmd(**create_cmd_paras) + teacher_args + args_other_ + again_args + [('--custom_first_eval', None)]
-                cmds.append(py_args_to_line(py_args_pre))
+                py_args_pre = create_cmd(**create_cmd_paras) + teacher_args_ + args_other_ + again_args + [('--custom_first_eval', None)]
+                py_args_L.append(py_args_pre)
             print()
         else:
+            py_args_L.append(py_args)
+        # cmds 处理
+        cmds = []
+        for py_args in py_args_L:
+            for i, (k, v) in enumerate(py_args):
+                if k in {'--deepspeed_config'} and v and os.path.exists(v):
+                    with open(v, 'r', encoding='utf8') as r:
+                        deepspeed_config = json.load(r)
+                    restructure = False
+                    for dsk, dsv in vars(args).items():
+                        if dsk[:3] != 'ds_' or dsv is None:
+                            continue
+                        key = dsk[3:].split('__')
+                        origin_dsv = get(key, deepspeed_config)
+                        if origin_dsv == dsv:
+                            continue
+                        print(f'deepspeed_config: {key}: {origin_dsv} → {put(key, deepspeed_config, dsv)}')
+                        restructure = True
+                    if restructure:
+                        config_path = 'tmp_deepspeed_config'
+                        if not os.path.exists(config_path):
+                            os.mkdir(config_path)
+                        config_path = os.path.join(config_path, generate_unique() + '.json')
+                        py_args[i] = (py_args[i][0], config_path)
+                        with open(config_path, 'w', encoding='utf8') as w:
+                            json.dump(deepspeed_config, w, ensure_ascii=False, indent=2, sort_keys=True)
             cmds.append(py_args_to_line(py_args))
+        # 运行与捕获
         for cmd in cmds:
             custom_tmp_result = custom_tmp_result_f()
             cmd += ' --custom_tmp_result=' + custom_tmp_result

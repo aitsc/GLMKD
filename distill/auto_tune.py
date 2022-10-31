@@ -882,6 +882,7 @@ def auto_tune():
         else:
             args_other_.append((k, v))
     args_other = args_other_
+    args_other_D = {k: v for k, v in args_other}
     print('args_other:', args_other)
     print('args_again:', args_again)
     # args 处理
@@ -1065,6 +1066,10 @@ def auto_tune():
     Tasks.EPOCH_SINGLE = getattr(Tasks, args.epoch_type)
     for tn, task in [(i, getattr(Tasks, i)) for i in args.tasks.split(',')]:
         task_model_path = getattr(args, f'{tn}_model_path') if hasattr(args, f'{tn}_model_path') else ''
+        if '--student_model' in args_other_D and args.save_sub is None:
+            save_sub = f'ft_{args_other_D["--student_model"]}'
+        else:
+            save_sub = args.save_sub
         create_cmd_paras = {
             'script': getattr(Scripts, args.script),
             'model': getattr(Models, args.model),
@@ -1077,7 +1082,7 @@ def auto_tune():
                 'MASK_RATIO': args.mask_ratio,
                 **({'deepspeed_config_suffix': args.big_task_dsc_suffix} if tn in big_tasks else {})
             },
-            'save_sub': args.save_sub,
+            'save_sub': save_sub,
         }
         py_args_L = []
         py_args = create_cmd(**create_cmd_paras) + args_other

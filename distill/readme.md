@@ -61,10 +61,10 @@
         - --distill_logit_mask_pad
     3. finetune: ... --student_model=kd --distill_ft_soft
 - new method
-    1. pretrain: ... --student_model=logitsdistil --logitsdistil_top_n=20 --distill_temperature=15 --logitsdistil_teacher_min
-        - --logitsdistil_mask_pad --logitsdistil_mse
-    2. finetune: ... --student_model=logitsdistil --logitsdistil_top_n=20 --distill_temperature=15 --logitsdistil_teacher_min
-        - --logitsdistil_mask_pad --logitsdistil_mse
+    1. pretrain: ... --student_model=logitsdistil --distill_temperature=15
+        - --logitsdistil_mask_pad --logitsdistil_mse --logitsdistil_top_n=20 --logitsdistil_teacher_min
+    2. finetune: ... --student_model=logitsdistil --distill_temperature=15
+        - --logitsdistil_mask_pad --logitsdistil_mse --logitsdistil_top_n=20 --logitsdistil_teacher_min
     3. finetune: ... --student_model=logitsdistil --distill_ft_soft --logitsdistil_wo_inter
 
 ## VocabDistil

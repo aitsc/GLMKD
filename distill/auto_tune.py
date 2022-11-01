@@ -916,6 +916,7 @@ def auto_tune():
     py_parser.add_argument('--big_task', type=str, default='record', help='针对这些任务(必须属于参数tasks)使用专门的gpus和deepspeed_config')
     py_parser.add_argument('--big_task_dsc_suffix', type=str, default='_big_task', help='大任务的 deepspeed_config 补充后缀')
     py_parser.add_argument('--show_tune', type=str, default='', help='只用来展示保存的tune文件,而不是运行')
+    py_parser.add_argument('--rate_arg_epochs', type=float, default=1., help='倍率,对所有任务的epochs乘以这个倍率')
     # deepspeed_config 重构,会新建一个json文件用于模型调用
     # 多个值用英文分号分隔,与--tasks一一对应; 保证原始deepspeed配置文件中有对应值做类型转换; bool用有值和无值代替True/False
     py_parser.add_argument('--ds_train_micro_batch_size_per_gpu', type=str, default=None, help='')
@@ -1142,7 +1143,8 @@ def auto_tune():
     print(str(datetime.now()), 'max_output_path:', max_output_path, '\n')
     custom_tmp_result_f = lambda: f"{ap}/tmp/result_{datetime.now().strftime('%y%m%d_%H%M%S.%f')}.json"
     Tasks.EPOCH_SINGLE = getattr(Tasks, args.epoch_type)
-    rate_ds_S = {k[5:]: v for k, v in vars(args).items() if k[:8] == 'rate_ds_'}  # ds_ 倍率
+    rate_ds_D = {k[5:]: v for k, v in vars(args).items() if k[:8] == 'rate_ds_'}  # ds_ 倍率
+    rate_arg_D = {'--' + k[9:]: v for k, v in vars(args).items() if k[:9] == 'rate_arg_'}  # arg_ 倍率
     for tni, (tn, task) in enumerate([(i, getattr(Tasks, i)) for i in args.tasks.split(',')]):
         task_model_path = getattr(args, f'{tn}_model_path') if hasattr(args, f'{tn}_model_path') else ''
         if '--student_model' in args_other_D and args.save_sub is None:
@@ -1212,8 +1214,8 @@ def auto_tune():
                             assert len(dsv.split(';')) == len(args.tasks.split(',')), '任务和ds_数量不对应'
                             dsv = dsv.split(';')[tni]
                         dsv = type(origin_dsv)(dsv)
-                        if dsk in rate_ds_S:
-                            dsv *= rate_ds_S[dsk]
+                        if dsk in rate_ds_D:
+                            dsv *= rate_ds_D[dsk]
                             dsv = type(origin_dsv)(dsv)
                         if origin_dsv == dsv:
                             continue
@@ -1227,6 +1229,12 @@ def auto_tune():
                         py_args[i] = (py_args[i][0], config_path)
                         with open(config_path, 'w', encoding='utf8') as w:
                             json.dump(deepspeed_config, w, ensure_ascii=False, indent=2, sort_keys=True)
+                if k in rate_arg_D:
+                    if k in {'--epochs'}:
+                        v_ = str(int(rate_arg_D[k] * int(v)))
+                        if v != v_:
+                            print(f'{k}: {v} → {v_}')
+                            py_args[i] = (py_args[i][0], v_)
             cmds.append(py_args_to_line(py_args))
         # 运行与捕获
         for cmd in cmds:

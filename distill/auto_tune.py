@@ -19,7 +19,7 @@ class Models:
     def model_blocklm_base(env: dict, **kw):
         env['MODEL_TYPE'] = "blank-base"
         if env.get('MODEL_PATH') is None:
-            env['MODEL_PATH'] = f"{ap}/checkpoints/pretrain/blocklm-base-blank"
+            env['MODEL_PATH'] = f"{ap}/checkpoints/pretrain/blocklm-base-blank"  # 官方模型
         env['MODEL_ARGS'] = ([
             ('--block-lm', None),
             ('--num-layers', '12'), 
@@ -40,6 +40,8 @@ class Models:
     @staticmethod
     def block_tiny6(env: dict, **kw):
         env['MODEL_TYPE'] = "blank-tiny6"
+        if env.get('MODEL_PATH') is None:
+            env['MODEL_PATH'] = f"{ap}/checkpoints/pretrain/block_tiny6/blocklm-blank07-31-07-36"  # tiny6(fp16)+wiki(15G) 128*285000
         env['MODEL_ARGS'] = ([
             ('--block-lm', None), 
             ('--num-layers', '6'), 
@@ -57,10 +59,31 @@ class Models:
         return env
 
     @staticmethod
+    def block_tiny6_516(env: dict, **kw):
+        env['MODEL_TYPE'] = "blank-tiny6"
+        if env.get('MODEL_PATH') is None:
+            env['MODEL_PATH'] = f"{ap}/checkpoints/pretrain/block_tiny6/blocklm-blank07-31-07-36"  # tiny6(fp16)+wiki(15G) 128*285000
+        env['MODEL_ARGS'] = ([
+            ('--block-lm', None), 
+            ('--num-layers', '6'), 
+            ('--hidden-size', '516'), 
+            ('--num-attention-heads', '12'), 
+            ('--max-position-embeddings', '512'), 
+            ('--tokenizer-model-type', 'bert-base-uncased'), 
+            ('--tokenizer-type', 'BertWordPieceTokenizer'), 
+            ('--load-pretrained', env['MODEL_PATH']),
+            ('--fp16', None),
+        ])
+        if env.get('deepspeed_config') is None:
+            suffix = env['deepspeed_config_suffix'] if 'deepspeed_config_suffix' in env else ''
+            env['deepspeed_config'] = f'config_tasks/config_blocklm_tiny6{suffix}.json'
+        return env
+
+    @staticmethod
     def model_blocklm_large(env: dict, **kw):
         env['MODEL_TYPE'] = "blank-large"
         if env.get('MODEL_PATH') is None:
-            env['MODEL_PATH'] = f"{ap}/checkpoints/pretrain/blocklm-large-blank"
+            env['MODEL_PATH'] = f"{ap}/checkpoints/pretrain/blocklm-large-blank"  # 官方模型
         env['MODEL_ARGS'] = ([
             ('--block-lm', None),
             ('--num-layers', '24'), 
@@ -78,10 +101,51 @@ class Models:
         return env
 
     @staticmethod
+    def block_tiny4(env: dict, **kw):
+        env['MODEL_TYPE'] = "blank-tiny4"
+        if env.get('MODEL_PATH') is None:
+            env['MODEL_PATH'] = f"{ap}/checkpoints/pretrain/block_tiny4/blocklm-blank07-31-07-36"
+        env['MODEL_ARGS'] = ([
+            ('--block-lm', None), 
+            ('--num-layers', '4'), 
+            ('--hidden-size', '768'), 
+            ('--num-attention-heads', '12'), 
+            ('--max-position-embeddings', '512'), 
+            ('--tokenizer-model-type', 'bert-base-uncased'), 
+            ('--tokenizer-type', 'BertWordPieceTokenizer'), 
+            ('--load-pretrained', env['MODEL_PATH']),
+            ('--fp16', None),
+        ])
+        if env.get('deepspeed_config') is None:
+            suffix = env['deepspeed_config_suffix'] if 'deepspeed_config_suffix' in env else ''
+            env['deepspeed_config'] = f'config_tasks/config_blocklm_tiny6{suffix}.json'
+        return env
+
+    @staticmethod
+    def block_tiny24_4(env: dict, **kw):
+        env['MODEL_TYPE'] = "blank-tiny4"
+        if env.get('MODEL_PATH') is None:
+            env['MODEL_PATH'] = f"{ap}/checkpoints/pretrain/block_tiny4/blocklm-blank07-31-07-36"
+        env['MODEL_ARGS'] = ([
+            ('--block-lm', None), 
+            ('--num-layers', '4'), 
+            ('--hidden-size', '768'), 
+            ('--num-attention-heads', '16'), 
+            ('--max-position-embeddings', '512'), 
+            ('--tokenizer-model-type', 'bert-base-uncased'), 
+            ('--tokenizer-type', 'BertWordPieceTokenizer'), 
+            ('--load-pretrained', env['MODEL_PATH']),
+        ])
+        if env.get('deepspeed_config') is None:
+            suffix = env['deepspeed_config_suffix'] if 'deepspeed_config_suffix' in env else ''
+            env['deepspeed_config'] = f'config_tasks/config_blocklm_tiny4_fp32{suffix}.json'
+        return env
+
+    @staticmethod
     def model_blocklm_10B(env: dict, **kw):
         env['MODEL_TYPE'] = "blocklm-10B"
         if env.get('MODEL_PATH') is None:
-            env['MODEL_PATH'] = f"{ap}/checkpoints/pretrain/blocklm-xxlarge"
+            env['MODEL_PATH'] = f"{ap}/checkpoints/pretrain/blocklm-xxlarge"  # 官方模型
         env['MODEL_ARGS'] = ([
             ('--block-lm', None),
             ('--task-mask', None), 
@@ -102,7 +166,7 @@ class Models:
     def model_blocklm_10B_chinese(env: dict, **kw):
         env['MODEL_TYPE'] = "blocklm-10B"
         if env.get('MODEL_PATH') is None:
-            env['MODEL_PATH'] = f"{ap}/checkpoints/pretrain/blocklm-xxlarge-zh"
+            env['MODEL_PATH'] = f"{ap}/checkpoints/pretrain/blocklm-xxlarge-zh"  # 官方模型
         env['MODEL_ARGS'] = ([
             ('--block-lm', None),
             ('--task-mask', None), 
@@ -851,10 +915,12 @@ def auto_tune():
     py_parser.add_argument('--big_task_gpus', type=str, default=None, help='这个有值就会专门针对显存需求大的任务使用gpus和deepspeed_config')
     py_parser.add_argument('--big_task', type=str, default='record', help='针对这些任务(必须属于参数tasks)使用专门的gpus和deepspeed_config')
     py_parser.add_argument('--big_task_dsc_suffix', type=str, default='_big_task', help='大任务的 deepspeed_config 补充后缀')
+    py_parser.add_argument('--show_tune', type=str, default='', help='只用来展示保存的tune文件,而不是运行')
     # deepspeed_config 重构,会新建一个json文件用于模型调用
-    py_parser.add_argument('--ds_train_micro_batch_size_per_gpu', type=int, default=None, help='')
-    py_parser.add_argument('--ds_gradient_accumulation_steps', type=int, default=None, help='')
-    py_parser.add_argument('--ds_optimizer__params__lr', type=float, default=None, help='')
+    # 多个值用英文分号分隔,与--tasks一一对应; 保证原始deepspeed配置文件中有对应值做类型转换; bool用有值和无值代替True/False
+    py_parser.add_argument('--ds_train_micro_batch_size_per_gpu', type=str, default=None, help='')
+    py_parser.add_argument('--ds_gradient_accumulation_steps', type=str, default=None, help='')
+    py_parser.add_argument('--ds_optimizer__params__lr', type=str, default=None, help='')
     # 不同任务微调可以选择特定的模型加载
     for t in [
         'copa', 'wsc_generative', 'cb', 'rte', 'boolq', 'wic', 'wsc', 'multirc', 'record',
@@ -868,6 +934,16 @@ def auto_tune():
     # py_parser.add_argument('--again_3__tinybert_ft_pre', action='store_true')
     # py_parser.add_argument('--again_3__tinybert_ft_hard', action='store_true')
     args, args_other = py_parser.parse_known_args()
+    # read tune
+    if args.show_tune:
+        path = os.path.expanduser(args.show_tune)
+        if os.path.exists(path):
+            with open(path, 'r', encoding='utf8') as r:
+                max_output_L = json.load(r)
+            show_max_output_L(max_output_L)
+            print(args.show_tune)
+            return max_output_L
+    # 初始化
     if len(sys.argv) < 2:
         args.test = True
     print('args:', vars(args))
@@ -1064,7 +1140,7 @@ def auto_tune():
     print(str(datetime.now()), 'max_output_path:', max_output_path, '\n')
     custom_tmp_result_f = lambda: f"{ap}/tmp/result_{datetime.now().strftime('%y%m%d_%H%M%S.%f')}.json"
     Tasks.EPOCH_SINGLE = getattr(Tasks, args.epoch_type)
-    for tn, task in [(i, getattr(Tasks, i)) for i in args.tasks.split(',')]:
+    for tni, (tn, task) in enumerate([(i, getattr(Tasks, i)) for i in args.tasks.split(',')]):
         task_model_path = getattr(args, f'{tn}_model_path') if hasattr(args, f'{tn}_model_path') else ''
         if '--student_model' in args_other_D and args.save_sub is None:
             save_sub = f'ft_{args_other_D["--student_model"]}'
@@ -1129,6 +1205,10 @@ def auto_tune():
                             continue
                         key = dsk[3:].split('__')
                         origin_dsv = get(key, deepspeed_config)
+                        if ';' in dsv:
+                            assert len(dsv.split(';')) == len(args.tasks.split(',')), '任务和ds_数量不对应'
+                            dsv = dsv.split(';')[tni]
+                        dsv = type(origin_dsv)(dsv)
                         if origin_dsv == dsv:
                             continue
                         print(f'deepspeed_config: {key}: {origin_dsv} → {put(key, deepspeed_config, dsv)}')
@@ -1164,6 +1244,17 @@ def auto_tune():
 
 def show_max_output_L(max_output_L):
     metrics = ['f1a', 'f1', 'f1-macro', 'em', 'acc', 'accuracy', 'ppl', 'rouge-1', 'rouge-2', 'rouge-l']
+    all_lines_ = OrderedDict([
+        ('task', []),
+        ('metric', []),
+        ('result', []),
+        ('epoch', []),
+        ('all_epoch', []),
+        ('final_epoch', []),
+    ])  # 结果放在每一行
+    all_lines_L = []  # 每组任务一个
+    same_task_num = 0  # 相似的任务出现几次
+    last_task = None  # 上一次任务是什么
     for max_output in max_output_L:
         print(max_output['*cmd'])
         print(max_output['args']['save'])
@@ -1189,6 +1280,22 @@ def show_max_output_L(max_output_L):
             if m in score_dict_:
                 out.append(score_dict_[m])
                 out_name.append(m)
+        # 尝试分段对应
+        if last_task == (max_output['args']['task'], max_output['args']['wsc_negative']):
+            same_task_num += 1
+        else:
+            last_task = (max_output['args']['task'], max_output['args']['wsc_negative'])
+            same_task_num = 0
+        if same_task_num > len(all_lines_L) - 1:
+            all_lines_L.append(copy.deepcopy(all_lines_))
+        all_lines = all_lines_L[same_task_num]
+        all_lines['task'] += len(out) * [max_output['args']['task']]
+        all_lines['metric'] += out_name
+        all_lines['result'] += out
+        all_lines['epoch'] += len(out) * [max_score_dict_['epoch']]
+        all_lines['all_epoch'] += len(out) * [max_output['args']['epochs']]
+        all_lines['final_epoch'] += len(out) * [max_output['epoch']]
+        # 输出处理
         out_name += ['epoch', 'all_epoch', 'final_epoch']
         out += [max_score_dict_['epoch'], max_output['args']['epochs'], max_output['epoch']]
         if max_output['args']['epochs'] != max_output['epoch'] + 1 and max_output['epoch'] != -1:
@@ -1196,14 +1303,41 @@ def show_max_output_L(max_output_L):
         print('\t', '\t'.join(out_name))
         print('*1\t', '\t'.join([str(i) for i in out]))
         print('*100\t', '\t'.join([str(i * 100 if i is not None and 0 < i <= 1 else i) for i in out]))
+    # 尝试分段对应
+    for seg_i, all_lines in enumerate(all_lines_L):
+        print()
+        print(f'第{seg_i}组整合结果到一行:')
+        for k, v in all_lines.items():
+            if k == 'result':
+                print('*1\t', '\t'.join([str(i) for i in v]))
+                print('*100\t', '\t'.join([str(i * 100 if i is not None and 0 < i <= 1 else i) for i in v]))
+            else:
+                print(f'{k}\t', '\t'.join([str(i) for i in v]))
 
 
 if __name__ == '__main__':
     auto_tune()
     if len(sys.argv) < 2:
-        # 出现连续epoch=0的可能是跑第一轮报错,然后又有结果文件导致跳过了
-        path = 'tune_221014_102305.446804.json'
-        path = os.path.expanduser(path)
-        with open(path, 'r', encoding='utf8') as r:
-            max_output_L = json.load(r)
-        show_max_output_L(max_output_L)
+        model = model_pre = task = None
+        print()
+        for script, model, model_pre, task, ds in [
+            # ('finetune_superglue', 'block_tiny6', '', 'copa', False),
+            # ('pretrain_nvidia', '', 'block_base', '', True),
+            # ('finetune_seq2seq', 'model_blocklm_base', '', 'seq_cnndm_org', True),
+        ] + [  # 模版
+            *[('finetune_superglue', 'model_blocklm_10B', '', i, True) for i in 'copa,wsc_generative,cb,rte,boolq,wic,wsc,multirc,record'.split(',')],
+            *[('finetune_seq2seq', 'model_blocklm_10B', '', i, True) for i in 'seq_cnndm_org,seq_xsum,seq_gigaword'.split(',')],
+        ]:
+            print('###' + f' task: {task}, model: {model}, model_pre: {model_pre}, script: {script}, ds: {ds}')
+            if model in {'model_blocklm_10B'}:
+                Tasks.EPOCH_SINGLE = Tasks.XXLARGE_EPOCH
+            else:
+                Tasks.EPOCH_SINGLE = Tasks.EPOCH_SINGLE_
+            py_args = create_cmd(
+                getattr(Scripts, script), 
+                getattr(Models, model) if model else None, 
+                getattr(Models_pre, model_pre) if model_pre else None, 
+                getattr(Tasks, task) if task else None, 
+                ds=ds)
+            print(py_args_to_line(py_args))
+            print()

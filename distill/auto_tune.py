@@ -921,6 +921,8 @@ def auto_tune():
     py_parser.add_argument('--ds_train_micro_batch_size_per_gpu', type=str, default=None, help='')
     py_parser.add_argument('--ds_gradient_accumulation_steps', type=str, default=None, help='')
     py_parser.add_argument('--ds_optimizer__params__lr', type=str, default=None, help='')
+    py_parser.add_argument('--rate_ds_train_micro_batch_size_per_gpu', type=float, default=1., help='倍率,配合gpus和ds多个值使用')
+    py_parser.add_argument('--rate_ds_gradient_accumulation_steps', type=float, default=1., help='倍率,配合gpus和ds多个值使用')
     # 不同任务微调可以选择特定的模型加载
     for t in [
         'copa', 'wsc_generative', 'cb', 'rte', 'boolq', 'wic', 'wsc', 'multirc', 'record',
@@ -1140,6 +1142,7 @@ def auto_tune():
     print(str(datetime.now()), 'max_output_path:', max_output_path, '\n')
     custom_tmp_result_f = lambda: f"{ap}/tmp/result_{datetime.now().strftime('%y%m%d_%H%M%S.%f')}.json"
     Tasks.EPOCH_SINGLE = getattr(Tasks, args.epoch_type)
+    rate_ds_S = {k[5:]: v for k, v in vars(args).items() if k[:8] == 'rate_ds_'}  # ds_ 倍率
     for tni, (tn, task) in enumerate([(i, getattr(Tasks, i)) for i in args.tasks.split(',')]):
         task_model_path = getattr(args, f'{tn}_model_path') if hasattr(args, f'{tn}_model_path') else ''
         if '--student_model' in args_other_D and args.save_sub is None:
@@ -1209,6 +1212,9 @@ def auto_tune():
                             assert len(dsv.split(';')) == len(args.tasks.split(',')), '任务和ds_数量不对应'
                             dsv = dsv.split(';')[tni]
                         dsv = type(origin_dsv)(dsv)
+                        if dsk in rate_ds_S:
+                            dsv *= rate_ds_S[dsk]
+                            dsv = type(origin_dsv)(dsv)
                         if origin_dsv == dsv:
                             continue
                         print(f'deepspeed_config: {key}: {origin_dsv} → {put(key, deepspeed_config, dsv)}')

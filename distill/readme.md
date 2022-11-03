@@ -6,6 +6,10 @@
 - finetune: ... --student_model=kd --distill_ft_soft --distill_ft_hard --distill_temperature=10
     - --distill_ft_soft_kl
 
+## PD
+- pretrain: without teacher
+- finetune: ... --student_model=kd --distill_ft_soft --distill_temperature=1
+
 ## TinyBERT
 1. pretrain-inter: ... --student_model=tinybert
 2. finetune-inter: ... --student_model=tinybert

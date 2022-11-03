@@ -11,6 +11,7 @@ import time
 import copy
 from tsc_base import put, get
 import random
+import traceback
 
 ap = 'data'  # 总目录
 
@@ -1242,14 +1243,26 @@ def auto_tune():
             cmd += ' --custom_tmp_result=' + custom_tmp_result
             print(cmd, '\n')
             if not args.test:
-                os.system(cmd)
-                # 处理输出
-                print(str(datetime.now()), 'max_output_path:', max_output_path)
-                with open(custom_tmp_result, 'r', encoding='utf8') as r:
-                    max_output_L.append(json.load(r))
+                sleep_t = 30
+                while True:
+                    try:
+                        os.system(cmd)
+                        print(str(datetime.now()), 'max_output_path:', max_output_path)
+                        with open(custom_tmp_result, 'r', encoding='utf8') as r:
+                            max_output = json.load(r)
+                        assert max_output['args']['epochs'] == max_output['epoch'] + 1 or max_output['epoch'] == -1,\
+                            f"epoch未跑完:{max_output['epoch']},{sleep_t}秒后重新运行相同的命令!"
+                    except:
+                        traceback.print_exc()
+                        print(f'错误, {sleep_t}秒后重新运行相同的命令!')
+                        time.sleep(sleep_t)
+                        continue
+                    # 处理输出
+                    max_output_L.append(max_output)
                     max_output_L[-1]['*cmd'] = cmd
-                with open(max_output_path, 'w', encoding='utf8') as w:
-                    json.dump(max_output_L, w, ensure_ascii=False, indent=2)
+                    with open(max_output_path, 'w', encoding='utf8') as w:
+                        json.dump(max_output_L, w, ensure_ascii=False, indent=2)
+                    break
     # output
     show_max_output_L(max_output_L)
     print(str(datetime.now()), 'max_output_path:', max_output_path)

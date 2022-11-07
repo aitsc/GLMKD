@@ -7,8 +7,8 @@
     - --distill_ft_soft_kl
 
 ## PD
-- pretrain: without teacher
-- finetune: ... --student_model=kd --distill_ft_soft --distill_temperature=1
+1. pretrain: without teacher
+2. finetune: ... --student_model=kd --distill_ft_soft --distill_temperature=1
 
 ## TinyBERT
 1. pretrain-inter: ... --student_model=tinybert
@@ -77,6 +77,17 @@
 2. finetune: ... --student_model=logitsdistil --distill_temperature=1 --map_vocab_size=0.5 --distill_logit_mask_map
     - --logitsdistil_teacher_input_ids_map
 3. finetune: ... --student_model=logitsdistil --distill_ft_soft --logitsdistil_wo_inter --map_vocab_size=0.5
+
+## SID
+1. pretrain: without teacher
+2. finetune: ... --student_model=sid --sid_accumulate_t=0 --sid_lim_e=avg --distill_ft_soft --distill_temperature=1
+
+## ALP_KD
+- finetune: ... --student_model=alp_kd --alp_kd_lambda=0.2 --distill_soft_rate=0.7 --distill_hard_rate=0.1 --distill_temperature=20 --student_truncate_tn=0 --distill_ft_soft --distill_ft_hard
+
+## CKD
+1. pretrain: without teacher
+2. finetune: ... --student_model=ckd --ckd_window_size=21 --ckd_wrdist_w=1 --ckd_ltrdist_w=1 --ckd_wrangle_w=10 --ckd_ltrangle_w=10 --distill_ft_soft --distill_ft_hard --distill_temperature=3 --distill_soft_rate=0.9 --distill_hard_rate=0.1
 
 
 # Multi-teacher distillation

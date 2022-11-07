@@ -14,7 +14,8 @@ from fp16 import fp32_to_fp16, fp16_to_fp32
 from distill.tools import aux_layer, get_checkpoint_forward_args
 import random
 import copy
-from distill.cite_mgskd import SampleLoss, TokenPhraseLoss
+from distill.cite.mgskd import SampleLoss, TokenPhraseLoss
+from distill.cite.ckd import WR_Dist, WR_Angle_window, LTR_Dist, LTR_Angle
 from mpu import checkpoint, get_cuda_rng_tracker
 import deepspeed
 from distill.custom_loss import CustomLoss
@@ -22,6 +23,15 @@ from distill.custom_loss import CustomLoss
 
 class GLMStudent(torch.nn.Module):
     def __init__(self, language_model: GLMModel, args, show_pre=True, show_inter=True, summary_loss=True, **kwargs):
+        """学生模型
+
+        Args:
+            language_model (GLMModel): 原始模型
+            args (argparse.Namespace): 所有全局参数
+            show_pre (bool, optional): 是否显示预测层的层使用和计算情况
+            show_inter (bool, optional): 是否显示中间层的层使用和计算情况
+            summary_loss (bool, optional): 是否记录各种loss到tensorboard,还依赖summary_writer
+        """
         super().__init__()
         self.origin_model = GLMModel_empty(language_model) if args.student_use_empty_glm else language_model
         self.args = args
@@ -62,6 +72,19 @@ class GLMStudent(torch.nn.Module):
         return self.origin_model(*inputs, **kwargs)
 
     def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=False, t_no=None, **kwargs):
+        """内存损失计算
+
+        Args:
+            s_inter_vars (list): hook对应的所有张量
+            t_inter_vars (list): hook对应的所有张量
+            s_hook (dict): {'name':序号,..}; 学生的hook
+            t_hook (dict): {'name':序号,..}; 教师的hook
+            keep_batch (bool, optional): 是否对返回的loss保留每个样本的loss
+            t_no (int, optional): 多教师时该教师的序号
+
+        Returns:
+            tensor: loss
+        """
         loss_ = 0.
         # logits_parallel
         if self.args.distill_logits_parallel and 'logits_parallel' in s_hook and s_inter_vars:
@@ -98,6 +121,22 @@ class GLMStudent(torch.nn.Module):
         return loss_
 
     def pre_loss(self, s_logits, t_logits, loss, loss_mask=None, return_dict=False, labels=False, keep_batch=False, t_no=None, **kwargs):
+        """下游任务预测层损失
+
+        Args:
+            s_logits (tensor): 学生的下游任务logits
+            t_logits (tensor): 教师的下游任务logits
+            loss (tensor): 学生的硬标签损失
+            loss_mask (tensor, optional): (batch_size,seq_len); 1的位置代表part b,0表示为part a+pad
+            return_dict (bool, optional): 是否返回loss的各个部分,用于其他方法加权处理
+            labels (bool, optional): (batch_size,seq_len); 0表示pad符号或者文档结束符,大于0则是其他的token id
+                注意part b中间部分也可能存在0
+            keep_batch (bool, optional): 是否对返回的loss保留每个样本的loss
+            t_no (int, optional): 多教师时该教师的序号
+
+        Returns:
+            tensor or dict: 总和损失或者分开的损失
+        """
         loss_ = 0.
         self.pre_loss_description = 'pre_loss: 0'
         T = self.args.distill_temperature
@@ -269,10 +308,10 @@ class TinyBERT(GLMStudent):
             hook = {'transformer': {'layers': {0: {'layernorm_output': None}}}}
         else:
             hook ={'transformer': {
-                'layers': {} if self.args.tinybert_inter_final else {
-                    **{i: {'layernorm_output': None} for i in layers[1 if self.args.tinybert_wo_emb else 0:-1]},
-                    **({} if self.args.tinybert_wo_att else {i - 1: {'attention_scores': None} for i in layers[1:]}),
-                },
+                'layers': {} if self.args.tinybert_inter_final else merge_dict([
+                    {i: {'layernorm_output': None} for i in layers[1 if self.args.tinybert_wo_emb else 0:-1]},
+                    {} if self.args.tinybert_wo_att else {i - 1: {'attention_scores': None} for i in layers[1:]},
+                ]),
                 **({} if self.args.tinybert_wo_final else {'output': None}),
             }}
         if (self.args.tinybert_only_emb_final or self.args.tinybert_inter_final) and self.args.tinybert_custom_final > 1:
@@ -1373,6 +1412,237 @@ class LogitsDistil(GLMStudent):
         return loss_
 
 
+class SID(GLMStudent):
+    def __init__(self, language_model, args, **kwargs):
+        super().__init__(language_model, args, **kwargs)
+        self.nextLockedLay = 1
+
+    def get_teacher_hook(self, t_no=0, **kwargs):
+        hook_L = [super().get_teacher_hook(t_no=0, **kwargs)]
+        layers = cumulative_sum(fast_uniform_seg(self.args.num_layers, [1] * self.args.teacher_num_layers))
+        if self.nextLockedLay < self.args.num_layers:
+            layers = layers[:self.nextLockedLay]
+            hook ={'transformer': {
+                'layers': merge_dict([
+                    {i: {'layernorm_output': None} for i in layers},
+                    {i - 1: {'attention_scores': None} for i in layers},
+                ]),
+            }}
+        elif self.nextLockedLay == self.args.num_layers:
+            hook ={'transformer': {
+                'layers': merge_dict([
+                    {i: {'layernorm_output': None} for i in layers[:-1]},
+                    {i - 1: {'attention_scores': None} for i in layers},
+                ]),
+                'output': None,
+            }}
+        else:
+            hook = {}
+        hook_L.append(hook)
+        return merge_dict(hook_L)
+
+    def get_student_hook(self, **kwargs):
+        hook_L = [super().get_student_hook(**kwargs)]
+        layers = tuple(range(1, self.args.num_layers + 1))
+        if self.nextLockedLay < self.args.num_layers:
+            layers = layers[:self.nextLockedLay]
+            hook ={'transformer': {
+                'layers': merge_dict([
+                    {i: {'layernorm_output': None} for i in layers},
+                    {i - 1: {'attention_scores': None} for i in layers},
+                ]),
+            }}
+        elif self.nextLockedLay == self.args.num_layers:
+            hook ={'transformer': {
+                'layers': merge_dict([
+                    {i: {'layernorm_output': None} for i in layers[:-1]},
+                    {i - 1: {'attention_scores': None} for i in layers},
+                ]),
+                'output': None,
+            }}
+        else:
+            hook = {}
+        hook_L.append(hook)
+        return merge_dict(hook_L)
+
+    def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=False, t_no=None, **kwargs):
+        loss_ = 0.
+        if len(s_inter_vars) == 0:
+            return loss_
+        def get_layer_f(st, name):
+            inter_vars, hook = (s_inter_vars, s_hook) if st == 's' else (t_inter_vars, t_hook)
+            return [inter_vars[i[1][name]] for i in sorted(hook['transformer']['layers'].items()) if name in i[1]]
+        # attentions
+        loss_kl = 0.
+        student_reps = get_layer_f('s', 'attention_scores')
+        teacher_reps = get_layer_f('t', 'attention_scores')
+        for i, (student_rep, teacher_rep) in enumerate(zip(student_reps, teacher_reps)):
+            student_rep.distill = teacher_rep.distill = True
+            l = CustomLoss.kl_div(student_rep, teacher_rep, parallel='gather', keep_batch=keep_batch)
+            super().add_summary(f'inter_loss/attention_scores.{i}', l)
+            loss_kl += l
+        # hidden_states
+        loss_cos = 0.
+        student_reps = get_layer_f('s', 'layernorm_output')
+        teacher_reps = get_layer_f('t', 'layernorm_output')
+        if 'transformer' in s_hook and 'output' in s_hook['transformer']:
+            student_reps += [s_inter_vars[s_hook['transformer']['output']]]
+            teacher_reps += [t_inter_vars[t_hook['transformer']['output']]]
+        for i, (student_rep, teacher_rep) in enumerate(zip(student_reps, teacher_reps)):
+            student_rep.distill = teacher_rep.distill = True
+            l = CustomLoss.cos_distance(student_rep[:,0,:], teacher_rep[:,0,:], keep_batch=keep_batch) # [CLS]
+            super().add_summary(f'inter_loss/hidden_states.{i}', l)
+            loss_cos += l
+        # 其他处理
+        if (loss_cos.mean().item() if keep_batch else loss_cos.item()) < self.args.sid_accumulate_t:
+            self.nextLockedLay += 1
+            print(f'SID.nextLockedLay(accumulate): {self.nextLockedLay - 1} -> {self.nextLockedLay}')
+        elif self.args.sid_lim_e == 'avg' and \
+            self.args.iteration >= self.args.train_iters / (self.args.num_layers + 1) * self.nextLockedLay:
+            self.nextLockedLay += 1
+            print(f'SID.nextLockedLay(avg): {self.nextLockedLay - 1} -> {self.nextLockedLay}')
+        loss_ += super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=keep_batch, t_no=t_no, **kwargs)
+        return loss_ + loss_cos + loss_kl
+
+    def pre_loss(self, s_logits, t_logits, loss, **kwargs):
+        if self.nextLockedLay <= self.args.num_layers:
+            return 0.
+        loss_ = super().pre_loss(s_logits, t_logits, loss, return_dict=False, **kwargs)
+        return loss_
+
+
+class ALP_KD(GLMStudent):
+    def __init__(self, language_model, args, **kwargs):
+        super().__init__(language_model, args, **kwargs)
+
+    def get_teacher_hook(self, t_no=0, **kwargs):
+        hook_L = [super().get_teacher_hook(t_no=0, **kwargs)]
+        layers = tuple(range(1, self.args.teacher_num_layers))
+        hook ={'transformer': {
+            'layers': {i: {'layernorm_output': None} for i in layers},
+            'output': None,
+        }}
+        hook_L.append(hook)
+        return merge_dict(hook_L)
+
+    def get_student_hook(self, **kwargs):
+        hook_L = [super().get_student_hook(**kwargs)]
+        layers = tuple(range(1, self.args.num_layers))
+        hook ={'transformer': {
+            'layers': {i: {'layernorm_output': None} for i in layers},
+            'output': None,
+        }}
+        hook_L.append(hook)
+        return merge_dict(hook_L)
+
+    def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=False, t_no=None, **kwargs):
+        loss_ = 0.
+        if len(s_inter_vars) == 0:
+            return loss_
+        def get_layer_f(st, name):
+            inter_vars, hook = (s_inter_vars, s_hook) if st == 's' else (t_inter_vars, t_hook)
+            return [inter_vars[i[1][name]] for i in sorted(hook['transformer']['layers'].items()) if name in i[1]]
+        # hidden_states
+        student_reps = get_layer_f('s', 'layernorm_output')
+        teacher_reps = get_layer_f('t', 'layernorm_output')
+        if 'transformer' in s_hook and 'output' in s_hook['transformer']:
+            student_reps += [s_inter_vars[s_hook['transformer']['output']]]
+            teacher_reps += [t_inter_vars[t_hook['transformer']['output']]]
+        for teacher_rep in teacher_reps:
+            teacher_rep.distill = True
+        s_cls = torch.cat([i[:,0:1,:] for i in student_reps], dim=1)
+        t_cls = torch.cat([i[:,0:1,:] for i in teacher_reps], dim=1)
+        s_t_alpha = torch.bmm(s_cls, t_cls.permute(0,2,1))  # (bs,s_layer,t_layer)
+        s_t_alpha = F.softmax(s_t_alpha, dim=-1)
+        s_t_alpha = s_t_alpha.permute(1,2,0).unsqueeze(-1).unsqueeze(-1)  # (s_layer,t_layer,bs,1,1)
+        teacher_reps = torch.stack(teacher_reps, dim=0)  # (t_layer,bs,seq,hidden)
+        for i, student_rep in enumerate(student_reps):
+            student_rep.distill = True
+            teacher_rep = (s_t_alpha[i] * teacher_reps).sum(0)
+            l = CustomLoss.mse_loss(student_rep, teacher_rep, keep_batch=keep_batch)
+            super().add_summary(f'inter_loss/hidden_states.{i}', l)
+            loss_ += l
+        loss_ += super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=keep_batch, t_no=t_no, **kwargs)
+        return loss_
+
+
+class CKD(GLMStudent):
+    def __init__(self, language_model, args, **kwargs):
+        super().__init__(language_model, args, **kwargs)
+        # 外部调用, 多教师兼容性较差, 例如 keep_batch/no_grad 问题
+        self.wrdist_function = WR_Dist()
+        self.wrang_function = WR_Angle_window()
+        self.ltrdist_function = LTR_Dist()
+        self.ltrang_function = LTR_Angle()
+
+    def get_teacher_hook(self, t_no=0, **kwargs):
+        hook_L = [super().get_teacher_hook(t_no=0, **kwargs)]
+        layers = [0] + cumulative_sum(fast_uniform_seg(self.args.num_layers, [1] * self.args.teacher_num_layers))
+        hook ={'transformer': {
+            'layers': {i: {'layernorm_output': None} for i in layers[:-1]},
+            'output': None,
+        }}
+        hook_L.append(hook)
+        return merge_dict(hook_L)
+
+    def get_student_hook(self, **kwargs):
+        hook_L = [super().get_student_hook(**kwargs)]
+        layers = tuple(range(self.args.num_layers))
+        hook ={'transformer': {
+            'layers': {i: {'layernorm_output': None} for i in layers},
+            'output': None,
+        }, 'position_ids': None}
+        hook_L.append(hook)
+        return merge_dict(hook_L)
+
+    def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=False, t_no=None, **kwargs):
+        loss_ = 0.
+        if len(s_inter_vars) == 0:
+            return loss_
+        def get_layer_f(st, name):
+            inter_vars, hook = (s_inter_vars, s_hook) if st == 's' else (t_inter_vars, t_hook)
+            return [inter_vars[i[1][name]] for i in sorted(hook['transformer']['layers'].items()) if name in i[1]]
+        # emb + hidden_states
+        student_reps = get_layer_f('s', 'layernorm_output')
+        teacher_reps = get_layer_f('t', 'layernorm_output')
+        if 'transformer' in s_hook and 'output' in s_hook['transformer']:
+            student_reps += [s_inter_vars[s_hook['transformer']['output']]]
+            teacher_reps += [t_inter_vars[t_hook['transformer']['output']]]
+        for teacher_rep in teacher_reps:
+            teacher_rep.distill = True
+        for student_rep in student_reps:
+            student_rep.distill = True
+        s_embed = torch.stack(student_reps, dim=1)  # (bs,layer,seq,dim)
+        t_embed = torch.stack(teacher_reps, dim=1)
+        # mask
+        mask_pad_token = (s_inter_vars[s_hook['position_ids']][:, 0] > 0).int()
+        mask_pad_token[:, 0] = 1
+        
+        # wrdist
+        l = self.wrdist_function(t_embed, s_embed, mask_pad_token, distance='cos', lossfunc='kldiv')
+        l = l * self.args.ckd_wrdist_w
+        super().add_summary(f'inter_loss/wrdist', l)
+        loss_ += l
+        # wrangle
+        l = self.wrang_function(t_embed, s_embed, mask_pad_token, lossfunc='l2loss', window=self.args.ckd_window_size)
+        l = l * self.args.ckd_wrangle_w
+        super().add_summary(f'inter_loss/wrangle', l)
+        loss_ += l
+        # ltrdist
+        l = self.ltrdist_function(t_embed, s_embed, mask_pad_token, distance='cos', lossfunc='kldiv')
+        l = l * self.args.ckd_ltrdist_w
+        super().add_summary(f'inter_loss/ltrdist', l)
+        loss_ += l
+        # ltrangle
+        l = self.ltrang_function(t_embed, s_embed, mask_pad_token, loss='l2loss')
+        l = l * self.args.ckd_ltrangle_w
+        super().add_summary(f'inter_loss/ltrangle', l)
+        loss_ += l
+        
+        loss_ += super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=keep_batch, t_no=t_no, **kwargs)
+        return loss_
+
+
 student_model_D = {
     None: None,
     'kd': GLMStudent,
@@ -1387,4 +1657,7 @@ student_model_D = {
     'mgskd': MGSKD,
     'diito': DIITO,
     'logitsdistil': LogitsDistil,
+    'sid': SID,
+    'alp_kd': ALP_KD,
+    'ckd': CKD,
 }

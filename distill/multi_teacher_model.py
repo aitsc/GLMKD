@@ -29,6 +29,14 @@ class AvgTeacher(torch.nn.Module):
             checkpoint = deepspeed.checkpointing.checkpoint
 
     def record_and_show(self, student_model, op='init', t_no=-1, loss=0):
+        """记录和展示
+
+        Args:
+            student_model (model): 学生模型
+            op (str, optional): 操作,见代码注释
+            t_no (int, optional): 教师在所有教师中的序号,从0开始
+            loss (int, optional): 这个教师和学生的损失
+        """
         # 初始化显示和记录的参数
         if op == 'init':
             self.inter_show_hooks = {}
@@ -77,6 +85,24 @@ class AvgTeacher(torch.nn.Module):
 
     def compute(self, teacher_models, t_hook_L, t_inter_vars_L, t_out_L, student_model, s_hook, s_inter_vars, s_out,
                 loss_mask=None, labels=None, **kwargs):
+        """多教师蒸馏方法
+
+        Args:
+            teacher_models (list): 所有教师模型
+            t_hook_L ([dict,..]): 教师的所有hook
+            t_inter_vars_L ([[tensor,..],..]): 教师的所有hook对应的每个张量列表
+            t_out_L ([dict,..]): 每个教师模型的所有相关输出,每个dict与s_out对应
+            student_model (model): 学生模型
+            s_hook (dict): {'name':序号,..}; 学生的hook
+            s_inter_vars ([tensor,..]): hook对应的所有张量
+            s_out (dict): {'logits':,'loss':,..}; 学生模型的所有相关输出
+            loss_mask (tensor, optional): (batch_size,seq_len); 1的位置代表part b,0表示为part a+pad
+            labels (bool, optional): (batch_size,seq_len); 0表示pad符号或者文档结束符,大于0则是其他的token id
+                注意part b中间部分也可能存在0
+
+        Returns:
+            tensor: loss
+        """
         loss_L = []
         self.record_and_show(student_model)
         for i, (t_hook, t_inter_vars, t_out, t_model) in enumerate(zip(t_hook_L, t_inter_vars_L, t_out_L, teacher_models)):

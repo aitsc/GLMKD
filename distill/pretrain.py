@@ -81,8 +81,8 @@ def forward_step_(tokens, labels, loss_mask, attention_mask, position_ids,
         s_hook = student_model.get_student_hook()
         t_hook_L = get_teachers_hook(args, student_model)
         t_inter_vars_L = [[] for _ in range(len(t_hook_L))]
-        s_hook_op = student_model.get_student_hook_op()
-        t_hook_op_L = get_teachers_hook(args, student_model, is_op=True)
+        s_hook_op = student_model.get_student_hook_op(teacher_models=teacher_models)
+        t_hook_op_L = get_teachers_hook(args, student_model, is_op=True, teacher_models=teacher_models)
     else:
         t_hook_L = s_hook = t_hook_op_L = s_hook_op = None
         teacher_models = []
@@ -105,12 +105,16 @@ def forward_step_(tokens, labels, loss_mask, attention_mask, position_ids,
                 zip(t_hook_L, t_inter_vars_L, teacher_models, t_hook_op_L),
                 lambda h, i, m, h_op: hook_model(h, i, m, tokens, position_ids, attention_mask, *mems, hook_op=h_op),
                 lambda ret: {'logits': ret[0], 'mems': ret[1:]},
+                [int(i) for i in args.mt_disable_operation.split(':')],
+                [{'logits': 0., 'mems': 0.}],
             )
         if args.mt_has_loss:
             t_out_L = [merge_dict([i, j]) for i, j in zip(mt_repeat_operation(
                 t_out_L,
                 lambda logits, **k: compute_loss(logits),
                 lambda ret: {'loss': ret[0], 'loss_batch': ret[1]},
+                [int(i) for i in args.mt_disable_operation.split(':')],
+                [{'loss': 0., 'loss_batch': 0.}],
             ), t_out_L)]
         loss = student_model.multi_teacher_model.compute(
             teacher_models = teacher_models,

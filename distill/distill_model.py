@@ -19,6 +19,7 @@ from distill.cite.ckd import WR_Dist, WR_Angle_window, LTR_Dist, LTR_Angle
 from mpu import checkpoint, get_cuda_rng_tracker
 import deepspeed
 from distill.custom_loss import CustomLoss
+import time
 
 
 class GLMStudent(torch.nn.Module):
@@ -1643,6 +1644,72 @@ class CKD(GLMStudent):
         return loss_
 
 
+class Theseus(GLMStudent):
+    def __init__(self, language_model, args, **kwargs):
+        super().__init__(language_model, args, **kwargs)
+        # 嵌入list不会被优化器更新
+        self.teacher_models_layers = None  # [[[从0开始的原来教师层位置,映射到学生第0层的多个教师层],..],..]
+
+    def get_student_hook_op(self, teacher_models=None, **kwargs):
+        # 映射教师层
+        if self.teacher_models_layers is None:
+            self.teacher_models_layers = []
+            for teacher_model in teacher_models:
+                self.teacher_models_layers.append([])
+                layers = find_model_inter_var(teacher_model, 'transformer.layers')
+                map_l = cumulative_sum(fast_uniform_seg(self.args.num_layers, [1] * len(layers)))
+                for s, e in zip([0] + map_l[:-1], map_l):
+                    self.teacher_models_layers[-1].append([list(range(s, e)), layers[s: e]])
+        # 替换层
+        replacing_rate = self.args.theseus_replacing_rate + \
+            self.args.iteration / (self.args.train_iters * self.args.theseus_not_replaced_steps) * \
+            (1 - self.args.theseus_replacing_rate)
+        self.add_summary('get_student_hook_op/replacing_rate', replacing_rate)
+        tn_layers = []  # [tn/None,..]
+        has_student = False
+        while not has_student:
+            for i in range(self.args.num_layers):
+                if random.random() < replacing_rate:
+                    tn_layers.append(None)
+                    has_student = True
+                else:
+                    tn_layers.append(random.randint(0, len(teacher_models) - 1))
+        if self.args.distill_test_output:
+            tn_layers = self.test(tn_layers)
+        # hook
+        def hook_op(self_layers=None):
+            layers = []
+            for i, (s, tn) in enumerate(zip(self_layers, tn_layers)):
+                if tn is None:
+                    layers.append(s)
+                else:
+                    t = self.teacher_models_layers[tn][i]
+                    layers += t[1]
+            return layers
+        return {'transformer': {'self_layers': hook_op}}
+
+    def test(self, tn_layers):
+        tn_layers = [0] * (self.args.num_layers - 2) + [None] * 2
+        start_iteration = 40
+        if 2 < self.args.iteration < start_iteration:
+            return tn_layers
+        if self.args.iteration >= start_iteration + 3:
+            tn_layers = tn_layers[::-1]
+        if self.args.iteration >= start_iteration + 6:
+            print('pause')
+            time.sleep(600)
+        print_rank_0({
+            **{f'student_{i}.attention.dense.weight': hash(
+                str(self.origin_model.transformer.layers[i].attention.dense.weight.tolist())
+            ) for i in range(self.args.num_layers)},
+            'tn_layers': tn_layers,
+            f'teacher(0)_{self.teacher_models_layers[0][1][0][0]}.attention.dense.weight': hash(
+                str(self.teacher_models_layers[0][1][1][0].attention.dense.weight.tolist())),
+            'iteration': self.args.iteration,
+        })
+        return tn_layers
+
+
 student_model_D = {
     None: None,
     'kd': GLMStudent,
@@ -1660,4 +1727,5 @@ student_model_D = {
     'sid': SID,
     'alp_kd': ALP_KD,
     'ckd': CKD,
+    'theseus': Theseus,
 }

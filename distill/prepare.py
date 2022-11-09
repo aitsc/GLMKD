@@ -11,6 +11,7 @@ from distill.multi_teacher_model import multi_teacher_model_D
 import torch
 import time
 import mpu
+import copy
 
 
 def get_args():
@@ -38,6 +39,7 @@ def get_args():
     py_parser.add_argument('--distill_logit_mask_pad', action='store_true', help='--distill_logits_parallel 参数下是否mask padding')
     py_parser.add_argument('--distill_logit_mask_map', action='store_true', help='使用logits_parallel计算并且学生有map_vocab时,是否忽略映射token的相似度计算')
     py_parser.add_argument('--distill_logit_mse', action='store_true', help='是否用MSE计算--distill_logits_parallel')
+    py_parser.add_argument('--distill_test_output', action='store_true', help='是否测试输出,会运行测试代码,针对有测试的方法,如theseus')
     # 引入随机数据
     py_parser.add_argument('--distill_random_data', type=str, default='', help='dual:数据batch size变成原来一倍,随机数据加载后面;replace:直接替换数据成随机数据;空则不使用随机数据,评估时也不生效')
     py_parser.add_argument('--distill_random_data_n', type=str, default='0', help='针对args.forward_repeat_num的第几次重复引入随机数据,例如1或者0,1')
@@ -141,6 +143,9 @@ def get_args():
     py_parser.add_argument('--ckd_ltrdist_w', type=float, default=1, help='')
     py_parser.add_argument('--ckd_wrangle_w', type=float, default=10, help='')
     py_parser.add_argument('--ckd_ltrangle_w', type=float, default=10, help='')
+    # theseus
+    py_parser.add_argument('--theseus_replacing_rate', type=float, default=0.3, help='初始替换率')
+    py_parser.add_argument('--theseus_not_replaced_steps', type=float, default=0.66, help='跑到总迭代次数的多少比例时全部替换为学生层,即替换率为1')
 
     # multi-teacher 多个教师的模型参数用冒号分隔, 优先级高于 teacher_ 参数
     py_parser.add_argument('--mt_num_attention_heads', type=str, default='')
@@ -148,6 +153,7 @@ def get_args():
     py_parser.add_argument('--mt_num_layers', type=str, default='')
     py_parser.add_argument('--mt_max_position_embeddings', type=str, default='')
     py_parser.add_argument('--mt_load_pretrained', type=str, default='')
+    py_parser.add_argument('--mt_disable_operation', type=str, default='0', help='是否不计算教师模型的输出结果(用替代值),可用于Theseus等只需要教师中间层的方法.0表示计算,1表示不计算,冒号分隔则针对每个教师分别处理')
     # multi-teacher model (指将多个教师联合在一起的模型)
     py_parser.add_argument('--multi_teacher_model', type=str, default=None, help='多教师模型名称')
     py_parser.add_argument('--mt_model_load', type=str, default=None, help='可选额外加载的多教师模型路径,可以自动从其他学生模型路径中提取')
@@ -294,14 +300,41 @@ def get_teachers_hook(args, student_model=None, is_op=False, **kwargs):
     return hooks
 
 
-def mt_repeat_operation(input_L, operate_f, output_f):
-    # 对多个教师模型的重复操作
+def mt_repeat_operation(input_L, operate_f, output_f, is_disable_L=None, disable_ret_L=None):
+    """对多个教师模型的重复操作
+
+    Args:
+        input_L (list): 每次处理的输入,包括教师模型和参数等等
+        operate_f (func): 针对输出进行的操作,每组输入操作一样
+        output_f (func): 输出处理之后的再提取,规范到固定的输出格式
+        is_disable_L (list, optional): 是否不对 input 进行处理
+        disable_ret_L (list, optional): 不对 input 进行处理后的替代值
+
+    Returns:
+        [{'logits':,..},..]: 每个教师的返回结果
+    """
+    # 初始化 disable
+    input_L = list(input_L)
+    if is_disable_L is None:
+        is_disable_L = [False] * len(input_L)
+    if len(is_disable_L) == 1:
+        is_disable_L *= len(input_L)
+    assert len(is_disable_L) == len(input_L)
+    if disable_ret_L is None:
+        disable_ret_L = [{} for _ in len(input_L)]
+    if len(disable_ret_L) == 1:
+        disable_ret_L += [copy.deepcopy(disable_ret_L[0]) for _ in range(len(input_L) - 1)]
+    assert len(disable_ret_L) == len(input_L)
+    # 开始操作
     out_L = []
-    for i in input_L:
-        if isinstance(i, (list, tuple)):
-            out_L.append(output_f(operate_f(*i)))
+    for i, is_disable, disable_ret in zip(input_L, is_disable_L, disable_ret_L):
+        if is_disable:
+            out_L.append(disable_ret)
         else:
-            out_L.append(output_f(operate_f(**i)))
+            if isinstance(i, (list, tuple)):
+                out_L.append(output_f(operate_f(*i)))
+            else:
+                out_L.append(output_f(operate_f(**i)))
     return out_L
 
 

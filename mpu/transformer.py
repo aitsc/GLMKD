@@ -820,10 +820,15 @@ class GPT2ParallelTransformer(torch.nn.Module):
             mem_layers = [check_detach(hidden_states)]
         else:
             mem_layers = []
+        if hook_op and 'self_layers' in hook_op and callable(hook_op['self_layers']):
+            self_layers = hook_op['self_layers'](self_layers=self.layers)
+        else:
+            self_layers = self.layers
+            
         def custom(start, end, hook=None, hook_op=None):
             def custom_forward(*inputs):
                 inter_vars = []
-                layers_ = self.layers[start:end]
+                layers_ = self_layers[start:end]
                 x_, inputs = inputs[0], inputs[1:]
                 if self.relative_encoding:
                     inputs, mems_ = inputs[:4], inputs[4:]
@@ -843,7 +848,7 @@ class GPT2ParallelTransformer(torch.nn.Module):
 
         if self.checkpoint_activations:
             l = 0
-            num_layers = len(self.layers)
+            num_layers = len(self_layers)
             chunk_length = self.checkpoint_num_layers
             while l < num_layers:
                 args = [hidden_states, attention_mask] if not self.use_decoder_layer else [hidden_states,
@@ -861,7 +866,7 @@ class GPT2ParallelTransformer(torch.nn.Module):
         else:
             hook_ = hook_child(hook, 'layers')
             hook_op_ = hook_child(hook_op, 'layers')
-            for i, layer in enumerate(self.layers):
+            for i, layer in enumerate(self_layers):
                 args = [hidden_states, attention_mask] if not self.use_decoder_layer else [hidden_states,
                                                                                            encoder_states,
                                                                                            attention_mask]

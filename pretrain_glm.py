@@ -43,6 +43,7 @@ from utils import print_rank_0, get_distributed_formatted_time
 from utils import get_sample_writer, get_log_dir, get_hostname, ensure_directory_exists
 import torch.distributed as dist
 import json
+from tsc_auto import set_gpu
 
 
 def get_masks_and_position_ids(data,
@@ -270,7 +271,7 @@ def forward_step(data_iterator, model, args, timers, mems, **kwargs):
 
     return loss, mems, mode
 
-
+report_iteration_metrics_num = 0
 def report_iteration_metrics(summary_writer, optimizer, lr, loss, elapsed_time, step, total_step, args, iter_loss=0):
     log_string = ' iteration {:8d}/{:8d} |'.format(step, total_step)
     log_string += ' elapsed time per iteration (ms): {:.1f} |'.format(elapsed_time)
@@ -280,11 +281,26 @@ def report_iteration_metrics(summary_writer, optimizer, lr, loss, elapsed_time, 
         log_string += ' loss scale {:.1f} |'.format(
             optimizer.cur_scale if args.deepspeed else optimizer.loss_scale)
     print_rank_0(log_string)
+    global report_iteration_metrics_num
     if summary_writer is not None:
         summary_writer.add_scalar(f'Train/lr', lr, step)
         summary_writer.add_scalar(f'Train/train_loss', loss, step)
         summary_writer.add_scalar(f'Train/elapsed_time', elapsed_time, step)
         summary_writer.add_scalar(f'Train/train_loss_iter', iter_loss, step)
+        # 显存信息
+        dpr = mpu.get_data_parallel_rank()
+        mpr = mpu.get_model_parallel_rank()
+        mega_bytes = 1024.0 * 1024.0
+        summary_writer.add_scalar(f'Report/memory_dp{dpr}_mp{mpr}_allocated', torch.cuda.memory_allocated() / mega_bytes, step)
+        summary_writer.add_scalar(f'Report/memory_dp{dpr}_mp{mpr}_max_allocated', torch.cuda.max_memory_allocated() / mega_bytes, step)
+        summary_writer.add_scalar(f'Report/memory_dp{dpr}_mp{mpr}_cached', torch.cuda.memory_cached() / mega_bytes, step)
+        summary_writer.add_scalar(f'Report/memory_dp{dpr}_mp{mpr}_max_cached', torch.cuda.memory_reserved() / mega_bytes, step)
+        if report_iteration_metrics_num % 10 == 0 and torch.distributed.get_rank() == 0:
+            ret = set_gpu(return_more=True)  # 需要较长时间获取,所以隔一段时间获取一次
+            for i, (usage, ext_mem, mem) in enumerate(zip(ret['gpu_usage'], ret['ext_gpu_mem'], ret['all_gpu_mem'])):
+                summary_writer.add_scalar(f'Report/util_gpu{i}', usage, step)
+                summary_writer.add_scalar(f'Report/memory_gpu{i}', mem - ext_mem, step)
+    report_iteration_metrics_num += 1
 
 
 def report_evaluate_metrics(summary_writer, prefix, loss, ppl, gpt_loss, bert_loss, sent_loss, multi_loss, step):

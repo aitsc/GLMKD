@@ -22,3 +22,4 @@ rouge_score
 fasttext==0.9.1
 unidecode
 tsc-base
+tsc-auto

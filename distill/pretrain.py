@@ -142,14 +142,14 @@ def main():
     # Arguments.
     args = get_args()
     args.mem_length = args.mem_length if args.transformer_xl else 0
+    # Pytorch distributed.
+    initialize_distributed(args)
     if args.load and not args.new_save_directory:
         args.experiment_name = os.path.basename(os.path.normpath(args.load))
     else:
         args.experiment_name = args.experiment_name + get_distributed_formatted_time()
     if args.save:
         args.save = os.path.join(args.save, args.experiment_name)
-    # Pytorch distributed.
-    initialize_distributed(args)
 
     # Random seeds for reproducability.
     set_random_seed(args.seed)

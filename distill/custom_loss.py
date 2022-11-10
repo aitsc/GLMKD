@@ -62,6 +62,7 @@ class CustomLoss:
     def gather_inputs(*inputs, parallel='gather'):
         if parallel == 'gather':
             if mpu.get_model_parallel_world_size() > 1:
+                inputs = list(inputs)
                 for i in range(len(inputs)):
                     inputs[i] = mpu.gather_from_model_parallel_region(inputs[i])
             parallel = ''

@@ -92,6 +92,11 @@
 ## Theseus
 - finetune: ... --student_model=theseus --distill_ft_hard --student_truncate_tn=0 --theseus_replacing_rate=0.3 --theseus_not_replaced_steps=0.66 --mt_disable_operation=1
 
+## Universal_KD
+1. finetune-1: ... --student_model=universal_kd --distill_ft_soft --distill_ft_soft_kl --distill_soft_rate=0.5 --universal_kd_gamma=0.5 --student_truncate_tn=0 --universal_kd_size=0
+    - --universal_kd_cg --universal_kd_avg
+2. finetune-2: without teacher
+
 
 # Multi-teacher distillation
 - General parameters: ... --mt_num_attention_heads=a1:a2 --mt_hidden_size=h1:h2 --mt_num_layers=l1:l2 --mt_max_position_embeddings=m1:m2 --mt_load_pretrained=p1:p2 --teacher_fp16

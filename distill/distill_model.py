@@ -1552,16 +1552,16 @@ class ALP_KD(GLMStudent):
             teacher_reps += [t_inter_vars[t_hook['transformer']['output']]]
         for teacher_rep in teacher_reps:
             teacher_rep.distill = True
-        s_cls = torch.cat([i[:,0:1,:] for i in student_reps], dim=1)
-        t_cls = torch.cat([i[:,0:1,:] for i in teacher_reps], dim=1)
+        s_cls = torch.cat([i[:,0:1,:] for i in student_reps], dim=1)  # (bs,s_layer,hidden)
+        t_cls = torch.cat([i[:,0:1,:] for i in teacher_reps], dim=1)  # (bs,t_layer,hidden)
         s_t_alpha = torch.bmm(s_cls, t_cls.permute(0,2,1))  # (bs,s_layer,t_layer)
         s_t_alpha = F.softmax(s_t_alpha, dim=-1)
-        s_t_alpha = s_t_alpha.permute(1,2,0).unsqueeze(-1).unsqueeze(-1)  # (s_layer,t_layer,bs,1,1)
-        teacher_reps = torch.stack(teacher_reps, dim=0)  # (t_layer,bs,seq,hidden)
+        s_t_alpha = s_t_alpha.permute(1,2,0).unsqueeze(-1)  # (s_layer,t_layer,bs,1)
+        teacher_reps_cls = t_cls.permute(1,0,2)  # (t_layer,bs,hidden)
         for i, student_rep in enumerate(student_reps):
             student_rep.distill = True
-            teacher_rep = (s_t_alpha[i] * teacher_reps).sum(0)
-            l = CustomLoss.mse_loss(student_rep, teacher_rep, keep_batch=keep_batch)
+            teacher_rep_cls = (s_t_alpha[i] * teacher_reps_cls).sum(0)
+            l = CustomLoss.mse_loss(student_rep[:,0,:], teacher_rep_cls, keep_batch=keep_batch)
             super().add_summary(f'inter_loss/hidden_states.{i}', l)
             loss_ += l
         loss_ += super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=keep_batch, t_no=t_no, **kwargs)
@@ -1690,6 +1690,7 @@ class Theseus(GLMStudent):
         return {'transformer': {'self_layers': hook_op}}
 
     def test(self, tn_layers):
+        # 因优化器的动量原因,更新过的层后面还会更新,影响不大
         tn_layers = [0] * (self.args.num_layers - 2) + [None] * 2
         start_iteration = 40
         if 2 < self.args.iteration < start_iteration:
@@ -1711,6 +1712,87 @@ class Theseus(GLMStudent):
         return tn_layers
 
 
+class Universal_KD(GLMStudent):
+    def __init__(self, language_model, args, **kwargs):
+        super().__init__(language_model, args, **kwargs)
+        Linear = lambda *i, layers=0, **kw: torch.nn.ModuleList(
+            [mpu.ColumnParallelLinear(*i, **kw) for _ in range(layers)])
+        universal_kd_size = args.universal_kd_size if args.universal_kd_size else args.hidden_size
+        # teacher fit_dense
+        mt_hidden_size = [int(i) for i in args.mt_hidden_size.split(':')] if args.mt_hidden_size else [args.teacher_hidden_size]
+        mt_num_layers = [int(i) for i in args.mt_num_layers.split(':')] if args.mt_num_layers else [args.teacher_num_layers]
+        for i, (hidden_size, num_layers) in enumerate(zip(mt_hidden_size, mt_num_layers)):
+            num_layers = 1 if self.args.universal_kd_cg else (num_layers - 1)
+            setattr(self, f't_fit_dense_{i}', Linear(hidden_size, universal_kd_size, bias=False, layers=num_layers))
+        # student fit_dense
+        num_layers = 1 if self.args.universal_kd_cg else (args.num_layers - 1)
+        self.s_fit_dense = Linear(args.hidden_size, universal_kd_size, bias=False, layers=num_layers)
+
+    def get_teacher_hook(self, t_no=0, **kwargs):
+        hook_L = [super().get_teacher_hook(t_no=0, **kwargs)]
+        layers = tuple(range(1, self.args.teacher_num_layers))
+        hook ={'transformer': {
+            **({'output': None} if self.args.universal_kd_cg else {
+                'layers': {i: {'layernorm_output': None} for i in layers}}),
+        }}
+        hook_L.append(hook)
+        return merge_dict(hook_L)
+
+    def get_student_hook(self, **kwargs):
+        hook_L = [super().get_student_hook(**kwargs)]
+        layers = tuple(range(1, self.args.num_layers))
+        hook ={'transformer': {
+            **({'output': None} if self.args.universal_kd_cg else {
+                'layers': {i: {'layernorm_output': None} for i in layers}}),
+        }}
+        hook_L.append(hook)
+        return merge_dict(hook_L)
+
+    def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=False, t_no=None, **kwargs):
+        loss_ = 0.
+        if len(s_inter_vars) == 0 or self.args.universal_kd_wo_inter:
+            return loss_
+        def get_layer_f(st, name):
+            inter_vars, hook = (s_inter_vars, s_hook) if st == 's' else (t_inter_vars, t_hook)
+            return [inter_vars[i[1][name]] for i in sorted(hook['transformer']['layers'].items()) if name in i[1]]
+        # hidden_states
+        student_reps, teacher_reps = [], []
+        if 'transformer' in s_hook and 'layers' in s_hook['transformer']:
+            student_reps += get_layer_f('s', 'layernorm_output')
+            teacher_reps += get_layer_f('t', 'layernorm_output')
+        if 'transformer' in s_hook and 'output' in s_hook['transformer']:
+            student_reps += [s_inter_vars[s_hook['transformer']['output']]]
+            teacher_reps += [t_inter_vars[t_hook['transformer']['output']]]
+        for teacher_rep in teacher_reps:
+            teacher_rep.distill = True
+        for student_rep in student_reps:
+            student_rep.distill = True
+        # fit_dense
+        if self.args.universal_kd_avg:
+            s_layers = [i.mean(-2) for i in student_reps]  # [(bs,dim),..]
+            t_layers = [i.mean(-2) for i in teacher_reps]  # [(bs,dim),..]
+        else:
+            s_layers = [i[:,0,:] for i in student_reps]
+            t_layers = [i[:,0,:] for i in teacher_reps]
+        s_layers = [aux_layer(self.args, self.s_fit_dense[i], l) for i, l in enumerate(s_layers)]
+        t_layers = [aux_layer(self.args, getattr(self, f't_fit_dense_{t_no}')[i], l) for i, l in enumerate(t_layers)]
+        # attention
+        s_layers_ = torch.stack(s_layers, dim=1)  # (bs,s_layer,hidden)
+        t_layers_ = torch.stack(t_layers, dim=1)  # (bs,t_layer,hidden)
+        s_t_alpha = torch.bmm(s_layers_, t_layers_.permute(0,2,1))  # (bs,s_layer,t_layer)
+        s_t_alpha = F.softmax(s_t_alpha, dim=-1)
+        s_t_alpha = s_t_alpha.permute(1,2,0).unsqueeze(-1)  # (s_layer,t_layer,bs,1)
+        teacher_reps_ = t_layers_.permute(1,0,2)  # (t_layer,bs,hidden)
+        for i, student_rep in enumerate(s_layers):
+            teacher_rep = (s_t_alpha[i] * teacher_reps_).sum(0)
+            l = CustomLoss.kl_div(student_rep, teacher_rep, keep_batch=keep_batch)
+            l = l * self.args.universal_kd_gamma
+            super().add_summary(f'inter_loss/hidden_states.{i}', l)
+            loss_ += l
+        loss_ += super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=keep_batch, t_no=t_no, **kwargs)
+        return loss_
+
+
 student_model_D = {
     None: None,
     'kd': GLMStudent,
@@ -1729,4 +1811,5 @@ student_model_D = {
     'alp_kd': ALP_KD,
     'ckd': CKD,
     'theseus': Theseus,
+    'universal_kd': Universal_KD,
 }

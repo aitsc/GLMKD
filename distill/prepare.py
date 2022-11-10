@@ -78,7 +78,7 @@ def get_args():
     # distilbert
     py_parser.add_argument('--distilbert_alpha_ce', type=float, default=1., help="类似 distill_pt_soft")
     py_parser.add_argument('--distilbert_alpha_mlm', type=float, default=1., help="类似 distill_pt_hard")
-    py_parser.add_argument('--distilbert_alpha_cos', type=float, default=1.)
+    py_parser.add_argument('--distilbert_alpha_cos', type=float, default=1., help='最后输出层的权重')
     py_parser.add_argument('--distilbert_fix_layernorm', action='store_true')
     py_parser.add_argument('--distilbert_cos_mask_padding', action='store_true', help='隐层只mask padding')
     py_parser.add_argument('--distilbert_ce_mask_padding', action='store_true', help='软标签只mask padding')
@@ -139,14 +139,20 @@ def get_args():
     # alp_kd
     py_parser.add_argument('--alp_kd_lambda', type=float, default=0.2, help='ALP损失权重')
     # ckd
-    py_parser.add_argument('--ckd_window_size', type=int, default=21, help='')
-    py_parser.add_argument('--ckd_wrdist_w', type=float, default=1, help='')
-    py_parser.add_argument('--ckd_ltrdist_w', type=float, default=1, help='')
-    py_parser.add_argument('--ckd_wrangle_w', type=float, default=10, help='')
-    py_parser.add_argument('--ckd_ltrangle_w', type=float, default=10, help='')
+    py_parser.add_argument('--ckd_window_size', type=int, default=21, help='三角关系的窗口大小,只计算这周围的几个token')
+    py_parser.add_argument('--ckd_wrdist_w', type=float, default=1, help='同层token成对关系权重')
+    py_parser.add_argument('--ckd_ltrdist_w', type=float, default=1, help='不同层同位置token成对关系权重')
+    py_parser.add_argument('--ckd_wrangle_w', type=float, default=10, help='同层token三角关系权重')
+    py_parser.add_argument('--ckd_ltrangle_w', type=float, default=10, help='不同层同位置token三角关系权重')
     # theseus
     py_parser.add_argument('--theseus_replacing_rate', type=float, default=0.3, help='初始替换率')
     py_parser.add_argument('--theseus_not_replaced_steps', type=float, default=0.66, help='跑到总迭代次数的多少比例时全部替换为学生层,即替换率为1')
+    # universal_kd
+    py_parser.add_argument('--universal_kd_wo_inter', action='store_true', help="不使用中间层,可用于二次微调")
+    py_parser.add_argument('--universal_kd_cg', action='store_true', help="使用CG而不是IL/CA的损失，等于只用最后一层")
+    py_parser.add_argument('--universal_kd_avg', action='store_true', help="使用平均池化而不是[CLS]计算中间层")
+    py_parser.add_argument('--universal_kd_gamma', type=float, default=0.5, help='内层权重')
+    py_parser.add_argument('--universal_kd_size', type=int, default=0, help='中间层变换后的维度，0表示使用学生维度')
 
     # multi-teacher 多个教师的模型参数用冒号分隔, 优先级高于 teacher_ 参数
     py_parser.add_argument('--mt_num_attention_heads', type=str, default='')

@@ -4,6 +4,8 @@ from mpu import parallel_cross_entropy, parallel_info_entropy, parallel_relative
 
 
 class CustomLoss:
+    args = None
+    
     @staticmethod
     def inputs_handling(*inputs, parallel='reduce/gather/', input_mask=None, **kwargs):
         # 前向 mask
@@ -56,6 +58,15 @@ class CustomLoss:
                 ret = ret / mpu.get_model_parallel_world_size()
         return ret
 
+    @staticmethod
+    def gather_inputs(*inputs, parallel='gather'):
+        if parallel == 'gather':
+            if mpu.get_model_parallel_world_size() > 1:
+                for i in range(len(inputs)):
+                    inputs[i] = mpu.gather_from_model_parallel_region(inputs[i])
+            parallel = ''
+        return inputs, parallel
+
     @classmethod
     def mse_loss(cls, input, target, **kwargs):
         input, target = cls.inputs_handling(input, target, **kwargs)
@@ -65,6 +76,8 @@ class CustomLoss:
     @classmethod
     def kl_div(cls, input, target, parallel='', **kwargs):
         input, target = cls.inputs_handling(input, target, parallel=parallel, **kwargs)
+        if getattr(cls.args, 'disable_parallel_entropy', 0):
+            (input, target), parallel = cls.gather_inputs(input, target, parallel=parallel)
         if parallel == 'gather' and mpu.get_model_parallel_world_size() > 1:
             loss = parallel_relative_entropy(input, target)
         else:
@@ -76,6 +89,8 @@ class CustomLoss:
     @classmethod
     def cross_entropy(cls, input, target, parallel='', **kwargs):
         input, target = cls.inputs_handling(input, target, parallel=parallel, **kwargs)
+        if getattr(cls.args, 'disable_parallel_entropy', 0):
+            (input, target), parallel = cls.gather_inputs(input, target, parallel=parallel)
         if parallel == 'gather' and mpu.get_model_parallel_world_size() > 1:
             loss = parallel_cross_entropy(input, target)
         else:
@@ -85,6 +100,8 @@ class CustomLoss:
     @classmethod
     def info_entropy(cls, input, parallel='', **kwargs):
         input = cls.inputs_handling(input, parallel=parallel, **kwargs)[0]
+        if getattr(cls.args, 'disable_parallel_entropy', 0):
+            (input,), parallel = cls.gather_inputs(input, parallel=parallel)
         if parallel == 'gather' and mpu.get_model_parallel_world_size() > 1:
             loss = parallel_info_entropy(input)
         else:
@@ -92,10 +109,11 @@ class CustomLoss:
         return cls.loss_handling(loss, **kwargs)
 
     @classmethod
-    def cos_distance(cls, input1, input2, **kwargs):
-        input1, input2 = cls.inputs_handling(input1, input2, **kwargs)
+    def cos_distance(cls, input1, input2, parallel='', **kwargs):
+        input1, input2 = cls.inputs_handling(input1, input2, parallel=parallel, **kwargs)
         target = input1.new(input1.size(0)).fill_(1)
         # gather 模型并行存在分母问题有待实现
+        (input1, input2), parallel = cls.gather_inputs(input1, input2, parallel=parallel)
         loss = F.cosine_embedding_loss(input1, input2, target, reduction='none')
         kwargs['last_dim_avg'] = False
-        return cls.loss_handling(loss, **kwargs)
+        return cls.loss_handling(loss, parallel=parallel, **kwargs)

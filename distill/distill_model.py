@@ -36,6 +36,7 @@ class GLMStudent(torch.nn.Module):
         super().__init__()
         self.origin_model = GLMModel_empty(language_model) if args.student_use_empty_glm else language_model
         self.args = args
+        CustomLoss.args = args
         self.pre_loss_description = ''
         self.show_pre = show_pre
         self.show_inter = show_inter

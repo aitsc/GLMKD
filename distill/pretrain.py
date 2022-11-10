@@ -20,7 +20,7 @@ from utils import save_checkpoint
 from utils import load_checkpoint
 from utils import report_memory
 from utils import print_and_save_args
-from utils import print_rank_0
+from utils import print_rank_0, get_distributed_formatted_time
 from utils import get_sample_writer, get_log_dir, get_hostname
 import torch.distributed as dist
 from pretrain_glm import get_batch, evaluate_and_print_results, initialize_distributed, set_random_seed, get_train_val_test_data, train
@@ -145,7 +145,7 @@ def main():
     if args.load and not args.new_save_directory:
         args.experiment_name = os.path.basename(os.path.normpath(args.load))
     else:
-        args.experiment_name = args.experiment_name + datetime.now().strftime("%y%m%d_%H%M%S.%f")
+        args.experiment_name = args.experiment_name + get_distributed_formatted_time()
     if args.save:
         args.save = os.path.join(args.save, args.experiment_name)
     # Pytorch distributed.

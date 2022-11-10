@@ -27,9 +27,24 @@ from fp16 import FP16_Optimizer
 import mpu
 from tensorboardX import SummaryWriter
 from pprint import pformat
+from datetime import datetime
 
 SUMMARY_WRITER_DIR_NAME = 'runs'
 
+
+def get_distributed_formatted_time():
+    # 用于并行化情况下每个rank获取一样的格式化时间
+    time_stamp = time.time()
+    if torch.distributed.is_initialized():
+        if torch.distributed.get_rank() == 0:
+            time_stamp = torch.cuda.DoubleTensor([time_stamp])
+        else:
+            time_stamp = torch.cuda.DoubleTensor([0])
+        torch.distributed.broadcast(time_stamp, 0)
+        time_stamp = time_stamp.item()
+    st = datetime.fromtimestamp(time_stamp).strftime('%y%m%d_%H%M%S.%f')
+    return st
+    
 
 def get_log_dir(name, base):
     return os.path.join(base, SUMMARY_WRITER_DIR_NAME, name)

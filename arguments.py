@@ -20,10 +20,9 @@ import os
 import torch
 import deepspeed
 import json
-from utils import get_hostname
+from utils import get_hostname, get_distributed_formatted_time
 import random
 import socket
-from datetime import datetime
 
 
 def add_model_config_args(parser):
@@ -506,7 +505,7 @@ def get_args(arg_list=None):
 
     # 自定义
     if '自动时间' in args.experiment_name:
-        args.experiment_name = args.experiment_name.replace('自动时间', datetime.now().strftime('%y%m%d_%H%M%S.%f'))
+        args.experiment_name = args.experiment_name.replace('自动时间', get_distributed_formatted_time())
         print('experiment_name-自动时间:', args.experiment_name)
     return args
 

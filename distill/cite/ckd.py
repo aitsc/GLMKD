@@ -297,12 +297,12 @@ class LTR_Angle(nn.Module):
         with torch.no_grad():
             #1441
             t_sub = (t_embed.unsqueeze(1) - t_embed.unsqueeze(2))   #1873
-            t_sub = F.normalize(t_sub, p=2, dim=3).view(-1,layer_num,dim) #2305
+            t_sub = F.normalize(t_sub, p=2, dim=3).contiguous().view(-1,layer_num,dim) #2305
             t_angle = torch.bmm(t_sub, t_sub.transpose(1,2)).view(-1, layer_num, layer_num, layer_num)
             t_angle = t_angle * mask
 
         s_sub = (s_embed.unsqueeze(1) - s_embed.unsqueeze(2))   #2737
-        s_sub = F.normalize(s_sub, p=2, dim=3).view(-1, layer_num, sdim)   #3169
+        s_sub = F.normalize(s_sub, p=2, dim=3).contiguous().view(-1, layer_num, sdim)   #3169
         s_angle = torch.bmm(s_sub, s_sub.transpose(1,2)).view(-1, layer_num,layer_num,layer_num)   #3385
         s_angle = s_angle * mask
         if loss == "l1loss":

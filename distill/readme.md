@@ -97,6 +97,12 @@
     - --universal_kd_cg --universal_kd_avg
 2. finetune-2: without teacher
 
+## LRC_BERT
+1. pretrain: without teacher
+2. finetune-1: ... --student_model=lrc_bert --lrc_bert_gard_perturb --ignore_first_backward_gard --forward_repeat_num=1
+    - It is not recommended to use data parallelism and accumulate steeps, which will lead to negative sample reduction.
+3. finetune-2: ... --student_model=lrc_bert --lrc_bert_alpha=1 --distill_ft_soft --distill_ft_soft_kl --distill_soft_rate=1 --distill_ft_hard --distill_hard_rate=3 --distill_temperature=1.1 --lrc_bert_gard_perturb --ignore_first_backward_gard --forward_repeat_num=1
+
 
 # Multi-teacher distillation
 - General parameters: ... --mt_num_attention_heads=a1:a2 --mt_hidden_size=h1:h2 --mt_num_layers=l1:l2 --mt_max_position_embeddings=m1:m2 --mt_load_pretrained=p1:p2 --teacher_fp16

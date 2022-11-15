@@ -10,7 +10,7 @@ from utils import print_rank_0, find_model_inter_var
 import math
 from tsc_base import merge_dict, fast_uniform_seg, cumulative_sum
 from apex.normalization.fused_layer_norm import FusedLayerNorm as LayerNorm
-from fp16 import fp32_to_fp16, fp16_to_fp32
+from fp16 import fp32_to_fp16, fp16_to_fp32, DynamicLossScaler
 from distill.tools import aux_layer, get_checkpoint_forward_args
 import random
 import copy
@@ -1793,6 +1793,92 @@ class Universal_KD(GLMStudent):
         return loss_
 
 
+class LRC_BERT(GLMStudent):
+    def __init__(self, language_model, args, **kwargs):
+        super().__init__(language_model, args, **kwargs)
+        mt_hidden_size = [int(i) for i in args.mt_hidden_size.split(':')] if args.mt_hidden_size else [args.teacher_hidden_size]
+        # student fit_dense
+        self.s_fit_dense = torch.nn.ModuleList([
+            mpu.ColumnParallelLinear(args.hidden_size, ths, bias=False) for ths in mt_hidden_size])
+        self.emb_grad = None  # 第一次正反传播的输入的嵌入的梯度
+
+    def get_teacher_hook(self, t_no=0, **kwargs):
+        hook_L = [super().get_teacher_hook(t_no=0, **kwargs)]
+        layers = cumulative_sum(fast_uniform_seg(self.args.num_layers, [1] * self.args.teacher_num_layers))
+        hook ={'transformer': {
+                'layers': {i: {'layernorm_output': None} for i in layers[:-1]},
+                'output': None,
+        }}
+        hook_L.append(hook)
+        return merge_dict(hook_L)
+
+    def get_student_hook(self, **kwargs):
+        hook_L = [super().get_student_hook(**kwargs)]
+        layers = tuple(range(1, self.args.num_layers))
+        hook ={'transformer': {
+                'layers': {i: {'layernorm_output': None} for i in layers},
+                'output': None,
+        }}
+        hook_L.append(hook)
+        return merge_dict(hook_L)
+
+    def get_student_hook_op(self, **kwargs):
+        def register_hook(gard):
+            self.emb_grad = gard
+            
+        def hook_op(hidden_states=None, **kw):
+            if self.args.forward_repeat_current_n == 0:
+                hidden_states.register_hook(register_hook)
+            elif not (self.emb_grad is None or DynamicLossScaler._has_inf_or_nan(self.emb_grad)):
+                hidden_states = hidden_states + F.normalize(self.emb_grad, p=2, dim=-1)
+            self.emb_grad = None
+            return hidden_states
+            
+        if self.args.lrc_bert_gard_perturb:
+            return {'transformer': {'embeddings': hook_op}}
+        else:
+            return {}
+
+    def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=False, t_no=None, **kwargs):
+        loss_ = 0.
+        if len(s_inter_vars) == 0 or self.args.lrc_bert_alpha <= 0:
+            return loss_
+        def get_layer_f(st, name):
+            inter_vars, hook = (s_inter_vars, s_hook) if st == 's' else (t_inter_vars, t_hook)
+            return [inter_vars[i[1][name]] for i in sorted(hook['transformer']['layers'].items()) if name in i[1]]
+        # hidden_states
+        student_reps, teacher_reps = [], []
+        if 'transformer' in s_hook and 'layers' in s_hook['transformer']:
+            student_reps += get_layer_f('s', 'layernorm_output')
+            teacher_reps += get_layer_f('t', 'layernorm_output')
+        if 'transformer' in s_hook and 'output' in s_hook['transformer']:
+            student_reps += [s_inter_vars[s_hook['transformer']['output']]]
+            teacher_reps += [t_inter_vars[t_hook['transformer']['output']]]
+        for teacher_rep in teacher_reps:
+            teacher_rep.distill = True
+        # fit_dense
+        for i, student_rep in enumerate(student_reps):
+            student_rep.distill = True  # (bs,seq,dim)
+            student_reps[i] = aux_layer(self.args, self.s_fit_dense[t_no], student_rep)
+        # cos-nce
+        s_bs_dim = torch.cat(student_reps, dim=1).permute(1, 0, 2)  # (layer*seq,s_bs,dim)
+        t_bs_dim = torch.cat(teacher_reps, dim=1).permute(1, 0, 2)  # (layer*seq,t_bs,dim)
+        s2 = (s_bs_dim ** 2).sum(-1, keepdim=True)
+        t2 = (t_bs_dim ** 2).sum(-1, keepdim=True)
+        st = torch.bmm(s_bs_dim, t_bs_dim.permute(0, 2, 1))  # (layer*seq,s_bs,t_bs)
+        st_cos = st / (s2 * t2.permute(0, 2, 1)) ** .5
+        st_g = 1 - st_cos.mean(0)  # (s_bs,t_bs)
+        st_g_diag = torch.diag(st_g)
+        l = 1 - (st_g.sum(-1) - st_g_diag * st_g.size(0)) / (st_g.size(0) - 1) / 2 + st_g_diag
+        if not keep_batch:
+            l = l.mean()
+        l = l * len(student_reps) * self.args.lrc_bert_alpha
+        super().add_summary(f'inter_loss/hidden_states.{i}', l)
+        loss_ += l
+        loss_ += super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=keep_batch, t_no=t_no, **kwargs)
+        return loss_
+
+
 student_model_D = {
     None: None,
     'kd': GLMStudent,
@@ -1812,4 +1898,5 @@ student_model_D = {
     'ckd': CKD,
     'theseus': Theseus,
     'universal_kd': Universal_KD,
+    'lrc_bert': LRC_BERT,
 }

@@ -340,7 +340,7 @@ def train_step(data_iterator, model, optimizer, lr_scheduler, args, timers, forw
         skipped_iter, complete = 0, False
         # Forward model for one step.
         timers('forward').start()
-        lm_loss, mems, _ = forward_step_func(data_iterator, model, args, timers, mems, **kwargs)
+        lm_loss, mems, _ = forward_step_func(data_iterator, model, args, timers, mems, optimizer=optimizer, **kwargs)
         timers('forward').stop()
         # print_rank_0("Forward step")
         if not args.deepspeed:

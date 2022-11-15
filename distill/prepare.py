@@ -15,7 +15,7 @@ import copy
 
 
 def get_args():
-    py_parser = argparse.ArgumentParser(add_help=False)
+    py_parser = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
     # generic
     py_parser.add_argument('--student_model', type=str, default=None, help='学生模型类型,没有则是原生模型')
     py_parser.add_argument('--student_truncate_tn', type=int, default=None, help='非None或不小于0的话代表选择第n个教师前面层截断作为初始化(长于学生的维度靠前截断参数,短于学生的维度默认学生参数不变)')
@@ -153,6 +153,9 @@ def get_args():
     py_parser.add_argument('--universal_kd_avg', action='store_true', help="使用平均池化而不是[CLS]计算中间层")
     py_parser.add_argument('--universal_kd_gamma', type=float, default=0.5, help='内层权重')
     py_parser.add_argument('--universal_kd_size', type=int, default=0, help='中间层变换后的维度，0表示使用学生维度')
+    # lrc_bert
+    py_parser.add_argument('--lrc_bert_alpha', type=float, default=1., help='内层权重')
+    py_parser.add_argument('--lrc_bert_gard_perturb', action='store_true', help='Training based on Gradient Perturbation')
 
     # multi-teacher 多个教师的模型参数用冒号分隔, 优先级高于 teacher_ 参数
     py_parser.add_argument('--mt_num_attention_heads', type=str, default='')

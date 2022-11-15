@@ -428,6 +428,7 @@ def add_custom_args(parser: argparse.ArgumentParser):
     group.add_argument('--forward_repeat_current_n', type=int, default=0, help='当前是重复的第几次,自动分配不用设置,0表示无重复,1表示重复的第一次')
     group.add_argument('--ft_final_save', action='store_true', help='是否在微调的最后一轮保存模型,将覆盖best模型latest_checkpointed_iteration')
     group.add_argument('--map_vocab_size', type=float, default=None, help='映射的词数量,蒸馏或读取模型文件时使用.0-1表示占vacab-size的比例')
+    group.add_argument('--ignore_first_backward_gard', action='store_true', help='当forward_repeat_num大于0的时候是否忽略第1次反向传播的梯度,目前和梯度累积不兼容.可用于LRC_BERT的gradient perturbation等')
     return parser
 
 

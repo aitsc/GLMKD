@@ -19,7 +19,7 @@ from distill.tools import distill_random_data
 
 from utils import print_rank_0
 from utils import Timers
-from train_utils import setup_model_and_optimizer, load_pretrained
+from train_utils import setup_model_and_optimizer, load_pretrained, backward_step
 from utils import load_checkpoint, save_checkpoint
 from configure_data import make_data_loader
 from finetune_glm import _train, _build_train_valid_dataloaders, process_batch, mix_forward_step
@@ -29,7 +29,7 @@ from tsc_base import merge_dict
 tokenizer = None
 
 
-def finetune_forward_step(batch, model, args, timers, mems, teacher_models=None, is_eval=False):
+def finetune_forward_step(batch, model, args, timers, mems, teacher_models=None, is_eval=False, optimizer=None):
     # Get the batch.
     timers('batch generator').start()
     try:
@@ -53,6 +53,12 @@ def finetune_forward_step(batch, model, args, timers, mems, teacher_models=None,
     )
     args.forward_repeat_current_n = 0
     loss, mems = repeat_f(data_)[:2]
+    if args.forward_repeat_num and args.ignore_first_backward_gard:
+        assert args.gradient_accumulation_steps == 1
+        timers('sub_backward').start()
+        backward_step(optimizer, model, loss, args, timers)
+        timers('sub_backward').stop()
+        loss = 0.
         
     if args.forward_repeat_num and not is_eval:
         for i in range(args.forward_repeat_num):
@@ -64,6 +70,13 @@ def finetune_forward_step(batch, model, args, timers, mems, teacher_models=None,
                 data_['dec_text'] = tokens[1]
             loss = loss + repeat_f(data_)[0]
         args.forward_repeat_current_n = 0
+    
+    if args.forward_repeat_num and args.ignore_first_backward_gard:
+        if args.deepspeed:
+            model.zero_grad()
+            model.optimizer.zero_grad()
+        else:
+            optimizer.zero_grad()
     return loss, mems, 'bert'
 
 

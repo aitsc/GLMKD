@@ -42,32 +42,11 @@ class Models:
     def block_tiny6(env: dict, **kw):
         env['MODEL_TYPE'] = "blank-tiny6"
         if env.get('MODEL_PATH') is None:
-            env['MODEL_PATH'] = f"{ap}/checkpoints/pretrain/block_tiny6/blocklm-blank07-31-07-36"  # tiny6(fp16)+wiki(15G) 128*285000
+            env['MODEL_PATH'] = f"{ap}/checkpoints/pretrain/block_tiny6"
         env['MODEL_ARGS'] = ([
             ('--block-lm', None), 
             ('--num-layers', '6'), 
             ('--hidden-size', '768'), 
-            ('--num-attention-heads', '12'), 
-            ('--max-position-embeddings', '512'), 
-            ('--tokenizer-model-type', 'bert-base-uncased'), 
-            ('--tokenizer-type', 'BertWordPieceTokenizer'), 
-            ('--load-pretrained', env['MODEL_PATH']),
-            ('--fp16', None),
-        ])
-        if env.get('deepspeed_config') is None:
-            suffix = env['deepspeed_config_suffix'] if 'deepspeed_config_suffix' in env else ''
-            env['deepspeed_config'] = f'config_tasks/config_blocklm_tiny6{suffix}.json'
-        return env
-
-    @staticmethod
-    def block_tiny6_516(env: dict, **kw):
-        env['MODEL_TYPE'] = "blank-tiny6"
-        if env.get('MODEL_PATH') is None:
-            env['MODEL_PATH'] = f"{ap}/checkpoints/pretrain/block_tiny6/blocklm-blank07-31-07-36"  # tiny6(fp16)+wiki(15G) 128*285000
-        env['MODEL_ARGS'] = ([
-            ('--block-lm', None), 
-            ('--num-layers', '6'), 
-            ('--hidden-size', '516'), 
             ('--num-attention-heads', '12'), 
             ('--max-position-embeddings', '512'), 
             ('--tokenizer-model-type', 'bert-base-uncased'), 
@@ -105,7 +84,7 @@ class Models:
     def block_tiny4(env: dict, **kw):
         env['MODEL_TYPE'] = "blank-tiny4"
         if env.get('MODEL_PATH') is None:
-            env['MODEL_PATH'] = f"{ap}/checkpoints/pretrain/block_tiny4/blocklm-blank07-31-07-36"
+            env['MODEL_PATH'] = f"{ap}/checkpoints/pretrain/block_tiny4"
         env['MODEL_ARGS'] = ([
             ('--block-lm', None), 
             ('--num-layers', '4'), 
@@ -126,7 +105,7 @@ class Models:
     def block_tiny24_4(env: dict, **kw):
         env['MODEL_TYPE'] = "blank-tiny4"
         if env.get('MODEL_PATH') is None:
-            env['MODEL_PATH'] = f"{ap}/checkpoints/pretrain/block_tiny4/blocklm-blank07-31-07-36"
+            env['MODEL_PATH'] = f"{ap}/checkpoints/pretrain/block_tiny4"
         env['MODEL_ARGS'] = ([
             ('--block-lm', None), 
             ('--num-layers', '4'), 
@@ -905,7 +884,7 @@ def auto_tune():
     py_parser.add_argument('--py_file', type=str, default='finetune_glm.py')
     py_parser.add_argument('--gpus', type=str, default='6')
     py_parser.add_argument('--model', type=str, default='block_tiny6')
-    py_parser.add_argument('--model_path', type=str, default='checkpoints/pretrain/blocklm-base-blank')
+    py_parser.add_argument('--model_path', type=str, default=None)  # checkpoints/pretrain/blocklm-base-blank
     py_parser.add_argument('--task_t_load', type=str, default=None)
     py_parser.add_argument('--save_sub', type=str, default=None)
     py_parser.add_argument('--test', action='store_true')
@@ -931,7 +910,7 @@ def auto_tune():
         'zero_lambada', 'zero_lambada_uni', 'zero_lm', 'zero_lm_uni', 'zero_wikitext', 
         'seq_blank', 'seq_cnndm_org', 'seq_cnndm', 'seq_xsum', 'seq_gigaword',
     ]:
-        py_parser.add_argument(f'--{t}_model_path', type=str, default='')
+        py_parser.add_argument(f'--{t}_model_path', type=str, default=None)
     # finetune 基础上再微调
     # py_parser.add_argument('--again_1__tinybert_ft_pre', action='store_true')
     # py_parser.add_argument('--again_2__tinybert_ft_hard', action='store_true')
@@ -1147,7 +1126,13 @@ def auto_tune():
     rate_ds_D = {k[5:]: v for k, v in vars(args).items() if k[:8] == 'rate_ds_'}  # ds_ 倍率
     rate_arg_D = {'--' + k[9:]: v for k, v in vars(args).items() if k[:9] == 'rate_arg_'}  # arg_ 倍率
     for tni, (tn, task) in enumerate([(i, getattr(Tasks, i)) for i in args.tasks.split(',')]):
-        task_model_path = getattr(args, f'{tn}_model_path') if hasattr(args, f'{tn}_model_path') else ''
+        task_model_path = getattr(args, f'{tn}_model_path') if hasattr(args, f'{tn}_model_path') else None
+        if task_model_path:
+            task_model_path = os.path.join(ap, task_model_path)
+        elif args.model_path:
+            task_model_path = os.path.join(ap, args.model_path)
+        else:
+            task_model_path = None
         if '--student_model' in args_other_D and args.save_sub is None:
             save_sub = f'ft_{args_other_D["--student_model"]}'
         else:
@@ -1160,7 +1145,7 @@ def auto_tune():
             'gpus': args.big_task_gpus if tn in big_tasks else args.gpus,
             'py_file': args.py_file,
             'env': {
-                'MODEL_PATH': os.path.join(ap, task_model_path if task_model_path else args.model_path),
+                'MODEL_PATH': task_model_path,
                 'MASK_RATIO': args.mask_ratio,
                 **({'deepspeed_config_suffix': args.big_task_dsc_suffix} if tn in big_tasks else {})
             },

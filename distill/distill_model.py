@@ -122,7 +122,7 @@ class GLMStudent(torch.nn.Module):
             self.show_inter = False
         return loss_
 
-    def pre_loss(self, s_logits, t_logits, loss, loss_mask=None, return_dict=False, labels=False, keep_batch=False, t_no=None, **kwargs):
+    def pre_loss(self, s_logits, t_logits, loss, loss_mask=None, return_dict=False, labels=False, keep_batch=False, t_no=None, mse_t_w=1., **kwargs):
         """下游任务预测层损失
 
         Args:
@@ -135,6 +135,7 @@ class GLMStudent(torch.nn.Module):
                 注意part b中间部分也可能存在0
             keep_batch (bool, optional): 是否对返回的loss保留每个样本的loss
             t_no (int, optional): 多教师时该教师的序号
+            mse_t_w (float): mse_loss 计算方式中 t_logits 的权重, 可配合annealing_kd等方法
 
         Returns:
             tensor or dict: 总和损失或者分开的损失
@@ -157,7 +158,7 @@ class GLMStudent(torch.nn.Module):
             if self.args.distill_ft_soft and self.args.distill_soft_rate:
                 self.pre_loss_description += ' + %s*distill_ft_soft(T%s)'%(self.args.distill_soft_rate,T)
                 if self.args.distill_ft_soft_mse:
-                    l = CustomLoss.mse_loss(s_logits, t_logits, maks=mask, parallel=parallel, keep_batch=keep_batch)
+                    l = CustomLoss.mse_loss(s_logits, t_logits * mse_t_w, maks=mask, parallel=parallel, keep_batch=keep_batch)
                     self.pre_loss_description += 'mse'
                 else:
                     if self.args.distill_ft_soft_kl:
@@ -180,7 +181,7 @@ class GLMStudent(torch.nn.Module):
             if self.args.distill_pt_soft and self.args.distill_soft_rate:
                 self.pre_loss_description += ' + %s*distill_pt_soft(T%s)'%(self.args.distill_soft_rate,T)
                 if self.args.distill_pt_soft_mse:
-                    l = CustomLoss.mse_loss(s_logits, t_logits, mask=mask, parallel=parallel, keep_batch=keep_batch)
+                    l = CustomLoss.mse_loss(s_logits, t_logits * mse_t_w, mask=mask, parallel=parallel, keep_batch=keep_batch)
                     self.pre_loss_description += 'mse'
                 else:
                     if self.args.distill_pt_soft_ce:
@@ -1879,6 +1880,17 @@ class LRC_BERT(GLMStudent):
         return loss_
 
 
+class Annealing_KD(GLMStudent):
+    def __init__(self, language_model, args, **kwargs):
+        super().__init__(language_model, args, **kwargs)
+
+    def pre_loss(self, s_logits, t_logits, loss, **kwargs):
+        t = (1 - self.args.iteration / self.args.train_iters) * self.args.annealing_kd_max_t
+        fai_t = 1 - (max(1, math.ceil(t)) - 1) / self.args.annealing_kd_max_t
+        loss_ = super().pre_loss(s_logits, t_logits, loss, mse_t_w=fai_t, **kwargs)
+        return loss_
+
+
 student_model_D = {
     None: None,
     'kd': GLMStudent,
@@ -1899,4 +1911,5 @@ student_model_D = {
     'theseus': Theseus,
     'universal_kd': Universal_KD,
     'lrc_bert': LRC_BERT,
+    'annealing_kd': Annealing_KD,
 }

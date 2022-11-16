@@ -156,6 +156,8 @@ def get_args():
     # lrc_bert
     py_parser.add_argument('--lrc_bert_alpha', type=float, default=1., help='内层权重')
     py_parser.add_argument('--lrc_bert_gard_perturb', action='store_true', help='Training based on Gradient Perturbation')
+    # annealing_kd
+    py_parser.add_argument('--annealing_kd_max_t', type=float, default=7., help='最大温度')
 
     # multi-teacher 多个教师的模型参数用冒号分隔, 优先级高于 teacher_ 参数
     py_parser.add_argument('--mt_num_attention_heads', type=str, default='')

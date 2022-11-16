@@ -184,11 +184,16 @@
                 // "--distill_random_data_n=1",
                 // "--forward_repeat_num=0",
                 // "--distill_random_data_method=sample",
+                // Annealing_KD
+                "--student_model=annealing_kd",
+                "--annealing_kd_max_t=7",
+                "--distill_ft_soft",
+                "--distill_ft_soft_mse",
                 // LRC_BERT
-                "--student_model=lrc_bert",
-                "--lrc_bert_gard_perturb",
-                "--ignore_first_backward_gard",
-                "--forward_repeat_num=1",
+                // "--student_model=lrc_bert",
+                // "--lrc_bert_gard_perturb",
+                // "--ignore_first_backward_gard",
+                // "--forward_repeat_num=1",
                 // Universal_KD
                 // "--student_model=universal_kd",
                 // "--distill_ft_soft",

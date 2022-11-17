@@ -17,7 +17,7 @@ from configure_data import prepare_tokenizer
 from distill.distill_model import unpacking_student_model
 from distill.tools import distill_random_data
 
-from utils import print_rank_0
+from utils import print_rank_0, get_distributed_formatted_time
 from utils import Timers
 from train_utils import setup_model_and_optimizer, load_pretrained, backward_step
 from utils import load_checkpoint, save_checkpoint
@@ -396,6 +396,9 @@ if __name__ == '__main__':
 
     # Pytorch distributed.
     initialize_distributed(args)
+    if '自动时间' in args.experiment_name:
+        args.experiment_name = args.experiment_name.replace('自动时间', get_distributed_formatted_time())
+        print('experiment_name-自动时间: ' + args.experiment_name)
 
     # Random seeds for reproducability.
     set_random_seed(args.seed)

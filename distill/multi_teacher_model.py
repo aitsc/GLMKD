@@ -272,13 +272,7 @@ class RL_KD(AvgTeacher):
         if args.rl_kd_semantic_model is not None:
             semantic_len = int(args.mt_hidden_size.split(':')[args.rl_kd_semantic_model])
             tn -= 1  # multi Teacher CE Loss
-        if args.custom_sample_shape:
-            sample_shape = [int(i) for i in args.custom_sample_shape.split(',')]
-        if len(sample_shape) == 2:  # 分类方式差异
-            if self.args.task.lower() in {'record'}:
-                semantic_len *= self.get_class_num()
-            else:
-                semantic_len *= sample_shape[0]
+        semantic_len *= self.get_class_num()  # 分类方式差异
         self.agent_semantic_mt_loss = torch.nn.Linear(semantic_len + tn, tn)
         # Teacher soft labels
         class_dim = self.get_class_num() if self.get_class_num() else args.vocab_size
@@ -306,7 +300,7 @@ class RL_KD(AvgTeacher):
         if self.args.task.lower() in task_class_num and not self.args.custom_logits_paralle:
             return task_class_num[self.args.task.lower()]
         else:
-            return None
+            return 1.
 
     def hooks_process(self, t_hook_L, **kwargs):
         if self.args.rl_kd_semantic_model is not None:

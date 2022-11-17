@@ -174,8 +174,6 @@ def main():
     multi_train_data, multi_val_data = None, None
     if args.multi_task_ratio > 0.0:
         multi_train_data, multi_val_data = build_multi_task_dataset(args, tokenizer)
-    if train_data is not None and not args.custom_sample_shape:
-        args.custom_sample_shape = ','.join((str(i) for i in train_data.dataset[0]['text'].shape))
 
     # Model, optimizer, and learning rate.
     args.custom_logits_paralle = True

@@ -108,6 +108,10 @@
 2. finetune-1: ... --student_model=annealing_kd --annealing_kd_max_t=7 --distill_ft_soft --distill_ft_soft_mse
 3. finetune-2: ... without teacher
 
+## MobileBERT
+1. pretrain: ... 
+2. pretrain: ... --student_model=mobilebert --mobilebert_kd_w=0.5 --mobilebert_pkt_small_lr=0.1 --distill_pt_hard
+
 
 # Multi-teacher distillation
 - General parameters: ... --mt_num_attention_heads=a1:a2 --mt_hidden_size=h1:h2 --mt_num_layers=l1:l2 --mt_max_position_embeddings=m1:m2 --mt_load_pretrained=p1:p2 --teacher_fp16

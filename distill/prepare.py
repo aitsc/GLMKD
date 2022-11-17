@@ -158,6 +158,9 @@ def get_args():
     py_parser.add_argument('--lrc_bert_gard_perturb', action='store_true', help='Training based on Gradient Perturbation')
     # annealing_kd
     py_parser.add_argument('--annealing_kd_max_t', type=float, default=7., help='最大温度')
+    # mobilebert
+    py_parser.add_argument('--mobilebert_kd_w', type=float, default=0.5, help='中间层损失权重')
+    py_parser.add_argument('--mobilebert_pkt_small_lr', type=float, default=0.1, help='pkt中间stage的较低学习率')
 
     # multi-teacher 多个教师的模型参数用冒号分隔, 优先级高于 teacher_ 参数
     py_parser.add_argument('--mt_num_attention_heads', type=str, default='')

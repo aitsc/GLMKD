@@ -1891,6 +1891,88 @@ class Annealing_KD(GLMStudent):
         return loss_
 
 
+class MobileBERT(GLMStudent):
+    def __init__(self, language_model, args, **kwargs):
+        super().__init__(language_model, args, **kwargs)
+        self.nextLockedLay = 1
+
+    def get_teacher_hook(self, t_no=0, **kwargs):
+        hook_L = [super().get_teacher_hook(t_no=0, **kwargs)]
+        layers = [0] + cumulative_sum(fast_uniform_seg(self.args.num_layers, [1] * self.args.teacher_num_layers))
+        hook ={'transformer': {
+            'layers': merge_dict([
+                {i: {'layernorm_output': None} for i in layers[:-1]},
+                {i - 1: {'attention_scores': None} for i in layers[1:]},
+            ]),
+            'output': None,
+        }}
+        hook_L.append(hook)
+        return merge_dict(hook_L)
+
+    def get_student_hook(self, **kwargs):
+        hook_L = [super().get_student_hook(**kwargs)]
+        layers = tuple(range(0, self.args.num_layers + 1))
+        hook ={'transformer': {
+            'layers': merge_dict([
+                {i: {'layernorm_output': None} for i in layers[:-1]},
+                {i - 1: {'attention_scores': None} for i in layers[1:]},
+            ]),
+            'output': None,
+        }}
+        hook_L.append(hook)
+        return merge_dict(hook_L)
+
+    def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=False, t_no=None, **kwargs):
+        loss_ = 0.
+        if len(s_inter_vars) == 0:
+            return loss_
+        def get_layer_f(st, name):
+            inter_vars, hook = (s_inter_vars, s_hook) if st == 's' else (t_inter_vars, t_hook)
+            return [inter_vars[i[1][name]] for i in sorted(hook['transformer']['layers'].items()) if name in i[1]]
+        # attentions
+        student_reps = get_layer_f('s', 'attention_scores')
+        teacher_reps = get_layer_f('t', 'attention_scores')
+        assert len(student_reps) == len(teacher_reps) == self.args.num_layers
+        for i, (student_rep, teacher_rep) in enumerate(zip(student_reps, teacher_reps)):
+            if i >= self.nextLockedLay:
+                continue
+            student_rep.distill = teacher_rep.distill = True
+            l = CustomLoss.kl_div(student_rep, teacher_rep, parallel='gather', keep_batch=keep_batch)
+            if i < self.nextLockedLay - 1 and self.nextLockedLay <= self.args.num_layers:
+                l = l * self.args.mobilebert_pkt_small_lr
+            super().add_summary(f'inter_loss/attention_scores.{i}', l)
+            loss_ += l
+        # hidden_states
+        student_reps = get_layer_f('s', 'layernorm_output')
+        teacher_reps = get_layer_f('t', 'layernorm_output')
+        if 'transformer' in s_hook and 'output' in s_hook['transformer']:
+            student_reps += [s_inter_vars[s_hook['transformer']['output']]]
+            teacher_reps += [t_inter_vars[t_hook['transformer']['output']]]
+        assert len(student_reps) == len(teacher_reps) == self.args.num_layers + 1
+        for i, (student_rep, teacher_rep) in enumerate(zip(student_reps, teacher_reps)):
+            if i > self.nextLockedLay:
+                continue
+            student_rep.distill = teacher_rep.distill = True
+            l = CustomLoss.cos_distance(student_rep[:,0,:], teacher_rep[:,0,:], keep_batch=keep_batch) # [CLS]
+            if i < self.nextLockedLay and 1 < self.nextLockedLay <= self.args.num_layers:
+                l = l * self.args.mobilebert_pkt_small_lr
+            super().add_summary(f'inter_loss/hidden_states.{i}', l)
+            loss_ += l
+        # 其他处理
+        loss_ = loss_ * self.args.mobilebert_kd_w
+        if self.args.iteration >= self.args.train_iters / (self.args.num_layers + 1) * self.nextLockedLay:
+            self.nextLockedLay += 1
+            print(f'MobileBERT.nextLockedLay: {self.nextLockedLay - 1} -> {self.nextLockedLay}')
+        loss_ += super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=keep_batch, t_no=t_no, **kwargs)
+        return loss_
+
+    def pre_loss(self, s_logits, t_logits, loss, **kwargs):
+        if self.nextLockedLay <= self.args.num_layers:
+            return 0.
+        loss_ = super().pre_loss(s_logits, t_logits, loss, return_dict=False, **kwargs)
+        return loss_
+
+
 student_model_D = {
     None: None,
     'kd': GLMStudent,
@@ -1912,4 +1994,5 @@ student_model_D = {
     'universal_kd': Universal_KD,
     'lrc_bert': LRC_BERT,
     'annealing_kd': Annealing_KD,
+    'mobilebert': MobileBERT,
 }

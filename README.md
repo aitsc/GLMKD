@@ -1,6 +1,6 @@
 # GKD
 
-GKD is a PyTorch-based model distillation toolkit for [General Language Model](https://github.com/aitsc/GLM).
+GKD is a PyTorch-based model distillation toolkit for [General Language Model](https://github.com/THUDM/GLM).
 
 It provides a flexible architecture to efficiently implement various language model distillation methods, while allowing the use of a combination of these methods.
 
@@ -48,7 +48,7 @@ We prepare a docker image based on Python 3.8.13, PyTorch 1.9.1, and CUDA 11.1. 
   docker pull aitsc/glm:v1.5
   ```
 ### Other
-Same as [GLM](https://github.com/aitsc/GLM).
+Same as [GLM](https://github.com/THUDM/GLM#get-started).
 
 ## Usage of existing methods
 We provide commands for distilling GLM on all methods with deepspeed.

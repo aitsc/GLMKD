@@ -10,6 +10,7 @@ We have introduced techniques such as model parallelism ([Megatron-LM](https://g
 We briefly summarize here the 24 model distillation methods that have been implemented by the toolkit.
 
 <img src="distill/img/methods.png" width = "500" alt="" align=center />
+
 ```
 [1] Geoffrey E. Hinton, Oriol Vinyals, Jeffrey Dean. Distilling the Knowledge in a Neural Network[J]. CoRR, 2015, abs/1503.02531.
 [2] Iulia Turc, Ming-Wei Chang, Kenton Lee, Kristina Toutanova. Well-Read Students Learn Better - The Impact of Student Initialization on Knowledge Distillation[J]. CoRR, 2019, abs/1908.08962.

@@ -65,6 +65,10 @@ class GLMModel(torch.nn.Module):
                  spell_func='lstm',
                  attention_scale=1.0,
                  map_vocab_size=None,
+                 ib_hidden_size=None,
+                 ib_mode=False,
+                 ib_ffn_num=1,
+                 ib_word_emb=None,
                  ):
 
         super(GLMModel, self).__init__()
@@ -78,6 +82,11 @@ class GLMModel(torch.nn.Module):
         init_method = init_method_normal(std=0.02)
 
         # Word embeddings (parallel).
+        if ib_mode and ib_word_emb:
+            self.ib_emb_conv = mpu.ColumnParallelLinear(ib_word_emb * 3, hidden_size,
+                                                        gather_output=True,
+                                                        init_method=init_method)
+            self.ib_word_emb = ib_word_emb
         if map_vocab_size:
             self.word_embeddings = mpu.VocabParallelEmbedding(
                 map_vocab_size, hidden_size, init_method=init_method)
@@ -107,7 +116,10 @@ class GLMModel(torch.nn.Module):
                                                        checkpoint_num_layers,
                                                        attention_scale=attention_scale,
                                                        relative_encoding=relative_encoding,
-                                                       block_position_encoding=block_position_encoding)
+                                                       block_position_encoding=block_position_encoding,
+                                                       output_dim=ib_hidden_size if ib_mode else None,
+                                                       ib_mode=ib_mode,
+                                                       ib_ffn_num=ib_ffn_num)
         if spell_length is not None:
             self.prompt_spell = PromptSpell(spell_length, self.hidden_size, spell_func)
 
@@ -130,6 +142,14 @@ class GLMModel(torch.nn.Module):
         input_ids = self.map_input_ids(input_ids)
         batch_size = input_ids.size(0)
         words_embeddings = self.word_embeddings(input_ids)
+        if hasattr(self, 'ib_emb_conv') and hasattr(self, 'ib_word_emb'):
+            words_embeddings = words_embeddings[..., :self.ib_word_emb]
+            words_embeddings = torch.cat([
+                F.pad(words_embeddings[:, 1:], (0, 0, 0, 1, 0, 0)),
+                words_embeddings,
+                F.pad(words_embeddings[:, :-1], (0, 0, 1, 0, 0, 0))
+            ], axis=2)
+            words_embeddings = self.ib_emb_conv(words_embeddings)
         hook_add(hook, inter_vars, 'words_embeddings', words_embeddings)
         hook_add(hook, inter_vars, 'position_ids', position_ids)
         embeddings = words_embeddings

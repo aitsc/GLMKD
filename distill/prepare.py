@@ -54,6 +54,10 @@ def get_args():
     py_parser.add_argument('--teacher_max_position_embeddings', type=int, default=512)
     py_parser.add_argument('--teacher_load_pretrained', type=str, default=None)
     py_parser.add_argument('--teacher_fp16', action='store_true')
+    py_parser.add_argument('--teacher_inverted_bottleneck_mode', action='store_true')
+    py_parser.add_argument('--teacher_ib_hidden_size', type=int, default=1024)
+    py_parser.add_argument('--teacher_ib_ffn_num', type=int, default=1)
+    py_parser.add_argument('--teacher_ib_word_emb', type=int, default=128)
 
     # tinybert
     py_parser.add_argument('--tinybert_inter_final', action='store_true', help="只使用最后隐层做损失")
@@ -169,6 +173,9 @@ def get_args():
     py_parser.add_argument('--mt_max_position_embeddings', type=str, default='')
     py_parser.add_argument('--mt_load_pretrained', type=str, default='')
     py_parser.add_argument('--mt_disable_operation', type=str, default='0', help='是否不计算教师模型的输出结果(用替代值),可用于Theseus等只需要教师中间层的方法.0表示计算,1表示不计算,冒号分隔则针对每个教师分别处理')
+    py_parser.add_argument('--mt_ib_hidden_size', type=str, default='')
+    py_parser.add_argument('--mt_ib_ffn_num', type=str, default='')
+    py_parser.add_argument('--mt_ib_word_emb', type=str, default='')
     # multi-teacher model (指将多个教师联合在一起的模型)
     py_parser.add_argument('--multi_teacher_model', type=str, default=None, help='多教师模型名称')
     py_parser.add_argument('--mt_model_load', type=str, default=None, help='可选额外加载的多教师模型路径,可以自动从其他学生模型路径中提取')
@@ -236,6 +243,9 @@ def get_teacher_model(args, **kwargs):
         'num_layers',
         'max_position_embeddings',
         'load_pretrained',
+        'ib_hidden_size',
+        'ib_ffn_num',
+        'ib_word_emb',
     ]
     original_vars = [getattr(args, i) for i in transfer_vars]
     fp16 = args.fp16
@@ -290,6 +300,9 @@ def get_teachers_hook(args, student_model=None, is_op=False, **kwargs):
         'num_layers',
         'max_position_embeddings',
         'load_pretrained',
+        'ib_hidden_size',
+        'ib_ffn_num',
+        'ib_word_emb',
     ]
     check = [len(getattr(args, 'mt_' + i).split(':')) - 1 for i in transfer_vars]
     assert check[0] * len(transfer_vars) == sum(check), 'args中的多教师参数不是一一对应!'

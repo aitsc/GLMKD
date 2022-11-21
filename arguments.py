@@ -428,6 +428,10 @@ def add_custom_args(parser: argparse.ArgumentParser):
     group.add_argument('--ft_final_save', action='store_true', help='是否在微调的最后一轮保存模型,将覆盖best模型latest_checkpointed_iteration')
     group.add_argument('--map_vocab_size', type=float, default=None, help='映射的词数量,蒸馏或读取模型文件时使用.0-1表示占vacab-size的比例')
     group.add_argument('--ignore_first_backward_gard', action='store_true', help='当forward_repeat_num大于0的时候是否忽略第1次反向传播的梯度,目前和梯度累积不兼容.可用于LRC_BERT的gradient perturbation等')
+    group.add_argument('--inverted_bottleneck_mode', action='store_true', help='可用于MobileBERT方法')
+    group.add_argument('--ib_hidden_size', type=int, default=128, help='IB结构中的隐层维度,线性层依然和--hidden-size一致')
+    group.add_argument('--ib_ffn_num', type=int, default=4, help='IB结构中的FFN重复次数')
+    group.add_argument('--ib_word_emb', type=int, default=128, help='IB结构中的词向量维度,None或0表示不使用')
     return parser
 
 

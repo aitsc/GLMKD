@@ -182,28 +182,30 @@ class ParallelSelfAttention(torch.nn.Module):
     def __init__(self, hidden_size, num_attention_heads,
                  attention_dropout_prob, output_dropout_prob,
                  init_method, output_layer_init_method=None, relative_encoding=False,
-                 performer=False, attention_scale=1.0):
+                 performer=False, attention_scale=1.0, output_dim=None):
         super(ParallelSelfAttention, self).__init__()
         self.performer = performer
+        if not output_dim:
+            output_dim = hidden_size
         # Set output layer initialization if not provided.
         if output_layer_init_method is None:
             output_layer_init_method = init_method
         # Per attention head and per partition values.
         world_size = get_model_parallel_world_size()
-        self.hidden_size_per_partition = divide(hidden_size, world_size)
-        self.hidden_size_per_attention_head = divide(hidden_size,
+        self.hidden_size_per_partition = divide(output_dim, world_size)
+        self.hidden_size_per_attention_head = divide(output_dim,
                                                      num_attention_heads)
         self.num_attention_heads_per_partition = divide(num_attention_heads,
                                                         world_size)
         self.relative_encoding = relative_encoding
         self.attention_scale = attention_scale
         # Strided linear layer.
-        self.query_key_value = ColumnParallelLinear(hidden_size, 3 * hidden_size,
+        self.query_key_value = ColumnParallelLinear(hidden_size, 3 * output_dim,
                                                     stride=3,
                                                     gather_output=False,
                                                     init_method=init_method)
         if relative_encoding:
-            self.relative = ColumnParallelLinear(hidden_size, hidden_size, gather_output=False,
+            self.relative = ColumnParallelLinear(hidden_size, output_dim, gather_output=False,
                                                  init_method=init_method)
         # Dropout. Note that for a single iteration, this layer will generate
         # different outputs on different number of parallel partitions but
@@ -211,8 +213,8 @@ class ParallelSelfAttention(torch.nn.Module):
         self.attention_dropout = torch.nn.Dropout(attention_dropout_prob)
 
         # Output.
-        self.dense = RowParallelLinear(hidden_size,
-                                       hidden_size,
+        self.dense = RowParallelLinear(output_dim,
+                                       output_dim,
                                        input_is_parallel=True,
                                        init_method=output_layer_init_method)
         self.output_dropout = torch.nn.Dropout(output_dropout_prob)
@@ -539,8 +541,13 @@ class ParallelTransformerLayer(torch.nn.Module):
                  output_layer_init_method=None,
                  relative_encoding=False,
                  performer=False,
-                 attention_scale=1.0):
+                 attention_scale=1.0,
+                 output_dim=None,
+                 ib_mode=False,
+                 ib_ffn_num=1):
         super(ParallelTransformerLayer, self).__init__()
+        if not output_dim:
+            output_dim = hidden_size
         # Set output layer initialization if not provided.
         if output_layer_init_method is None:
             output_layer_init_method = init_method
@@ -558,18 +565,38 @@ class ParallelTransformerLayer(torch.nn.Module):
             output_layer_init_method=output_layer_init_method,
             relative_encoding=relative_encoding,
             performer=performer,
-            attention_scale=attention_scale)
+            attention_scale=attention_scale,
+            output_dim=output_dim)
 
         # Layernorm on the input data.
-        self.post_attention_layernorm = LayerNorm(hidden_size,
+        self.post_attention_layernorm = LayerNorm(output_dim,
                                                   eps=layernorm_epsilon)
 
         # MLP
         self.mlp = ParallelMLP(
-            hidden_size,
+            output_dim,
             output_dropout_prob,
             init_method,
             output_layer_init_method=output_layer_init_method)
+
+        # inverted_bottleneck_mode
+        if ib_mode:
+            self.ib_linear_in = ColumnParallelLinear(hidden_size, output_dim,
+                                                  gather_output=True,
+                                                  init_method=init_method)
+            self.ib_linear_out = ColumnParallelLinear(output_dim, hidden_size,
+                                                  gather_output=True,
+                                                  init_method=init_method)
+            if ib_ffn_num and ib_ffn_num > 1:
+                self.ib_mlp = torch.nn.ModuleList([ParallelMLP(
+                    output_dim,
+                    output_dropout_prob,
+                    init_method,
+                    output_layer_init_method=output_layer_init_method,
+                ) for _ in range(ib_ffn_num - 1)])
+                self.ib_mlp_layernorm = torch.nn.ModuleList([
+                    LayerNorm(output_dim, eps=layernorm_epsilon) for _ in range(ib_ffn_num - 1)])
+            self.ib_linear_out_layernorm = LayerNorm(output_dim, eps=layernorm_epsilon)
 
     def forward(self, hidden_states, ltor_mask, position_embeddings=None, r_w_bias=None, r_r_bias=None, mem=None, hook=None, hook_op=None):
         inter_vars = []
@@ -586,7 +613,11 @@ class ParallelTransformerLayer(torch.nn.Module):
         attention_output = hook_model(hook, inter_vars, self.attention,
             layernorm_output, ltor_mask, position_embeddings, r_w_bias, r_r_bias, mem, hook_op=hook_op)
         # Residual connection.
-        layernorm_input = hidden_states + attention_output
+        if hasattr(self, 'ib_linear_in'):
+            hidden_states_ = self.ib_linear_in(hidden_states)
+        else:
+            hidden_states_ = hidden_states
+        layernorm_input = hidden_states_ + attention_output
         # Layer norm post the self attention.
         layernorm_output = self.post_attention_layernorm(layernorm_input)
         hook_add(hook, inter_vars, 'post_attention_layernorm', layernorm_output)
@@ -594,6 +625,17 @@ class ParallelTransformerLayer(torch.nn.Module):
         mlp_output = self.mlp(layernorm_output)
         # Second residual connection.
         output = layernorm_input + mlp_output
+        # Inverted-Bottleneck
+        if hasattr(self, 'ib_mlp') and hasattr(self, 'ib_mlp_layernorm'):
+            for ib_mlp, ib_mlp_layernorm in zip(self.ib_mlp, self.ib_mlp_layernorm):
+                output_last = output
+                output = ib_mlp_layernorm(output)
+                output = ib_mlp(output)
+                output = output_last + output
+        if hasattr(self, 'ib_linear_out') and hasattr(self, 'ib_linear_out_layernorm'):
+            output = self.ib_linear_out_layernorm(output)
+            output = self.ib_linear_out(output)
+            output = hidden_states + output
 
         hook_add(hook, inter_vars, 'tf_output', output)
         return hook_return(hook, inter_vars, output)
@@ -672,6 +714,9 @@ class GPT2ParallelTransformer(torch.nn.Module):
                  performer=False,
                  use_decoder_layer=False,
                  attention_scale=1.0,
+                 output_dim=None,
+                 ib_mode=False,
+                 ib_ffn_num=1,
                  ):
         super(GPT2ParallelTransformer, self).__init__()
         self.hidden_size = hidden_size
@@ -743,7 +788,10 @@ class GPT2ParallelTransformer(torch.nn.Module):
                     output_layer_init_method=output_layer_init_method,
                     relative_encoding=relative_encoding,
                     performer=performer,
-                    attention_scale=attention_scale)
+                    attention_scale=attention_scale,
+                    output_dim=output_dim,
+                    ib_mode=ib_mode,
+                    ib_ffn_num=ib_ffn_num)
 
         # Transformer layers.
         self.layers = torch.nn.ModuleList(

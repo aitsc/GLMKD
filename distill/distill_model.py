@@ -1935,7 +1935,7 @@ class MobileBERT(GLMStudent):
         assert len(student_reps) == len(teacher_reps) == self.args.num_layers
         for i, (student_rep, teacher_rep) in enumerate(zip(student_reps, teacher_reps)):
             if i >= self.nextLockedLay:
-                continue
+                break
             student_rep.distill = teacher_rep.distill = True
             l = CustomLoss.kl_div(student_rep, teacher_rep, parallel='gather', keep_batch=keep_batch)
             if i < self.nextLockedLay - 1 and self.nextLockedLay <= self.args.num_layers:
@@ -1951,16 +1951,17 @@ class MobileBERT(GLMStudent):
         assert len(student_reps) == len(teacher_reps) == self.args.num_layers + 1
         for i, (student_rep, teacher_rep) in enumerate(zip(student_reps, teacher_reps)):
             if i > self.nextLockedLay:
-                continue
+                break
             student_rep.distill = teacher_rep.distill = True
-            l = CustomLoss.cos_distance(student_rep[:,0,:], teacher_rep[:,0,:], keep_batch=keep_batch) # [CLS]
-            if i < self.nextLockedLay and 1 < self.nextLockedLay <= self.args.num_layers:
+            l = CustomLoss.mse_loss(student_rep, teacher_rep, keep_batch=keep_batch)
+            if i < self.nextLockedLay and self.nextLockedLay <= self.args.num_layers:
                 l = l * self.args.mobilebert_pkt_small_lr
             super().add_summary(f'inter_loss/hidden_states.{i}', l)
             loss_ += l
         # 其他处理
         loss_ = loss_ * self.args.mobilebert_kd_w
-        if self.args.iteration >= self.args.train_iters / (self.args.num_layers + 1) * self.nextLockedLay:
+        all_iters = self.args.lr_decay_iters if self.args.lr_decay_iters else self.args.train_iters
+        if self.args.iteration >= all_iters / (self.args.num_layers + 1) * self.nextLockedLay:
             self.nextLockedLay += 1
             print(f'MobileBERT.nextLockedLay: {self.nextLockedLay - 1} -> {self.nextLockedLay}')
         loss_ += super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=keep_batch, t_no=t_no, **kwargs)

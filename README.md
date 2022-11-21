@@ -1,240 +1,149 @@
-# GLM
+# GKD
 
-GLM is a General Language Model pretrained with an autoregressive blank-filling objective and can be finetuned on 
-various natural language understanding and generation tasks. 
+GKD is a PyTorch-based model distillation toolkit for [General Language Model](https://github.com/aitsc/GLM).
 
-Please refer to our paper for a detailed description of GLM:
+It provides a flexible architecture to efficiently implement various language model distillation methods, while allowing the use of a combination of these methods.
 
-[GLM: General Language Model Pretraining with Autoregressive Blank Infilling](https://arxiv.org/abs/2103.10360)
+We have introduced techniques such as model parallelism ([Megatron-LM](https://github.com/NVIDIA/Megatron-LM)) and ZeRO ([DeepSpeed](https://github.com/microsoft/DeepSpeed)) in the toolkit to make it efficient for distilling very large models.
 
-Zhengxiao Du*, Yujie Qian*, Xiao Liu, Ming Ding, Jiezhong Qiu, Zhilin Yang, Jie Tang (*: equal contribution)
+## Distillation Methods
+We briefly summarize here the 24 model distillation methods that have been implemented by the toolkit.
 
-Accepted to ACL 2022 as a long paper.
-
-Part of the code is based on [Megatron-LM](https://github.com/NVIDIA/Megatron-LM) and [PET](https://github.com/timoschick/pet).
-
-## Pretrained Models
-You can download the pretrained models used in the paper [here](https://mailstsinghuaeducn-my.sharepoint.com/:f:/g/personal/duzx16_mails_tsinghua_edu_cn/Eg8MZe62MlVFs_mK2tHaH-sBC-UC01jpGPZop08pID7sOw?e=MsevNR).
-
-| Name | Params | File                                                                                                               | Config
-|  -----  |--------|--------------------------------------------------------------------------------------------------------------------| ----
-| GLM-Base | 110M   | glm-base-blank.tar.bz2                                                                                             | model_blocklm_base.sh
-| GLM-Large  | 335M   | glm-large-blank.tar.bz2                                                                                            | model_blocklm_large.sh
-| GLM-Large-Chinese  | 335M   | glm-large-chinese.tar.bz2                                                                                          | model_blocklm_large_chinese.sh
-| GLM-Large (multi-task) | 335M   | glm-large-generation.tar.bz2                                                                                       | model_blocklm_large_generation.sh
-| GLM-410M (multi-task) | 410M   | glm-1.25-generation.tar.bz2                                                                                        | model_blocklm_1.25_generation.sh
-| GLM-515M (multi-task) | 515M   | glm-1.5-generation.tar.bz2                                                                                         | model_blocklm_1.5_generation.sh
-| GLM-RoBERTa | 335M   | glm-roberta-large-blank.tar.bz2                                                                                    | model_blocklm_roberta_large.sh
-| GLM-2B | 2B     | glm-2b.tar.bz2                                                                                                     | model_blocklm_2B.sh
-| GLM-XXLarge | 10B    | [apply here](https://wudaoai.cn/model/download?resourceId=1420992103650996224&filename=GLM-XXLarge-10B-en.tar.bz2) | model_blocklm_10B.sh
-| GLM-XXLarge-Chinese | 10B    | [apply here](https://wudaoai.cn/model/download?resourceId=1420992103650996224&filename=GLM-10B-zh.tar.bz2)         | model_blocklm_10B_chinese.sh
+<img src="distill/img/methods.png" width = "500" alt="" align=center />
+<p style="line-height: 10px;font: size=1">
+<font size=1>[1] Geoffrey E. Hinton, Oriol Vinyals, Jeffrey Dean. Distilling the Knowledge in a Neural Network[J]. CoRR, 2015, abs/1503.02531.</font><br>
+<font size=1>[2] Iulia Turc, Ming-Wei Chang, Kenton Lee, Kristina Toutanova. Well-Read Students Learn Better - The Impact of Student Initialization on Knowledge Distillation[J]. CoRR, 2019, abs/1908.08962.</font><br>
+<font size=1>[3] Siqi Sun, Yu Cheng. Zhe Gan, Jingjing Liu. Patient Knowledge Distillation for BERT Model Compression[C]// EMNLP. 2019: 4322-4331.</font><br>
+<font size=1>[4] Victor Sanh, Lysandre Debut, Julien Chaumond, Thomas Wolf. DistilBERT, a distilled version of BERT - smaller, faster, cheaper and lighter[J]. CoRR, 2019, abs/1910.01108.</font><br>
+<font size=1>[5] Canwen Xu, Wangchunshu Zhou, Tao Ge, Furu Wei, Ming Zhou. BERT-of-Theseus - Compressing BERT by Progressive Module Replacing[C]// EMNLP. 2020: 7859-7869.</font><br>
+<font size=1>[6] Xiaoqi Jiao, Yichun Yin, Lifeng Shang, Xin Jiang. Xiao Chen, Linlin Li, Fang Wang. Qun Liu. TinyBERT - Distilling BERT for Natural Language Understanding[C]// EMNLP. 2020: 4163-4174.</font><br>
+<font size=1>[7] Wenhui Wang, Furu Wei, Li Dong. Hangbo Bao, Nan Yang. Ming Zhou. MiniLM - Deep Self-Attention Distillation for Task-Agnostic Compression of Pre-Trained Transformers[C]// NeurIPS. 2020.</font><br>
+<font size=1>[8] Gustavo Aguilar, Yuan Ling, Yu Zhang, Benjamin Yao, Xing Fan, Chenlei Guo. Knowledge Distillation from Internal Representations[C]// AAAI. 2020: 7350-7357.</font><br>
+<font size=1>[9] Zhiqing Sun, Hongkun Yu, Xiaodan Song, Renjie Liu, Yiming Yang, Denny Zhou. MobileBERT - a Compact Task-Agnostic BERT for Resource-Limited Devices[C]// ACL. 2020: 2158-2170.</font><br>
+<font size=1>[10] Wenhui Wang, Hangbo Bao, Shaohan Huang, Li Dong. Furu Wei. MiniLMv2 - Multi-Head Self-Attention Relation Distillation for Compressing Pretrained Transformers[C]// ACL. 2021: 2140-2151.</font><br>
+<font size=1>[11] Peyman Passban, Yimeng Wu, Mehdi Rezagholizadeh, Qun Liu. ALP-KD - Attention-Based Layer Projection for Knowledge Distillation[C]// AAAI. 2021: 13657-13665.</font><br>
+<font size=1>[12] Hao Fu, Shaojun Zhou, Qihong Yang, Junjie Tang, Guiquan Liu, Kaikui Liu, Xiaolong Li. LRC-BERT - Latent-representation Contrastive Knowledge Distillation for Natural Language Understanding[C]// AAAI. 2021: 12830-12838.</font><br>
+<font size=1>[13] Aref Jafari, Mehdi Rezagholizadeh, Pranav Sharma, Ali Ghodsi. Annealing Knowledge Distillation[C]// EACL. 2021.</font><br>
+<font size=1>[14] Geondo Park, Gyeongman Kim, Eunho Yang. Distilling Linguistic Context for Language Model Compression[C]// EMNLP. 2021: 364-378.</font><br>
+<font size=1>[15] Yimeng Wu, Mehdi Rezagholizadeh, Abbas Ghaddar, Md. Akmal Haidar, Ali Ghodsi. Universal-KD - Attention-based Output-Grounded Intermediate Layer Knowledge Distillation[C]// EMNLP. 2021: 7649-7661.</font><br>
+<font size=1>[16] Zhengxuan Wu, Atticus Geiger, Joshua Rozner, Elisa Kreiss, Hanson Lu, Thomas Icard, Christopher Potts, Noah D. Goodman. Causal Distillation for Language Models[C]// NAACL. 2022: 4288-4295.</font><br>
+<font size=1>[17] Md. Akmal Haidar, Nithin Anchuri, Mehdi Rezagholizadeh, Abbas Ghaddar, Philippe Langlais, Pascal Poupart. RAIL-KD: RAndom Intermediate Layer Mapping for Knowledge Distillation[C]// NAACL. 2022: 1389-1400.</font><br>
+<font size=1>[18] Chang Liu, Chongyang Tao, Jiazhan Feng, Dongyan Zhao. Multi-Granularity Structural Knowledge Distillation for Language Model Compression[C]// ACL. 2022: 1001-1011.</font><br>
+<font size=1>[19] Ze Yang, Linjun Shou, Ming Gong, Wutao Lin, Daxin Jiang. Model Compression with Two-stage Multi-teacher Knowledge Distillation for Web Question Answering System[C]// WSDM. 2020: 690-698.</font><br>
+<font size=1>[20] Chuhan Wu, Fangzhao Wu, Yongfeng Huang. One Teacher is Enough? Pre-trained Language Model Distillation from Multiple Teachers[C]// ACL. 2021: 4408-4413.</font><br>
+<font size=1>[21] Fei Yuan, Linjun Shou, Jian Pei, Wutao Lin, Ming Gong, Yan Fu, Daxin Jiang. Reinforced Multi-Teacher Selection for Knowledge Distillation[C]// AAAI. 2021: 14284-14291.</font><br>
+<font size=1>[22] Lei Li, Yankai Lin, Shuhuai Ren, Peng Li, Jie Zhou, Xu Sun. Dynamic Knowledge Distillation for Pre-trained Language Models[C]// EMNLP. 2021: 379-389.</font><br>
+<font size=1>[23] Seyed-Iman Mirzadeh, Mehrdad Farajtabar, Ang Li, Nir Levine, Akihiro Matsukawa, Hassan Ghasemzadeh. Improved Knowledge Distillation via Teacher Assistant[C]// AAAI. 2020: 5191-5198.</font><br>
+<font size=1>[24] Wonchul Son, Jaemin Na, Junyong Choi, Wonjun Hwang. Densely Guided Knowledge Distillation using Multiple Teacher Assistants[C]// ICCV. 2021: 9375-9384.</font>
+</p>
 
 ## Results
-
-### [SuperGLUE](https://super.gluebenchmark.com)
-dev set, single model, single-task finetuning
-
-|  Model | COPA | WSC | RTE | WiC | CB | MultiRC | BoolQ | ReCoRD |
-|  ----  | ---- | ---- | ---- | ---- | ---- | ---- | ---- | ---- |
-| GLM-XXLarge  | 98.0 | 95.2 | 93.1 | 75.7 | 98.7/98.2 | 88.1/63.3 | 88.7 | 94.4/94.0 |
-| [RoBERTa-Large](https://github.com/pytorch/fairseq/tree/master/examples/roberta) | 94.0 | 91.3 | 86.6 | 75.6 | 98.2/- | 85.7/- | 86.9 |89.5/89.0|
-| [DeBERTa-XXLarge-v2](https://github.com/microsoft/DeBERTa/tree/master/experiments/superglue) | 97.0 | - | 93.5 | - | - | 87.8/63.6 | 88.3 | 94.1/93.7 |
-
-### Seq2Seq
-[CNN/Daily Mail](https://github.com/abisee/cnn-dailymail) (test set, no additional data used)
-
-|  Model  | ROUGE-1 | ROUGE-2 | ROUGE-L |
-|  ----  | ---- | ---- | ---- |
-| GLM-XXLarge | **44.7** | 21.4 | **41.4** |
-| T5-11B | 43.5 | **21.6** | 40.7 |
-| PEGASUS-Large | 44.2 | 21.5 | **41.4** |
-| BART-Large | 44.2 | 21.3 | 40.9 |
-
-[XSum](https://github.com/EdinburghNLP/XSum) (test set, no additional data used)
-
-| Model | ROUGE-1 | ROUGE-2 | ROUGE-L |
-| ---- | ---- | ---- | ---- |
-| GLM-XXLarge | **48.9** | **25.7** | **40.4** |
-| PEGASUS-Large | 47.2 | 24.6 | 39.3 |
-| BART-Large | 45.1 | 22.3 | 37.3 |
-
-### Language Modeling
-test set, zero-shot
-
-| Model | LAMBADA (accuracy) | Wikitext103 (perplexity) |
-| ---- | ---- | ---- |
-| GLM-XXLarge (bi) | 72.35 | 11.33 |
-| GLM-XXLarge (uni) | 67.18 | 12.22 |
-| GPT-2 | 52.66 | 17.48 |
-| Megatron-LM (8.3B) | 66.51 | 10.81 |
-| Turing-NLG | 67.98 | 10.21 |
+...
 
 ## Get Started
 ### Docker Image
-We prepare two docker images based on CUDA 10.2 and CUDA 11.2. You can pull the pre-built images from Docker Hub and run with docker v19.03+
+We prepare a docker image based on Python 3.8.13, PyTorch 1.9.1, and CUDA 11.1. You can pull the pre-built images from Docker Hub.
   ```shell
-  docker run --gpus all --rm -it --ipc=host zxdu20/glm-cuda102
+  docker pull aitsc/glm:v1.5
   ```
-  or replace `glm-cuda102` with `glm-cuda112`.
-
-  You can also modify the image according to your requirements in [docker/cuda102.dockerfile](docker/cuda102.dockerfile) and build the image yourself
-  ```shell
-    docker build -f cuda102.dockerfile . -t glm-cuda102
-  ```
-### Manual Installation 
-Please first install PyTorch (we use 1.7.0) and [apex](https://github.com/NVIDIA/apex), and then install other dependencies by `pip install -r requirements.txt`
-### Clone this repo
-  ```shell
-  git clone https://github.com/THUDM/GLM
-  cd GLM
-  ```
+### Other
+Same as [GLM](https://github.com/aitsc/GLM).
 
 ## Usage
-We provide scripts for finetuning GLM on some downstream tasks.
+We provide commands for distilling GLM on all methods with deepspeed.
 
-### SuperGLUE
-
-- Download the [SuperGlue](https://super.gluebenchmark.com/tasks) data and check the experiment setup in 
-  [scripts/ds_finetune_superglue.sh](scripts/ds_finetune_superglue.sh). Note that `DATA_ROOT, CHECKPOINT_PATH, SAVE_PATH` 
-  need to be changed to your local path. You may also change the `batch-size` and `nproc_per_node` according to your 
-  available hardware.
-
-- Run the following script (use the COPA dataset as an example)
-
-```
-bash scripts/ds_finetune_superglue.sh \
-     config_tasks/model_blocklm_10B.sh \
-     config_tasks/task_copa.sh
-```
-- We also implement [P-Tuning](https://arxiv.org/abs/2103.10385) in our code. Run the following script to integrate p-tuning:
+Suppose we want to distill a 12-layer teacher model to a 6-layer student model and test it on the ReCoRD dataset. We can first define 4 command prefixes that are not related to the specific method.
 ```shell
-bash scripts/ds_finetune_superglue_prompt.sh \
-     config_tasks/model_blocklm_10B.sh \
-     config_tasks/task_copa.sh
+1. Prefix-pretrain: NCCL_DEBUG=info NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2 deepspeed --master_port=13761 --include=localhost:0,1 distill/pretrain.py --deepspeed_config=config/config_block_tiny6.json --deepspeed-activation-checkpointing --deepspeed --block-lm --num-layers=6 --hidden-size=768 --num-attention-heads=12 --max-position-embeddings=512 --tokenizer-model-type=bert-base-uncased --tokenizer-type=BertWordPieceTokenizer --fp16 --checkpoint-activations --model-parallel-size=1 --save-interval=5000 --save=../GLM/data/checkpoints/distill/tiny6 --experiment-name=test --bert-prob=1.0 --train-data=bert-base --split=949,50,1 --distributed-backend=nccl --lr-decay-style=cosine --lr-decay-iters=120000 --lr-decay-ratio=0.05 --warmup=.05 --train-iters=150000 --no-lazy-loader --resume-dataloader
+
+2. Prefix-finetune: NCCL_DEBUG=info NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2 deepspeed --master_port=20696 --include=localhost:0 --hostfile= distill/finetune.py --finetune --cloze-eval --experiment-name=blank-tiny6-ReCoRD-test --task=ReCoRD --data-dir=../GLM/data/english_data/superglue/ReCoRD --save=../GLM/data/checkpoints/distill/tiny6/test/ft --seq-length=512 --checkpoint-activations --eval-batch-size=16 --save-epoch=100000 --block-lm --num-layers=6 --hidden-size=768 --num-attention-heads=12 --max-position-embeddings=512 --tokenizer-model-type=bert-base-uncased --tokenizer-type=BertWordPieceTokenizer --load-pretrained=../GLM/data/checkpoints/distill/tiny6/test --fp16 --lr-decay-style=linear --warmup=0.1 --weight-decay=1.0e-1 --pattern-id=0 --save-interval=10000 --log-interval=50 --eval-interval=1000 --eval-iters=100 --batch-size=8 --epochs=5 --lr=1e-5 --overwrite --deepspeed-activation-checkpointing --deepspeed --deepspeed_config=config/config_block_tiny6.json
+
+3. Prefix-single-teacher: --teacher_load_pretrained=../GLM/data/checkpoints/pretrain/blocklm-base-blank --teacher_num_layers=12 --teacher_hidden_size=768 --teacher_num_attention_heads=12 --teacher_max_position_embeddings=512 --teacher_fp16
+
+4. Prefix-multi-teacher: --mt_num_attention_heads=a1:a2 --mt_hidden_size=h1:h2 --mt_num_layers=l1:l2 --mt_max_position_embeddings=m1:m2 --mt_load_pretrained=p1:p2 --teacher_fp16
 ```
-  
-- To apply GLM to a new NLU dataset with cloze-filling finetuning, implement a `DataProcessor` in
-  [tasks/superglue/dataset.py](tasks/superglue/dataset.py) for data loading and add a `PVP` in 
-  [tasks/superglue/pvp.py](tasks/superglue/pvp.py) for the cloze question. More details can be found 
-  [here](tasks/superglue/README.md).
-
-### Text Summarization
-
-- Download the [Gigaword](https://github.com/harvardnlp/sent-summary), [CNN/Daily Mail](https://github.com/artmatsak/cnn-dailymail) or [XSum](https://github.com/EdinburghNLP/XSum/tree/master/XSum-Dataset) dataset and check the experiment setup in 
-  [scripts/ds_finetune_seq2seq.sh](scripts/ds_finetune_seq2seq.sh). Change `DATA_ROOT, CHECKPOINT_PATH, SAVE_PATH` to your 
-  local path. 
-  
-- Run the following script (use the CNN/Daily Mail dataset as an example)
-
-  ```
-  bash scripts/ds_finetune_seq2seq.sh \ 
-     config_tasks/model_blocklm_10B.sh \ 
-     config_tasks/seq_cnndm_org.sh
-  ```
-- The summaries are written into `./runs/experiment_name/test.jsonl.hyps`. The references are written into `test.jsonl.refs` in the same directory. For calculating rouge, install [file2rouge](https://github.com/pltrdy/files2rouge) and download Stanford CoreNLP from [here](http://nlp.stanford.edu/software/stanford-corenlp-full-2016-10-31.zip). Run  the following script
-  ```
-  bash scripts/evaluate_seq2seq.sh \
-   ./runs/experiment_name/test.jsonl.hyps ./runs/experiment_name/test.jsonl.refs
-  ```
-
-### Language Modeling
-#### LAMBADA Cloze Accuracy
-* Download the [LAMBADA](https://github.com/cybertronai/bflm/blob/master/lambada_test.jsonl) data and change 
-  `DATA_ROOT, CHECKPOINT_PATH` in [scripts/evaluate_lm.sh](scripts/evaluate_lm.sh)
-* Run the following script
-```shell
-bash scripts/evaluate_lm.sh \ 
-     config_tasks/model_blocklm_large_generation.sh \
-     config_tasks/zero_lambada.sh 
-```
-#### LM Perplexity
-* Download our [test set of wikibook](https://mailstsinghuaeducn-my.sharepoint.com/:t:/g/personal/duzx16_mails_tsinghua_edu_cn/EQa_B6KY_q1FjtUeG-T52iMBFtNrfhfHcZbzMxfkJKXKRQ?e=inTdHh) or [Wikitext103](https://s3.amazonaws.com/research.metamind.io/wikitext/wikitext-103-v1.zip) dataset and change `DATA_ROOT, CHECKPOINT_PATH` 
-  in [scripts/evaluate_lm.sh](scripts/evaluate_lm.sh)
-* Run the following script
-  ```shell
-  bash scripts/evaluate_lm.sh \ 
-     config_tasks/model_blocklm_large_generation.sh \
-     config_tasks/zero_wikitext.sh 
-  ```
-
-### Text Infilling
-- Download the [Yahoo](https://github.com/Varal7/blank_language_model) dataset and check the experiment setup in 
-  [scripts/finetune_blank.sh](scripts/finetune_blank.sh). Change `DATA_ROOT, CHECKPOINT_PATH, SAVE_PATH` to your 
-  local path. 
-  
-- Run the following script
-
-```
-bash scripts/finetune_blank.sh \ 
-     config_tasks/model_blocklm_large.sh \ 
-     config_tasks/seq_blank.sh
-```
-
-### Blank Filling (Interactive)
-* Change `CHECKPOINT_PATH` to your local path. Run the following script
-```
-bash scripts/generate_block.sh \
-     config_tasks/model_blocklm_10B_chinese.sh
-```
-#### Entity Prediction:
-
-##### Example1
-Context: Ng is an adjunct professor at [MASK] (formerly associate professor and Director of its Stanford AI Lab or SAIL ). Also a pioneer in online education, Ng co-founded Coursera and deeplearning.ai.
-
-GLM: the stanford university
-
-##### Example2 (Chinese)
-Context: 凯旋门位于意大利米兰市古城堡旁。1807年为纪念[MASK]而建，门高25米，顶上矗立两武士青铜古兵车铸像。
-
-GLM:拿破仑军队攻克米兰城
-
-#### Sentence Prediction
-##### Example3
-Context: There have been various types of pretraining architectures including autoencoding models (e.g., BERT), autoregressive models (e.g., GPT), and encoder-decoder models (e.g., T5). [sMASK] We propose a General Language Model (GLM) based on autoregressive blank infilling to address this challenge. GLM improves blank filling pretraining by adding 2D positional encodings and allowing an arbitrary order to predict spans, which results in performance gains over BERT and T5 on NLU tasks. Meanwhile, GLM can be pretrained for different types of tasks by varying the number and lengths of blanks. On a wide range of tasks across NLU, conditional and unconditional generation, GLM outperforms BERT, T5, and GPT given the same model sizes and data, and achieves the best performance from a single pretrained model with 1.25× parameters of BERT Large , demonstrating its generalizability to different downstream tasks.
-
-GLM: However, there is a growing need to develop a single pretraining model that is not only good at natural language understanding (NLU) or dialog generation/generation (dialog), but is also able to predict other tasks such as sentiment analysis, conditional generation, or machine translation (MT).
-##### Example4 (Chinese)
-Context: 工业互联网（Industrial Internet）是新一代信息通信技术与工业经济深度融合的新型基础设施、应用模式和工业生态，通过对人、机、物、系统等的全面连接，构建起覆盖全产业链、全价值链的全新制造和服务体系，为工业乃至产业数字化、网络化、智能化发展提供了实现途径，是第四次工业革命的重要基石。[sMASK]它以网络为基础、平台为中枢、数据为要素、安全为保障，既是工业数字化、网络化、智能化转型的基础设施，也是互联网、大数据、人工智能与实体经济深度融合的应用模式，同时也是一种新业态、新产业，将重塑企业形态、供应链和产业链。当前，工业互联网融合应用向国民经济重点行业广泛拓展，形成平台化设计、智能化制造、网络化协同、个性化定制、服务化延伸、数字化管理六大新模式，赋能、赋智、赋值作用不断显现，有力的促进了实体经济提质、增效、降本、绿色、安全发展。
-
-GLM: 工业互联网是制造业技术、管理、模式的重大变革,是推动互联网、大数据、人工智能和实体经济深度融合的重要载体,是建设制造强国和网络强国的重要基础。
-#### Long Text Generation
-##### Example5 (Chinese)
-Context: 问题：冬天，中国哪座城市最适合避寒？问题描述：能推荐一些国内适合冬天避寒的城市吗？回答用户：旅游爱好者 回答： [gMASK]
-
-GLM:海南三亚,三亚的冬天是三亚的旺季,因为冬天国内大部分地方都有雾霾,而三亚却是没有雾霾的地方,所以三亚是冬天最惬意不过的地方了。在东北长大的我觉得三亚简直就是一个天堂,冬天去海口三亚旅游,享受冬天,享受阳光沙滩。但是海口却是很干燥,需要多喝水。 三亚冬天最热门的玩法就是晒太阳,在海边晒晒太阳,在沙滩上晒晒太阳,感觉整个人都得到了解放。三亚还有一个特色项目,就是海上冲浪,在三亚的沙滩上冲浪也是一件非常刺激的事情。 海口,海口冬季的阳光十分温暖,海南的冬季也是属于冬季旅游的旺季。冬季的海口最棒的是去海南的热带野生动植物园,那里有数之不尽的热带小动物,在这里可以近距离的和它们接触,海南的热带野生动植物园也是海南的天然氧吧。还可以在海口观澜湖公园里感受海口美丽的海景。 贵阳,贵州的冬天也是十分温暖的,贵阳也是冬季避寒很好的城市之一。冬季去贵阳玩一定要去黔灵山,黔灵山是贵州香火很旺盛的一个寺庙,寺庙的冬季香火鼎盛,在冬季去寺庙游玩也是一个很好的体验。除了黔灵山,贵阳在冬季还有花溪公园可以去玩,花溪公园也是去当地公园玩最好的选择。 青岛,青岛的冬天是青岛最舒服的时候,青岛有很多海滨浴场,冬天去海边泡一泡温泉,然后晒晒太阳是一件十分惬意的事情。青岛也有沙滩,冬天在沙滩上晒晒太阳,看看海,再玩玩沙滩游戏,感觉十分快乐的事。
+Then we can build commands of different methods.
+(see distill/readme.md and distill/prepare.py for more detailed descriptions and parameters)
+### KD
+1. [Prefix-finetune] [Prefix-single-teacher] --student_model=kd --distill_ft_soft --distill_ft_hard --distill_temperature=10
+### PD
+1. [Prefix-pretrain]
+2. [Prefix-finetune] [Prefix-single-teacher] --student_model=kd --distill_ft_soft --distill_temperature=1
+### TinyBERT
+1. [Prefix-pretrain] [Prefix-single-teacher] --student_model=tinybert
+2. [Prefix-finetune] [Prefix-single-teacher] --student_model=tinybert
+3. [Prefix-finetune] [Prefix-single-teacher] --student_model=tinybert --distill_ft_soft --tinybert_wo_inter
+### MiniLMv2
+1. [Prefix-pretrain] [Prefix-single-teacher] --student_model=minilmv2 --minilmv2_relation_heads=48 --minilmv2_teacher_layer=12
+2. [Prefix-finetune]
+### MiniLM
+1. [Prefix-pretrain] [Prefix-single-teacher] --student_model=minilm
+2. [Prefix-finetune]
+### DistilBERT
+1. [Prefix-pretrain] [Prefix-single-teacher] --student_model=distilbert --distill_temperature=2 --distilbert_alpha_ce=5 --distilbert_alpha_mlm=2 --distilbert_alpha_cos=1 --distilbert_cos_mask_padding
+2. [Prefix-finetune]
+### PKD
+1. [Prefix-finetune] [Prefix-single-teacher] --student_model=pkd --distill_ft_soft --distill_ft_soft_kl --distill_ft_hard --distill_temperature=10 --pkd_normalized_patience --pkd_alpha=0.5 --pkd_beta=100 --student_truncate_tn=0 --pkd_wo_final
+### RAIL_KD
+1. from DistilBERT
+2. [Prefix-finetune] [Prefix-single-teacher] --student_model=rail_kd --distill_ft_soft --distill_soft_rate=0.3333 --distill_ft_hard --distill_hard_rate=0.3333 --distill_temperature=10 --rail_kd_inter_rate=0.3333 --rail_kd_layer_wise_alpha=1 --rail_kd_u=128 --rail_kd_concatenated --rail_kd_epochs=1 --rail_kd_show_hook_change
+### MGSKD
+1. from TinyBERT
+2. [Prefix-finetune] [Prefix-single-teacher] --student_model=mgskd --mgskd_weight_sample=4 --mgskd_weight_token=1 --mgskd_weight_span=1 --mgskd_sample_level_m=3 --mgskd_triplet_k1=20 --mgskd_triplet_k2=20
+3. [Prefix-finetune] [Prefix-single-teacher] --student_model=mgskd --distill_ft_soft --distill_ft_soft_kl --distill_temperature=1 --mgskd_wo_inter
+### DIITO
+1. [Prefix-pretrain] [Prefix-single-teacher] --student_model=diito --forward_repeat_num=1 --diito_alignment=full --diito_interchange_prop=0.3 --diito_interchange_way=consecutive --diito_interchange_max_token=-1 --diito_alpha_mlm=0.25 --diito_alpha_ce=0.25 --diito_alpha_causal_ce=0.25 --diito_alpha_cos=0.25 --diito_alpha_causal_cos=0  --distill_pt_soft --distill_pt_hard --distill_temperature=2
+2. [Prefix-finetune]
+### SID
+1. [Prefix-pretrain]
+2. [Prefix-finetune] [Prefix-single-teacher] --student_model=sid --sid_accumulate_t=0 --sid_lim_e=avg --distill_ft_soft --distill_temperature=1
+### ALP_KD
+1. [Prefix-finetune] [Prefix-single-teacher] --student_model=alp_kd --alp_kd_lambda=0.2 --distill_soft_rate=0.7 --distill_hard_rate=0.1 --distill_temperature=20 --student_truncate_tn=0 --distill_ft_soft --distill_ft_hard
+### CKD
+1. [Prefix-pretrain]
+2. [Prefix-finetune] [Prefix-single-teacher] --student_model=ckd --ckd_window_size=21 --ckd_wrdist_w=1 --ckd_ltrdist_w=1 --ckd_wrangle_w=10 --ckd_ltrangle_w=10 --distill_ft_soft --distill_ft_hard --distill_temperature=3 --distill_soft_rate=0.9 --distill_hard_rate=0.1
+### Theseus
+1. [Prefix-finetune] [Prefix-single-teacher] --student_model=theseus --distill_ft_hard --student_truncate_tn=0 --theseus_replacing_rate=0.3 --theseus_not_replaced_steps=0.66 --mt_disable_operation=1
+### Universal_KD
+1. [Prefix-finetune] [Prefix-single-teacher] --student_model=universal_kd --distill_ft_soft --distill_ft_soft_kl --distill_soft_rate=0.5 --universal_kd_gamma=0.5 --student_truncate_tn=0 --universal_kd_size=0
+2. [Prefix-finetune]
+### LRC_BERT
+1. [Prefix-pretrain]
+2. [Prefix-finetune] [Prefix-single-teacher] --student_model=lrc_bert --lrc_bert_gard_perturb --ignore_first_backward_gard --forward_repeat_num=1
+3. [Prefix-finetune] [Prefix-single-teacher] --student_model=lrc_bert --lrc_bert_alpha=1 --distill_ft_soft --distill_ft_soft_kl --distill_soft_rate=1 --distill_ft_hard --distill_hard_rate=3 --distill_temperature=1.1 --lrc_bert_gard_perturb --ignore_first_backward_gard --forward_repeat_num=1
+### Annealing_KD
+1. [Prefix-pretrain]
+2. [Prefix-finetune] [Prefix-single-teacher] --student_model=annealing_kd --annealing_kd_max_t=7 --distill_ft_soft --distill_ft_soft_mse
+3. [Prefix-finetune]
+### MobileBERT
+1. [Prefix-pretrain] --inverted_bottleneck_mode --ib_hidden_size=1024 --ib_ffn_num=1 --hidden-size=512 --num-attention-heads=4 --ib_word_emb=128
+2. [Prefix-finetune] [Prefix-single-teacher] --student_model=mobilebert --mobilebert_kd_w=0.5 --mobilebert_pkt_small_lr=0.1 --distill_pt_hard --inverted_bottleneck_mode --ib_hidden_size=128 --ib_ffn_num=4 --hidden-size=512 --num-attention-heads=4 --ib_word_emb=128 --teacher_inverted_bottleneck_mode --teacher_ib_hidden_size=1024 --teacher_ib_ffn_num=1 --teacher_hidden_size=512 --teacher_num_attention_heads=4 --teacher_ib_word_emb=128
+### TMKD
+1. [Prefix-pretrain] [Prefix-multi-teacher] --student_model=kd --distill_pt_soft --distill_pt_soft_mse --distill_only_mask_pad --multi_teacher_model=tmkd --student_truncate_tn=0
+2. [Prefix-finetune] [Prefix-multi-teacher] --student_model=kd --distill_ft_soft --distill_ft_soft_mse --distill_only_mask_pad --distill_ft_hard --distill_hard_rate=1/teacher_num --multi_teacher_model=tmkd
+### MT-BERT
+1. [Prefix-finetune] [Prefix-multi-teacher] --student_model=pkd --distill_ft_soft --distill_temperature=1 --pkd_alpha=1 --pkd_beta=1 --student_truncate_tn=0 --multi_teacher_model=mt_bert --mt_has_loss --mt_bert_fit_teacher
+### Uncertainty
+1. [Prefix-finetune] [Prefix-multi-teacher] --student_model=kd --distill_ft_soft --distill_temperature=1 --distill_ft_soft_kl --distill_only_mask_pad --student_truncate_tn=0 --multi_teacher_model=uncertainty --uncertainty_only_mask_pad --uncertainty_hard
+### RL-KD
+1. [Prefix-finetune] [Prefix-multi-teacher] --student_model=kd --distill_ft_soft --distill_temperature=10 --student_truncate_tn=0 --multi_teacher_model=rl_kd --rl_kd_only_mask_pad --rl_kd_only_avg --rl_kd_alpha=0.5
+2. [Prefix-finetune] [Prefix-multi-teacher](One more base teacher) --student_model=kd --distill_ft_soft --distill_temperature=10 --multi_teacher_model=rl_kd --rl_kd_only_mask_pad --rl_kd_reward=1 --rl_kd_semantic_model=0 --mt_has_loss --rl_kd_alpha=0.5
+### Other
+- TAKD simply replaces [Prefix-single-teacher] with the student from the previous training using any of the single-teacher methods.
+- DGKD just needs to replace [Prefix-multi-teacher] with all the teachers and students previously trained using any of the multi-teacher methods.
+### Combined use of methods
+For example: (pt/ft1: TinyBERT + MiniLMv2 + MiniLM + DistilBERT, ft2: KD + TinyBERT)
+1. [Prefix-pretrain] [Prefix-single-teacher] --student_model=mixbaseline --distill_temperature=2 --minilmv2_relation_heads=48 --minilmv2_teacher_layer=12 --distilbert_alpha_ce=5 --distilbert_alpha_mlm=2 --distilbert_alpha_cos=1 --distilbert_cos_mask_padding --mixbaseline_inter_bl=TinyBERT,MiniLMv2,MiniLM,DistilBERT --mixbaseline_pre_bl_pt_soft=DistilBERT
+2. [Prefix-finetune] [Prefix-single-teacher] --student_model=mixbaseline --distill_temperature=2 --minilmv2_relation_heads=48 --minilmv2_teacher_layer=12 --distilbert_alpha_ce=5 --distilbert_alpha_mlm=2 --distilbert_alpha_cos=1 --distilbert_cos_mask_padding --mixbaseline_inter_bl=TinyBERT,MiniLMv2,MiniLM,DistilBERT --mixbaseline_pre_bl_ft_soft=DistilBERT
+3. [Prefix-finetune] [Prefix-single-teacher] --student_model=mixbaseline --mixbaseline_wo_inter --tinybert_wo_inter --distill_ft_soft --distill_ft_hard --distill_temperature=10 --mixbaseline_tinybert_t=1 --mixbaseline_pre_bl_ft_soft=TinyBERT
 
 ### Model Parallelism
 If your encounter the `CUDA out of memory` error, which means you GPU memory is limited, you can try the model parallelism to divide the parameters into multiple GPUs. Take the two-way model parallelism as an example. First run `change_mp.py` to divide the checkpoint:
 ```shell
 python change_mp.py path_to_the_checkpoint 2
 ```
-Then update the checkpoint path in the model config file (such as [config_tasks/model_blocklm_10B.sh](config_tasks/model_blocklm_10B.sh)) and change `MP_SIZE` in the script (such as [scripts/ds_finetune_superglue.sh](scripts/ds_finetune_superglue.sh)) to `2`.
-
-## Pretrain
-Run the following script to pre-train the GLM-Large model
-```shell
-bash scripts/ds_pretrain_nvidia.sh config/ds_block_large.sh
-```
-
-The script [scripts/ds_pretrain_nvidia.sh](scripts/ds_pretrain_nvidia.sh) launches the training program with DeepSpeed. You should change `NUM_WORKERS` and `NUM_GPUS_PER_WORKER` to the number of workers and the number of gpus per worker. Also change `HOST_FILE_PATH` to the path to an OpenMPI-style hostfile. More details about DeepSpeed launcher can be found [here](https://www.deepspeed.ai/getting-started/#resource-configuration-multi-node).
-
-The file [config/ds_block_large.sh](config/ds_block_large.sh) defines the hyperparameters for pretraining. Most of the arguments are fairly self-explanatory. Specifically, `--train-data` can be multiple keywords defined in `NAMED_CORPORA` in [data_utils/corpora.py](data_utils/corpora.py). The hyperparameters of the optimizer are defined in the corresponding json file under `config`. The semantics of the json file can be found [here](https://www.deepspeed.ai/docs/config-json).
+Then change `--model-parallel-size` in the command to `2`.
 
 ## Citation
 Please cite our paper if you find this code useful for your research:
-```
-@article{DBLP:journals/corr/abs-2103-10360,
-  author    = {Zhengxiao Du and
-               Yujie Qian and
-               Xiao Liu and
-               Ming Ding and
-               Jiezhong Qiu and
-               Zhilin Yang and
-               Jie Tang},
-  title     = {All {NLP} Tasks Are Generation Tasks: {A} General Pretraining Framework},
-  journal   = {CoRR},
-  volume    = {abs/2103.10360},
-  year      = {2021},
-  url       = {https://arxiv.org/abs/2103.10360}
-}
-```
+...

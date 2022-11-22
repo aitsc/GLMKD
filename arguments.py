@@ -432,6 +432,7 @@ def add_custom_args(parser: argparse.ArgumentParser):
     group.add_argument('--ib_hidden_size', type=int, default=128, help='IB结构中的隐层维度,线性层依然和--hidden-size一致')
     group.add_argument('--ib_ffn_num', type=int, default=4, help='IB结构中的FFN重复次数')
     group.add_argument('--ib_word_emb', type=int, default=128, help='IB结构中的词向量维度,None或0表示不使用')
+    group.add_argument('--save_interval_time', type=float, default=0, help='隔多少小时保存一次模型,大于0有效.可以和其他save参数一起使用')
     return parser
 
 

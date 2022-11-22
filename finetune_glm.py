@@ -18,7 +18,7 @@ import torch
 import torch.utils.data
 from configure_data import prepare_tokenizer
 
-from utils import print_rank_0
+from utils import print_rank_0, get_distributed_formatted_time
 from utils import Timers
 from train_utils import setup_model_and_optimizer, train_step, load_pretrained
 from utils import load_checkpoint, save_checkpoint
@@ -208,6 +208,7 @@ def _train(model, optimizer, lr_scheduler, forward_step,
         valid_dataloader = valid_dataloader[0]
     # For each remaining epoch
     timers('interval time').start()
+    current_time = get_distributed_formatted_time(True)
     for epoch in range(start_epoch, args.epochs):
         print_rank_0('working on epoch {} ...'.format(epoch))
         args.custom_current_epoch = epoch
@@ -281,7 +282,12 @@ def _train(model, optimizer, lr_scheduler, forward_step,
                 evaluate_and_print_results(prefix, valid_dataloader, model, args, timers, step=args.iteration,
                                            verbose=False, forward_step_func=forward_step,
                                            summary_writer=summary_writer)
-
+            # Checkpointing
+            if args.save and args.save_interval_time and \
+                (get_distributed_formatted_time(True) - current_time) / 3600 >= args.save_interval_time:
+                save_checkpoint(args.iteration, model, optimizer, lr_scheduler, args, only_changed_parameters=True)
+                current_time = get_distributed_formatted_time(True)
+ 
         # Checkpointing at the end of each epoch.
         if args.save and (epoch + 1) % args.save_epoch == 0:
             save_checkpoint(args.iteration, model, optimizer, lr_scheduler, args, only_changed_parameters=True)

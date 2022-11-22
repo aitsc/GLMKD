@@ -350,6 +350,7 @@ def train(model, optimizer, lr_scheduler,
     report_memory_flag = True
     mems = []
     save_checkpoint(0, model, optimizer, lr_scheduler, args)
+    current_time = get_distributed_formatted_time(True)
     while args.iteration < args.train_iters:
 
         lm_loss, skipped_iter, mems = train_step(train_data_iterator,
@@ -392,8 +393,11 @@ def train(model, optimizer, lr_scheduler,
                             'batch generator', 'data loader'],
                            normalizer=args.log_interval)
         # Checkpointing
-        if args.save and args.save_interval and args.iteration % args.save_interval == 0:
+        if args.save and args.save_interval and args.iteration % args.save_interval == 0 or \
+            args.save and args.save_interval_time and \
+            (get_distributed_formatted_time(True) - current_time) / 3600 >= args.save_interval_time:
             save_checkpoint(args.iteration, model, optimizer, lr_scheduler, args)
+            current_time = get_distributed_formatted_time(True)
 
         # Evaluation
         if args.eval_interval and args.iteration % args.eval_interval == 0 and args.do_valid:

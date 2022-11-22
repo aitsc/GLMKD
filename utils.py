@@ -32,7 +32,7 @@ from datetime import datetime
 SUMMARY_WRITER_DIR_NAME = 'runs'
 
 
-def get_distributed_formatted_time():
+def get_distributed_formatted_time(only_time_stamp=False):
     # 用于并行化情况下每个rank获取一样的格式化时间
     time_stamp = time.time()
     if torch.distributed.is_initialized():
@@ -42,6 +42,8 @@ def get_distributed_formatted_time():
             time_stamp = torch.cuda.DoubleTensor([0])
         torch.distributed.broadcast(time_stamp, 0)
         time_stamp = time_stamp.item()
+    if only_time_stamp:
+        return time_stamp
     st = datetime.fromtimestamp(time_stamp).strftime('%y%m%d_%H%M%S.%f')
     return st
     

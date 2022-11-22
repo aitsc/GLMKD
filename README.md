@@ -39,7 +39,15 @@ We briefly summarize here the 24 model distillation methods that have been imple
 ```
 
 ## Results
+### The results of our test on GLM
+#### Dev set
 ...
+### The results of the original papers on BERT
+#### Dev set
+<img src="distill/img/original_paper_bert_dev.png" width = "500" alt="" align=center />
+
+#### Test set
+<img src="distill/img/original_paper_bert_test.png" width = "500" alt="" align=center />
 
 ## Get Started
 ### Docker Image

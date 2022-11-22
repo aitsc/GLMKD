@@ -77,7 +77,7 @@ class CustomLoss:
     @classmethod
     def kl_div(cls, input, target, parallel='', **kwargs):
         input, target = cls.inputs_handling(input, target, parallel=parallel, **kwargs)
-        if getattr(cls.args, 'disable_parallel_entropy', 0):
+        if not getattr(cls.args, 'enable_parallel_entropy', 0):
             (input, target), parallel = cls.gather_inputs(input, target, parallel=parallel)
         if parallel == 'gather' and mpu.get_model_parallel_world_size() > 1:
             loss = parallel_relative_entropy(input, target)
@@ -90,7 +90,7 @@ class CustomLoss:
     @classmethod
     def cross_entropy(cls, input, target, parallel='', **kwargs):
         input, target = cls.inputs_handling(input, target, parallel=parallel, **kwargs)
-        if getattr(cls.args, 'disable_parallel_entropy', 0):
+        if not getattr(cls.args, 'enable_parallel_entropy', 0):
             (input, target), parallel = cls.gather_inputs(input, target, parallel=parallel)
         if parallel == 'gather' and mpu.get_model_parallel_world_size() > 1:
             loss = parallel_cross_entropy(input, target)
@@ -101,7 +101,7 @@ class CustomLoss:
     @classmethod
     def info_entropy(cls, input, parallel='', **kwargs):
         input = cls.inputs_handling(input, parallel=parallel, **kwargs)[0]
-        if getattr(cls.args, 'disable_parallel_entropy', 0):
+        if not getattr(cls.args, 'enable_parallel_entropy', 0):
             (input,), parallel = cls.gather_inputs(input, parallel=parallel)
         if parallel == 'gather' and mpu.get_model_parallel_world_size() > 1:
             loss = parallel_info_entropy(input)

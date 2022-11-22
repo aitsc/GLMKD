@@ -39,7 +39,7 @@ We briefly summarize here the 24 model distillation methods that have been imple
 ```
 
 ## Results
-### The results of our test on GLM
+### The results of our toolkit on GLM
 #### Dev set
 ...
 ### The results of the original papers on BERT
@@ -55,8 +55,27 @@ We prepare a docker image based on Python 3.8.13, PyTorch 1.9.1, and CUDA 11.1. 
   ```shell
   docker pull aitsc/glm:v1.5
   ```
-### Other
+### Manual Installation
+```shell
+cd [code path]
+conda create -n GLM python=3.8
+conda activate GLM
+pip install torch==1.9.1+cu111 torchvision==0.10.1+cu111 torchaudio==0.9.1 -f https://download.pytorch.org/whl/torch_stable.html
+pip install -r requirements.txt
+git clone https://github.com/NVIDIA/apex
+cd apex
+git checkout 22.04-dev
+pip install -v --no-cache-dir --global-option="--cpp_ext" --global-option="--cuda_ext" ./
+cd .. && rm -rf apex
+```
 Same as [GLM](https://github.com/THUDM/GLM#get-started).
+
+### Model Parallelism
+If your encounter the `CUDA out of memory` error, which means you GPU memory is limited, you can try the model parallelism to divide the parameters into multiple GPUs. Take the two-way model parallelism as an example. First run `change_mp.py` to divide the checkpoint:
+```shell
+python change_mp.py path_to_the_checkpoint 2
+```
+Then change `--model-parallel-size` in the command to `2`.
 
 ## Usage of existing methods
 We provide commands for distilling GLM on all methods with deepspeed.
@@ -156,13 +175,6 @@ class MethodName(GLMStudent):
     def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, **kwargs):
         return Calculate the loss of intermediate layers
 ```
-
-## Model Parallelism
-If your encounter the `CUDA out of memory` error, which means you GPU memory is limited, you can try the model parallelism to divide the parameters into multiple GPUs. Take the two-way model parallelism as an example. First run `change_mp.py` to divide the checkpoint:
-```shell
-python change_mp.py path_to_the_checkpoint 2
-```
-Then change `--model-parallel-size` in the command to `2`.
 
 ## Citation
 Please cite our paper if you find this code useful for your research:

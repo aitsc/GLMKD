@@ -22,7 +22,7 @@ def get_args():
     py_parser.add_argument('--student_build_map_vocab', action='store_true', help='是否重新构建映射词表.通常只有预训练(且不加载已有学生参数)时需要构建初始映射')
     py_parser.add_argument('--student_map_vocab_tn', type=int, default=None, help='非None或不小于0的话代表选择第n个教师的word_embeddings计算省去token的最大相似token作为替代,否则使用unk作为替代')
     py_parser.add_argument('--student_map_vocab_method', type=str, default='decoder', help='cosine/euclidean/decoder,指定student_map_vocab_tn的情况下使用什么相似度计算')
-    py_parser.add_argument('--disable_parallel_entropy', action='store_true', help='是否禁用并行的loss熵计算,可能会占用更多显存')
+    py_parser.add_argument('--enable_parallel_entropy', action='store_true', help='是否使用并行的loss熵计算,可能会减少显存占用')
     py_parser.add_argument('--distill_ft_soft', action='store_true', help='是否在微调蒸馏阶段使用软标签')
     py_parser.add_argument('--distill_ft_hard', action='store_true', help='是否在微调蒸馏阶段使用硬标签')
     py_parser.add_argument('--distill_pt_soft', action='store_true', help='是否在预训练蒸馏阶段使用软标签')

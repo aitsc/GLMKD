@@ -7,7 +7,7 @@
     - --distill_ft_soft_kl
 
 ## PD
-1. pretrain(without teacher): ...
+1. pretrain(pretrain w/o distil): ...
 2. finetune: ... --student_model=kd --distill_ft_soft --distill_temperature=1
 
 ## TinyBERT
@@ -79,14 +79,14 @@
 3. finetune: ... --student_model=logitsdistil --distill_ft_soft --logitsdistil_wo_inter --map_vocab_size=0.5
 
 ## SID
-1. pretrain(without teacher): ...
+1. pretrain(pretrain w/o distil): ...
 2. finetune: ... --student_model=sid --sid_accumulate_t=0 --sid_lim_e=avg --distill_ft_soft --distill_temperature=1
 
 ## ALP_KD
 - finetune: ... --student_model=alp_kd --alp_kd_lambda=0.2 --distill_soft_rate=0.7 --distill_hard_rate=0.1 --distill_temperature=20 --student_truncate_tn=0 --distill_ft_soft --distill_ft_hard
 
 ## CKD
-1. pretrain(without teacher): ...
+1. pretrain(pretrain w/o distil): ...
 2. finetune: ... --student_model=ckd --ckd_window_size=21 --ckd_wrdist_w=1 --ckd_ltrdist_w=1 --ckd_wrangle_w=10 --ckd_ltrangle_w=10 --distill_ft_soft --distill_ft_hard --distill_temperature=3 --distill_soft_rate=0.9 --distill_hard_rate=0.1
 
 ## Theseus
@@ -95,21 +95,21 @@
 ## Universal_KD
 1. finetune-1: ... --student_model=universal_kd --distill_ft_soft --distill_ft_soft_kl --distill_soft_rate=0.5 --universal_kd_gamma=0.5 --student_truncate_tn=0 --universal_kd_size=0
     - --universal_kd_cg --universal_kd_avg
-2. finetune-2: without teacher
+2. finetune-2: finetune w/o distil
 
 ## LRC_BERT
-1. pretrain(without teacher): ...
+1. pretrain(pretrain w/o distil): ...
 2. finetune-1: ... --student_model=lrc_bert --lrc_bert_gard_perturb --ignore_first_backward_gard --forward_repeat_num=1
     - It is not recommended to use data parallelism or accumulate steps, which will lead to negative sample reduction.
 3. finetune-2: ... --student_model=lrc_bert --lrc_bert_alpha=1 --distill_ft_soft --distill_ft_soft_kl --distill_soft_rate=1 --distill_ft_hard --distill_hard_rate=3 --distill_temperature=1.1 --lrc_bert_gard_perturb --ignore_first_backward_gard --forward_repeat_num=1
 
 ## Annealing_KD
-1. pretrain(without teacher): ...
+1. pretrain(pretrain w/o distil): ...
 2. finetune-1: ... --student_model=annealing_kd --annealing_kd_max_t=7 --distill_ft_soft --distill_ft_soft_mse
-3. finetune-2: ... without teacher
+3. finetune-2: finetune w/o distil
 
 ## MobileBERT
-1. pretrain(without teacher): ... --inverted_bottleneck_mode --ib_hidden_size=1024 --ib_ffn_num=1 --hidden-size=512 --num-attention-heads=4 --ib_word_emb=128
+1. pretrain(pretrain w/o distil): ... --inverted_bottleneck_mode --ib_hidden_size=1024 --ib_ffn_num=1 --hidden-size=512 --num-attention-heads=4 --ib_word_emb=128
 2. pretrain: ... --student_model=mobilebert --mobilebert_kd_w=0.5 --mobilebert_pkt_small_lr=0.1 --distill_pt_hard --inverted_bottleneck_mode --ib_hidden_size=128 --ib_ffn_num=4 --hidden-size=512 --num-attention-heads=4 --ib_word_emb=128 --teacher_inverted_bottleneck_mode --teacher_ib_hidden_size=1024 --teacher_ib_ffn_num=1 --teacher_hidden_size=512 --teacher_num_attention_heads=4 --teacher_ib_word_emb=128
 
 

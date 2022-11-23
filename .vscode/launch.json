@@ -24,7 +24,7 @@
                 // deepspeed
                 "--master_port=10161",
                 "--include=localhost:1,6",
-                "--include=localhost:3",
+                "--include=localhost:0",
                 "distill/pretrain.py",
                 "--deepspeed_config=config/config_block_tiny6.json",
                 "--deepspeed-activation-checkpointing",
@@ -157,7 +157,7 @@
             "args": [
                 // deepspeed
                 "--master_port=14161",
-                "--include=localhost:2",
+                "--include=localhost:0",
                 "distill/finetune.py",
                 "--deepspeed_config=config_tasks/config_blocklm_tiny6.json",
                 "--deepspeed-activation-checkpointing",
@@ -200,8 +200,9 @@
                 "--save-epoch=100000",
                 "--save=../GLM/data/checkpoints/finetune_checkpoints",
                 "--experiment-name=finetune_debug/自动时间", // date +"%y%m%d_%H%M%S.%N"
-                // "--load-pretrained=../GLM/data/checkpoints/distill/tiny6/distill12-6_wb19G_distilbert_maskp-woh",
+                "--load-pretrained=../GLM/data/checkpoints/distill/tiny6/distill12-6_wb19G_distilbert_maskp-woh",
                 "--load-pretrained=../GLM/data/checkpoints/distill/tiny6/random6",
+                "--load-pretrained=",
                 "--custom_first_eval",
                 // 蒸馏
                 // "--distill_random_data=replace",

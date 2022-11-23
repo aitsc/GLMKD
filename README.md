@@ -51,13 +51,14 @@ We briefly summarize here the 24 model distillation methods that have been imple
 
 ## Get Started
 ### Docker Image
-We prepare a docker image based on Python 3.8.13, PyTorch 1.9.1, and CUDA 11.1. You can pull the pre-built images from Docker Hub.
+We prepare a docker image based on Python 3.8.13, PyTorch 1.9.1, and CUDA 11.1. You can pull the pre-built images from Docker Hub and run with docker v19.03+
   ```shell
-  docker pull aitsc/glm:v1.5
+  docker run --gpus all --rm -it --ipc=host aitsc/glm:v1.5
   ```
 ### Manual Installation
 ```shell
-cd [code path]
+git clone https://github.com/THUDM/GKD
+cd GKD
 conda create -n GLM python=3.8
 conda activate GLM
 pip install torch==1.9.1+cu111 torchvision==0.10.1+cu111 torchaudio==0.9.1 -f https://download.pytorch.org/whl/torch_stable.html

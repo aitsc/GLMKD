@@ -157,6 +157,7 @@ Then we can build commands of different methods.
 ### Other
 - TAKD simply replaces [Prefix-single-teacher] with the student from the previous training using any of the single-teacher methods.
 - DGKD just needs to replace [Prefix-multi-teacher] with all the teachers and students previously trained using any of the multi-teacher methods.
+- Support for more robust distillation using randomly disturbed data. For example, add the parameters: --distill_random_data=replace --distill_random_data_n=1 --forward_repeat_num=0 --distill_random_data_method=sample at the end of the command.
 ### Combined use of methods
 For example: (pt/ft1: TinyBERT + MiniLMv2 + MiniLM + DistilBERT, ft2: KD + TinyBERT)
 1. [Prefix-pretrain] [Prefix-single-teacher] --student_model=mixbaseline --distill_temperature=2 --minilmv2_relation_heads=48 --minilmv2_teacher_layer=12 --distilbert_alpha_ce=5 --distilbert_alpha_mlm=2 --distilbert_alpha_cos=1 --distilbert_cos_mask_padding --mixbaseline_inter_bl=TinyBERT,MiniLMv2,MiniLM,DistilBERT --mixbaseline_pre_bl_pt_soft=DistilBERT

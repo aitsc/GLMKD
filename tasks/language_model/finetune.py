@@ -172,6 +172,7 @@ def lm_forward_step_(tokens, labels, loss_mask, attention_mask, position_ids,
     loss, loss_batch = get_loss(logits)
 
     if is_distill:
+        student_model.add_summary('Train/hard_loss', loss)
         with NoneWith() if args.mt_has_grad else torch.no_grad():
             t_out_L = mt_repeat_operation(
                 zip(t_hook_L, t_inter_vars_L, teacher_models, t_hook_op_L),

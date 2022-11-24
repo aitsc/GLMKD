@@ -30,6 +30,7 @@ from typing import List
 from tasks.data_utils import InputExample
 from sklearn.metrics import f1_score
 import json
+import copy
 
 
 def accuracy_metric(predictions, labels, examples):
@@ -60,9 +61,9 @@ def save_max_score_dict(args, score_dict, epoch):
             if msd['score_dict'].get(key, -1e10) < score:
                 msd['epoch'] = epoch
                 msd['iteration'] = args.iteration
-                msd['score_dict'] = score_dict.copy()
+                msd['score_dict'] = copy.deepcopy(score_dict)
         else:
-            max_score_dict[key] = {'epoch': epoch, 'iteration': args.iteration, 'score_dict': score_dict.copy()}
+            max_score_dict[key] = {'epoch': epoch, 'iteration': args.iteration, 'score_dict': copy.deepcopy(score_dict)}
     if args.custom_tmp_result:
         with open(args.custom_tmp_result, 'w', encoding='utf8') as w:
             json.dump({
@@ -137,7 +138,8 @@ def accuracy_func_provider(single_dataset_provider, metric_dict, args, is_test=F
             output_str += " {} = {:.4f}".format(key, score)
             if summary_writer is not None and epoch >= 0 and not is_test:
                 summary_writer.add_scalar(f'Train/valid_{key}', score, epoch)
-        save_max_score_dict(args, score_dict, epoch)
+        if torch.distributed.get_rank() == 0:
+            save_max_score_dict(args, score_dict, epoch)
         print_rank_0(output_str + ' max' + str(max_score_dict))
         return score_dict
 

@@ -196,11 +196,14 @@ class Timers:
         """Log a group of timers."""
         assert normalizer > 0.0
         string = 'time (ms)'
+        name_elapsed_time = {}
         for name in names:
             elapsed_time = self.timers[name].elapsed(
                 reset=reset) * 1000.0 / normalizer
             string += ' | {}: {:.2f}'.format(name, elapsed_time)
+            name_elapsed_time[name] = elapsed_time
         print_rank_0(string)
+        return name_elapsed_time
 
 
 def report_memory(name):

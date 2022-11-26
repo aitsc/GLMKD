@@ -265,8 +265,8 @@ def _train(model, optimizer, lr_scheduler, forward_step,
                 learning_rate = optimizer.param_groups[0]['lr']
                 avg_lm_loss = total_lm_loss.item() / args.log_interval
                 elapsed_time = timers('interval time').elapsed()
-                timers.log(['forward', 'backward', 'allreduce', 'optimizer', 'batch generator'],
-                           normalizer=args.log_interval)
+                name_elapsed_time = timers.log(['forward', 'backward', 'allreduce', 'optimizer', 'batch generator'],
+                                               normalizer=args.log_interval)
                 report_iteration_metrics(summary_writer, optimizer, learning_rate, avg_lm_loss,
                                          elapsed_time * 1000.0 / args.log_interval, args.iteration, args.train_iters,
                                          args, iter_loss=lm_loss_.item())
@@ -275,6 +275,9 @@ def _train(model, optimizer, lr_scheduler, forward_step,
                     for k, v in list(model.state_dict().items()):
                         name = '/'.join(k.split('.', 1))
                         summary_writer.add_scalar(name, v.mean().item(), args.iteration)
+                    for k, v in list(name_elapsed_time.items()):
+                        name = f'log_time/{k}'
+                        summary_writer.add_scalar(name, v, args.iteration)
 
             # Evaluation
             if args.eval_interval and valid_dataloader is not None and args.iteration % args.eval_interval == 0:

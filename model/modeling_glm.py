@@ -191,9 +191,13 @@ class GLMModel(torch.nn.Module):
         logits_parallel = mpu.copy_to_model_parallel_region(logits)
         if self.map_vocab_size:
             origin_id_to_target_pos = self.map_vocab_paras['origin_id_to_target_pos']
-            if mpu.get_model_parallel_world_size() == 1:  # 有微小偏差
-                logits = F.linear(logits_parallel, self.word_embeddings.weight)
-                return logits[..., origin_id_to_target_pos]
+            if mpu.get_model_parallel_world_size() == 1:
+                weight = F.embedding(origin_id_to_target_pos, self.word_embeddings.weight)
+                logits = F.linear(logits_parallel, weight)
+                return logits
+                # 切片会导致 backward 慢很多
+                # logits = F.linear(logits_parallel, self.word_embeddings.weight)
+                # return logits[..., origin_id_to_target_pos]
             else:
                 origin_id_to_target_pos = mpu.scatter_to_model_parallel_region(origin_id_to_target_pos)
                 weight = self.word_embeddings(origin_id_to_target_pos)

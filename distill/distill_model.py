@@ -1293,6 +1293,7 @@ class LogitsDistil(GLMStudent):
     def __init__(self, language_model: GLMModel, args, **kwargs):
         super().__init__(language_model, args, **kwargs)
         self.origin_id_to_origin_id = None  # 不在学生词表中的id被替换为替换的id
+        self.unmasked_origin_id = None
 
     def get_teacher_hook(self, **kwargs):
         hook_L = [super().get_teacher_hook(**kwargs)]
@@ -1343,10 +1344,19 @@ class LogitsDistil(GLMStudent):
             s_logits = s_logits * mask
             t_logits = t_logits * mask
         if self.args.distill_logit_mask_map and self.origin_model.map_vocab_size:
-            origin_id_mask_map = self.origin_model.map_vocab_paras['origin_id_mask_map']
-            origin_id_mask_map = mpu.scatter_to_model_parallel_region(origin_id_mask_map)
-            s_logits = s_logits[..., origin_id_mask_map]
-            t_logits = t_logits[..., origin_id_mask_map]
+            # 可能产生不同MP的logits最后维度不同的情况
+            if self.unmasked_origin_id is None:
+                origin_id_mask_map = self.origin_model.map_vocab_paras['origin_id_mask_map']
+                origin_id = torch.arange(origin_id_mask_map.size(0), device=origin_id_mask_map.device)
+                origin_id_mask_map = mpu.scatter_to_model_parallel_region(origin_id_mask_map)
+                origin_id = mpu.scatter_to_model_parallel_region(origin_id)
+                self.unmasked_origin_id = origin_id[origin_id_mask_map]
+            # 切片会导致 backward 慢很多
+            # s_logits = s_logits[..., origin_id_mask_map]
+            # t_logits = t_logits[..., origin_id_mask_map]
+            bs, seq = s_logits.size()[:2]
+            s_logits = F.embedding(self.unmasked_origin_id, s_logits.view(bs * seq, -1).T).T.view(bs, seq, -1)
+            t_logits = F.embedding(self.unmasked_origin_id, t_logits.view(bs * seq, -1).T).T.view(bs, seq, -1)
         # logits 处理
         top_n = self.args.logitsdistil_top_n
         if top_n:

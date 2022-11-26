@@ -385,13 +385,17 @@ def train(model, optimizer, lr_scheduler,
             #                    normalizer=args.log_interval, reset=False)
             #     torch.distributed.barrier()
             if args.deepspeed or args.DDP_impl == 'torch':
-                timers.log(['forward', 'backward', 'optimizer',
+                name_elapsed_time = timers.log(['forward', 'backward', 'optimizer',
                             'batch generator', 'data loader'],
                            normalizer=args.log_interval)
             else:
-                timers.log(['forward', 'backward', 'allreduce', 'optimizer',
+                name_elapsed_time = timers.log(['forward', 'backward', 'allreduce', 'optimizer',
                             'batch generator', 'data loader'],
                            normalizer=args.log_interval)
+            if summary_writer is not None:
+                for k, v in list(name_elapsed_time.items()):
+                    name = f'log_time/{k}'
+                    summary_writer.add_scalar(name, v, args.iteration)
         # Checkpointing
         if args.save and args.save_interval and args.iteration % args.save_interval == 0 or \
             args.save and args.save_interval_time and \

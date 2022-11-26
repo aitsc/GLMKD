@@ -60,26 +60,27 @@ def forward_step(data_iterator, model, args, timers, mems, teacher_models=None, 
     ret = distill_random_data(args, [tokens], [labels, loss_mask, attention_mask, position_ids], 0, cancel=is_eval)
     args.forward_repeat_current_n = 0
     loss, mems = repeat_f(ret[0] + ret[1])[:2]
-    if args.forward_repeat_num and args.ignore_first_backward_gard:
-        assert args.gradient_accumulation_steps == 1
-        timers('sub_backward').start()
-        backward_step(optimizer, model, loss, args, timers)
-        timers('sub_backward').stop()
-        loss = 0.
-        
+    
     if args.forward_repeat_num and not is_eval:
+        if args.ignore_first_backward_gard:
+            assert args.gradient_accumulation_steps == 1
+            timers('sub_backward').start()
+            backward_step(optimizer, model, loss, args, timers)
+            timers('sub_backward').stop()
+            loss = 0.
+        
         for i in range(args.forward_repeat_num):
             args.forward_repeat_current_n = i + 1
             ret = distill_random_data(args, [tokens], [labels, loss_mask, attention_mask, position_ids], i + 1)
             loss = loss + repeat_f(ret[0] + ret[1])[0]
         args.forward_repeat_current_n = 0
     
-    if args.forward_repeat_num and args.ignore_first_backward_gard:
-        if args.deepspeed:
-            model.zero_grad()
-            model.optimizer.zero_grad()
-        else:
-            optimizer.zero_grad()
+        if args.ignore_first_backward_gard:
+            if args.deepspeed:
+                model.zero_grad()
+                model.optimizer.zero_grad()
+            else:
+                optimizer.zero_grad()
     return loss, mems, mode
 
 

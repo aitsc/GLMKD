@@ -39,10 +39,10 @@ We briefly summarize here the 24 model distillation methods that have been imple
 ```
 
 ## Results
-### The results of our toolkit on GLM
+### The results of our toolkit on GLM (SuperGLUE)
 #### Dev set
 ...
-### The results of the original papers on BERT
+### The results of the original papers on BERT (GLUE and SQuAD)
 #### Dev set
 <img src="distill/img/original_paper_bert_dev.png" width = "500" alt="" align=center />
 
@@ -84,7 +84,7 @@ We provide commands for distilling GLM on all methods with deepspeed.
 Suppose we want to distill a 12-layer teacher model to a 6-layer student model and test it on the ReCoRD dataset. We can first define 4 command prefixes that are not related to the specific method.
 ```shell
 1. Prefix-pretrain: NCCL_DEBUG=info NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2 deepspeed --master_port=13761 --include=localhost:0,1 distill/pretrain.py --deepspeed_config=config/config_block_tiny6.json --deepspeed-activation-checkpointing --deepspeed --block-lm --num-layers=6 --hidden-size=768 --num-attention-heads=12 --max-position-embeddings=512 --tokenizer-model-type=bert-base-uncased --tokenizer-type=BertWordPieceTokenizer --fp16 --checkpoint-activations --model-parallel-size=1 --save-interval=5000 --save=../GLM/data/checkpoints/distill/tiny6 --experiment-name=test --bert-prob=1.0 --train-data=bert-base --split=949,50,1 --distributed-backend=nccl --lr-decay-style=cosine --lr-decay-iters=120000 --lr-decay-ratio=0.05 --warmup=.05 --train-iters=150000 --no-lazy-loader --resume-dataloader
-2. Prefix-finetune: NCCL_DEBUG=info NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2 deepspeed --master_port=20696 --include=localhost:0 --hostfile= distill/finetune.py --finetune --cloze-eval --experiment-name=blank-tiny6-ReCoRD-test --task=ReCoRD --data-dir=../GLM/data/english_data/superglue/ReCoRD --save=../GLM/data/checkpoints/distill/tiny6/test/ft --seq-length=512 --checkpoint-activations --eval-batch-size=16 --save-epoch=100000 --block-lm --num-layers=6 --hidden-size=768 --num-attention-heads=12 --max-position-embeddings=512 --tokenizer-model-type=bert-base-uncased --tokenizer-type=BertWordPieceTokenizer --load-pretrained=../GLM/data/checkpoints/distill/tiny6/test --fp16 --lr-decay-style=linear --warmup=0.1 --weight-decay=1.0e-1 --pattern-id=0 --save-interval=10000 --log-interval=50 --eval-interval=1000 --eval-iters=100 --batch-size=8 --epochs=5 --lr=1e-5 --overwrite --deepspeed-activation-checkpointing --deepspeed --deepspeed_config=config/config_block_tiny6.json
+2. Prefix-finetune: NCCL_DEBUG=info NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2 deepspeed --master_port=20696 --include=localhost:0 --hostfile= distill/finetune.py --finetune --cloze-eval --experiment-name=blank-tiny6-ReCoRD-test --task=ReCoRD --data-dir=../GLM/data/english_data/superglue/ReCoRD --save=../GLM/data/checkpoints/distill/tiny6/test/ft --seq-length=512 --checkpoint-activations --eval-batch-size=16 --save-epoch=100000 --block-lm --num-layers=6 --hidden-size=768 --num-attention-heads=12 --max-position-embeddings=512 --tokenizer-model-type=bert-base-uncased --tokenizer-type=BertWordPieceTokenizer --load-pretrained=../GLM/data/checkpoints/distill/tiny6/test --fp16 --lr-decay-style=linear --warmup=0.1 --weight-decay=1.0e-1 --pattern-id=0 --save-interval=10000 --log-interval=50 --eval-interval=1000 --eval-iters=100 --batch-size=8 --epochs=5 --lr=1e-5 --overwrite --deepspeed-activation-checkpointing --deepspeed --deepspeed_config=config/config_block_tiny6.json --custom_first_eval
 3. Prefix-single-teacher: --teacher_load_pretrained=../GLM/data/checkpoints/pretrain/blocklm-base-blank --teacher_num_layers=12 --teacher_hidden_size=768 --teacher_num_attention_heads=12 --teacher_max_position_embeddings=512 --teacher_fp16
 4. Prefix-multi-teacher: --mt_num_attention_heads=a1:a2 --mt_hidden_size=h1:h2 --mt_num_layers=l1:l2 --mt_max_position_embeddings=m1:m2 --mt_load_pretrained=p1:p2 --teacher_fp16
 ```

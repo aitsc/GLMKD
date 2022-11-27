@@ -65,6 +65,7 @@ class GLMModel(torch.nn.Module):
                  spell_func='lstm',
                  attention_scale=1.0,
                  map_vocab_size=None,
+                 unmap_vocab_output=False,
                  ib_hidden_size=None,
                  ib_mode=False,
                  ib_ffn_num=1,
@@ -78,6 +79,7 @@ class GLMModel(torch.nn.Module):
         self.hidden_size = hidden_size
         self.vocab_size = vocab_size
         self.map_vocab_size = map_vocab_size
+        self.unmap_vocab_output = unmap_vocab_output
 
         init_method = init_method_normal(std=0.02)
 
@@ -139,7 +141,7 @@ class GLMModel(torch.nn.Module):
         # Embeddings.
         if hook_op and 'input_ids' in hook_op and callable(hook_op['input_ids']):
             input_ids = hook_op['input_ids'](input_ids=input_ids)
-        input_ids = self.map_input_ids(input_ids)
+        input_ids = self.map_input_to_ids(input_ids, external=False)
         batch_size = input_ids.size(0)
         words_embeddings = self.word_embeddings(input_ids)
         if hasattr(self, 'ib_emb_conv') and hasattr(self, 'ib_word_emb'):
@@ -168,7 +170,7 @@ class GLMModel(torch.nn.Module):
 
         if self.output_predict:
             # Parallel logits.
-            logits_parallel = self.map_logits_linear(logits)
+            logits_parallel = self.decode_for_map_logits(logits)
             hook_add(hook, inter_vars, 'logits_parallel', logits_parallel)
 
             if self.parallel_output:
@@ -179,31 +181,51 @@ class GLMModel(torch.nn.Module):
             ret = (logits, *outputs)
         return hook_return(hook, inter_vars, ret)
     
-    def map_input_ids(self, input_ids):
+    def map_input_to_ids(self, input_ids, external=True):
         # 词表映射到转换的 word_embeddings
-        if not self.map_vocab_size:
+        if not self.map_vocab_size or (external and not self.unmap_vocab_output):
             return input_ids
         origin_id_to_target_pos = self.map_vocab_paras['origin_id_to_target_pos']
         return F.embedding(input_ids, origin_id_to_target_pos.unsqueeze(-1)).squeeze(-1)
 
-    def map_logits_linear(self, logits):
+    def decode_for_map_logits(self, logits):
         # 还原原始 word_embeddings 进行线性变换得到 logits_parallel
         logits_parallel = mpu.copy_to_model_parallel_region(logits)
-        if self.map_vocab_size:
+        if self.map_vocab_size and not self.unmap_vocab_output:
             origin_id_to_target_pos = self.map_vocab_paras['origin_id_to_target_pos']
             if mpu.get_model_parallel_world_size() == 1:
+                # 切片会导致 backward 慢很多, masked_select也稍慢一点
+                # logits = F.linear(logits_parallel, self.word_embeddings.weight)
+                # return logits[..., origin_id_to_target_pos]
                 weight = F.embedding(origin_id_to_target_pos, self.word_embeddings.weight)
                 logits = F.linear(logits_parallel, weight)
                 return logits
-                # 切片会导致 backward 慢很多
-                # logits = F.linear(logits_parallel, self.word_embeddings.weight)
-                # return logits[..., origin_id_to_target_pos]
             else:
                 origin_id_to_target_pos = mpu.scatter_to_model_parallel_region(origin_id_to_target_pos)
                 weight = self.word_embeddings(origin_id_to_target_pos)
                 return F.linear(logits_parallel, weight)
         else:
             return F.linear(logits_parallel, self.word_embeddings.weight)
+        
+    def get_word_embeddings_weight(self, parallel_output=True, before_map_vocab=True):
+        """get_word_embeddings_weight
+
+        Args:
+            parallel_output (bool, optional): 是否返回模型并行化的权重
+            before_map_vocab (bool, optional): 是否返回映射压缩的词向量之前的权重
+
+        Returns:
+            tensor: 词向量权重
+        """
+        if self.map_vocab_size and before_map_vocab:
+            weight = self.word_embeddings(
+                mpu.scatter_to_model_parallel_region(self.map_vocab_paras['origin_id_to_target_pos']))
+        else:
+            weight = self.word_embeddings.weight
+        if parallel_output:
+            return weight
+        else:
+            return mpu.gather_from_model_parallel_region(weight)
 
 
 class GLMModel_empty(torch.nn.Module):

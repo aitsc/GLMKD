@@ -31,6 +31,7 @@ from tsc_base import merge_dict
 from distill.prepare import get_teachers_hook, mt_repeat_operation, NoneWith
 from distill.tools import distill_random_data
 from train_utils import backward_step
+from utils import find_model_inter_var
 
 global_tokenizer = None
 
@@ -94,10 +95,12 @@ def seq2seq_forward_step_(tokens, labels, loss_mask, attention_mask, position_id
     # Forward model.
     logits, *mems = hook_model(s_hook, s_inter_vars, model, tokens, position_ids, attention_mask, *mems, hook_op=s_hook_op)
     # loss
-    def get_loss(logits):
+    def get_loss(logits, m=None):
         # logits, loss_mask = logits[:, args.src_seq_length:], loss_mask[:, args.src_seq_length:]
         # target_ids = target_ids[:, args.src_seq_length:]
-        losses = mpu.vocab_parallel_cross_entropy(logits.contiguous().float(), labels)
+        map_input_to_ids = find_model_inter_var(m, 'map_input_to_ids')
+        labels_ = map_input_to_ids(labels) if map_input_to_ids is not None else labels
+        losses = mpu.vocab_parallel_cross_entropy(logits.contiguous().float(), labels_)
         if args.label_smoothing > 0.0:
             epsilon = args.label_smoothing
             smooth_loss = -torch.nn.functional.log_softmax(logits, dim=-1).mean(dim=-1)
@@ -107,7 +110,7 @@ def seq2seq_forward_step_(tokens, labels, loss_mask, attention_mask, position_id
         loss = loss_batch.sum() / loss_mask.sum()
         loss_batch = loss_batch / loss_mask.sum(-1)
         return loss, loss_batch
-    loss, loss_batch = get_loss(logits)
+    loss, loss_batch = get_loss(logits, model)
 
     if is_distill:
         student_model.add_summary('Train/hard_loss', loss)

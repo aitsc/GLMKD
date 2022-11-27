@@ -23,7 +23,6 @@
             "args": [
                 // deepspeed
                 "--master_port=10161",
-                "--include=localhost:1,6",
                 "--include=localhost:0",
                 "distill/pretrain.py",
                 "--deepspeed_config=config/config_block_tiny6.json",
@@ -43,7 +42,7 @@
                 "--model-parallel-size=1",
                 "--save-interval=5000",
                 // 预训练
-                "--save=../GLM/data/checkpoints/distill/tiny6",
+                "--save=../GLM/data/checkpoints/distill/tiny6/test",
                 "--experiment-name=test",
                 "--bert-prob=1.0",
                 "--train-data=bert-base",
@@ -57,9 +56,9 @@
                 "--no-lazy-loader",
                 "--resume-dataloader",
                 // 蒸馏 base
+                "--teacher_load_pretrained=../GLM/data/checkpoints/pretrain/blocklm-base-blank",
                 // "--model-parallel-size=2",
                 // "--teacher_load_pretrained=../GLM/data/checkpoints/pretrain/blocklm-base-blank_MP2",
-                "--teacher_load_pretrained=../GLM/data/checkpoints/pretrain/blocklm-base-blank",
                 "--teacher_num_layers=12",
                 "--teacher_hidden_size=768",
                 "--teacher_num_attention_heads=12",
@@ -110,12 +109,14 @@
                 "--student_build_map_vocab", // 构建映射, 一般不与load混用
                 "--student_map_vocab_tn=0",
                 "--distill_logit_mask_map",
+                "--unmap_vocab_output",
                 // LogitsDistil
                 "--student_model=logitsdistil",
                 "--logitsdistil_top_n=0",
                 "--distill_temperature=15",
                 "--logitsdistil_teacher_min",
                 "--logitsdistil_teacher_input_ids_map",
+                "--student_truncate_tn=0",
                 // KD
                 // "--student_model=kd",
                 // "--distill_pt_soft",
@@ -209,16 +210,28 @@
                 // "--distill_random_data_n=1",
                 // "--forward_repeat_num=0",
                 // "--distill_random_data_method=sample",
+                // VocabDistil
+                "--map_vocab_size=0.5", // 映射
+                "--student_build_map_vocab", // 构建映射, 一般不与load混用
+                "--student_map_vocab_tn=0",
+                "--distill_logit_mask_map",
+                "--unmap_vocab_output",
+                // LogitsDistil
+                "--student_model=logitsdistil",
+                "--logitsdistil_teacher_input_ids_map",
+                "--distill_ft_soft",
+                "--logitsdistil_wo_inter",
+                "--student_truncate_tn=0",
                 // Annealing_KD
                 // "--student_model=annealing_kd",
                 // "--annealing_kd_max_t=7",
                 // "--distill_ft_soft",
                 // "--distill_ft_soft_mse",
                 // LRC_BERT
-                "--student_model=lrc_bert",
-                "--lrc_bert_gard_perturb",
-                "--ignore_first_backward_gard",
-                "--forward_repeat_num=1",
+                // "--student_model=lrc_bert",
+                // "--lrc_bert_gard_perturb",
+                // "--ignore_first_backward_gard",
+                // "--forward_repeat_num=1",
                 // Universal_KD
                 // "--student_model=universal_kd",
                 // "--distill_ft_soft",

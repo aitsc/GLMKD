@@ -110,6 +110,7 @@ def get_model(args, model_type=None, multi_token=True, num_labels=None, spell_le
                          spell_func=args.prompt_func,
                          attention_scale=args.attention_scale,
                          map_vocab_size=args.map_vocab_size,
+                         unmap_vocab_output=args.unmap_vocab_output,
                          ib_hidden_size=args.ib_hidden_size,
                          ib_mode=args.inverted_bottleneck_mode,
                          ib_ffn_num=args.ib_ffn_num,

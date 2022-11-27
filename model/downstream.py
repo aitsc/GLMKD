@@ -4,6 +4,7 @@ import torch
 import torch.nn
 from .modeling_glm import GLMModel
 from mpu import hook_model, hook_return
+from utils import find_model_inter_var
 
 
 class GLMForMultiTokenCloze(torch.nn.Module):
@@ -28,6 +29,8 @@ class GLMForMultiTokenCloze(torch.nn.Module):
         inter_vars = []
         if target_ids == None:
             return hook_model(hook, inter_vars, self.model, input_ids, position_ids, attention_mask, hook_op=hook_op)
+        map_input_to_ids = find_model_inter_var(self.model, 'map_input_to_ids')
+        target_ids = map_input_to_ids(target_ids) if map_input_to_ids is not None else target_ids
         num_choices = None
         if len(input_ids.shape) == 3:
             batch_size, num_choices = input_ids.shape[:2]
@@ -135,6 +138,8 @@ class GLMForSingleTokenCloze(torch.nn.Module):
         inter_vars = []
         if target_ids == None:
             return hook_model(hook, inter_vars, self.model, input_ids, position_ids, attention_mask, hook_op=hook_op)
+        map_input_to_ids = find_model_inter_var(self.model, 'map_input_to_ids')
+        target_ids = map_input_to_ids(target_ids) if map_input_to_ids is not None else target_ids
         assert len(input_ids.shape) == 2
         outputs, *mems = hook_model(hook, inter_vars, self.model,
                                     input_ids, position_ids, attention_mask, prompt_pos=prompt_pos, hook_op=hook_op)

@@ -44,6 +44,7 @@ class GLMStudent(torch.nn.Module):
         self.summary_loss = summary_loss
         self.summary_suffix = ''  # 可用于多教师,多次数据等情况增加标注
         self.inter_show_hooks = {}  # 用于滞后展示,例如多教师情况
+        self.unmasked_origin_id = None
 
         if deepspeed.checkpointing.is_configured():
             global get_cuda_rng_tracker, checkpoint
@@ -94,10 +95,27 @@ class GLMStudent(torch.nn.Module):
             t_logits = t_inter_vars[t_hook['logits_parallel']]
             s_logits.distill = t_logits.distill = True
             if self.args.distill_logit_mask_map and self.origin_model.map_vocab_size:
-                origin_id_mask_map = self.origin_model.map_vocab_paras['origin_id_mask_map']
-                origin_id_mask_map = mpu.scatter_to_model_parallel_region(origin_id_mask_map)
-                s_logits = torch.masked_select(s_logits, origin_id_mask_map)
-                t_logits = torch.masked_select(t_logits, origin_id_mask_map)
+                # 可能产生不同MP的logits最后维度不同的情况
+                bs, seq = s_logits.size()[:2]
+                if not self.args.unmap_vocab_output:
+                    if self.unmasked_origin_id is None:
+                        origin_id_mask_map = self.origin_model.map_vocab_paras['origin_id_mask_map']
+                        origin_id = torch.arange(origin_id_mask_map.size(0), device=origin_id_mask_map.device)
+                        origin_id_mask_map = mpu.scatter_to_model_parallel_region(origin_id_mask_map)
+                        origin_id = mpu.scatter_to_model_parallel_region(origin_id)
+                        self.unmasked_origin_id = origin_id[origin_id_mask_map]
+                    s_logits = F.embedding(self.unmasked_origin_id, s_logits.view(bs * seq, -1).T).T.view(bs, seq, -1)
+                else:
+                    if self.unmasked_origin_id is None:
+                        unmasked_origin_id = self.origin_model.map_vocab_paras['target_pos_to_origin_id']
+                        self.unmasked_origin_id = unmasked_origin_id[:self.origin_model.map_vocab_size]
+                    t_logits = mpu.gather_from_model_parallel_region(t_logits)
+                if self.args.mt_has_grad:
+                    t_logits = F.embedding(self.unmasked_origin_id, t_logits.view(bs * seq, -1).T).T.view(bs, seq, -1)
+                else:
+                    t_logits = t_logits[..., self.unmasked_origin_id]
+                if self.args.unmap_vocab_output:
+                    t_logits = mpu.scatter_to_model_parallel_region(t_logits)
             if self.args.distill_logit_mask_pad:
                 position_ids = s_inter_vars[s_hook['position_ids']]
                 position_ids.distill = True
@@ -154,6 +172,16 @@ class GLMStudent(torch.nn.Module):
             mask = loss_mask.view(*loss_mask.size(), 1)
             self.pre_loss_description += '/mask_A_pad'
         parallel = 'gather' if self.args.custom_logits_paralle else ''
+        if self.args.unmap_vocab_output and parallel == 'gather' and s_logits.size(-1) != t_logits.size(-1):
+            unmasked_origin_id = self.origin_model.map_vocab_paras['target_pos_to_origin_id']
+            unmasked_origin_id = unmasked_origin_id[:self.origin_model.map_vocab_size]
+            t_logits = mpu.gather_from_model_parallel_region(t_logits)
+            bs, seq = s_logits.size()[:2]
+            if self.args.mt_has_grad:
+                t_logits = F.embedding(unmasked_origin_id, t_logits.view(bs * seq, -1).T).T.view(bs, seq, -1)
+            else:
+                t_logits = t_logits[..., unmasked_origin_id]
+            t_logits = mpu.scatter_to_model_parallel_region(t_logits)
         if self.args.finetune:
             if self.args.distill_ft_soft and self.args.distill_soft_rate:
                 self.pre_loss_description += ' + %s*distill_ft_soft(T%s)'%(self.args.distill_soft_rate,T)
@@ -1293,7 +1321,6 @@ class LogitsDistil(GLMStudent):
     def __init__(self, language_model: GLMModel, args, **kwargs):
         super().__init__(language_model, args, **kwargs)
         self.origin_id_to_origin_id = None  # 不在学生词表中的id被替换为替换的id
-        self.unmasked_origin_id = None
 
     def get_teacher_hook(self, **kwargs):
         hook_L = [super().get_teacher_hook(**kwargs)]
@@ -1345,18 +1372,26 @@ class LogitsDistil(GLMStudent):
             t_logits = t_logits * mask
         if self.args.distill_logit_mask_map and self.origin_model.map_vocab_size:
             # 可能产生不同MP的logits最后维度不同的情况
-            if self.unmasked_origin_id is None:
-                origin_id_mask_map = self.origin_model.map_vocab_paras['origin_id_mask_map']
-                origin_id = torch.arange(origin_id_mask_map.size(0), device=origin_id_mask_map.device)
-                origin_id_mask_map = mpu.scatter_to_model_parallel_region(origin_id_mask_map)
-                origin_id = mpu.scatter_to_model_parallel_region(origin_id)
-                self.unmasked_origin_id = origin_id[origin_id_mask_map]
-            # 切片会导致 backward 慢很多
-            # s_logits = s_logits[..., origin_id_mask_map]
-            # t_logits = t_logits[..., origin_id_mask_map]
             bs, seq = s_logits.size()[:2]
-            s_logits = F.embedding(self.unmasked_origin_id, s_logits.view(bs * seq, -1).T).T.view(bs, seq, -1)
-            t_logits = F.embedding(self.unmasked_origin_id, t_logits.view(bs * seq, -1).T).T.view(bs, seq, -1)
+            if not self.args.unmap_vocab_output:
+                if self.unmasked_origin_id is None:
+                    origin_id_mask_map = self.origin_model.map_vocab_paras['origin_id_mask_map']
+                    origin_id = torch.arange(origin_id_mask_map.size(0), device=origin_id_mask_map.device)
+                    origin_id_mask_map = mpu.scatter_to_model_parallel_region(origin_id_mask_map)
+                    origin_id = mpu.scatter_to_model_parallel_region(origin_id)
+                    self.unmasked_origin_id = origin_id[origin_id_mask_map]
+                s_logits = F.embedding(self.unmasked_origin_id, s_logits.view(bs * seq, -1).T).T.view(bs, seq, -1)
+            else:
+                if self.unmasked_origin_id is None:
+                    unmasked_origin_id = self.origin_model.map_vocab_paras['target_pos_to_origin_id']
+                    self.unmasked_origin_id = unmasked_origin_id[:self.origin_model.map_vocab_size]
+                t_logits = mpu.gather_from_model_parallel_region(t_logits)
+            if self.args.mt_has_grad:
+                t_logits = F.embedding(self.unmasked_origin_id, t_logits.view(bs * seq, -1).T).T.view(bs, seq, -1)
+            else:
+                t_logits = t_logits[..., self.unmasked_origin_id]
+            if self.args.unmap_vocab_output:
+                t_logits = mpu.scatter_to_model_parallel_region(t_logits)
         # logits 处理
         top_n = self.args.logitsdistil_top_n
         if top_n:

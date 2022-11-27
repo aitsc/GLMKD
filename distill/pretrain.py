@@ -15,7 +15,7 @@ import pathlib
 from distill.prepare import get_args, get_teacher_model, get_teachers_hook, mt_repeat_operation, glm_wrap, mt_model_load, NoneWith, truncate_teacher_as_student, build_map_vocab_for_student
 
 from train_utils import setup_model_and_optimizer, load_pretrained, backward_step
-from utils import Timers
+from utils import Timers, find_model_inter_var
 from utils import save_checkpoint
 from utils import load_checkpoint
 from utils import report_memory
@@ -102,15 +102,17 @@ def forward_step_(tokens, labels, loss_mask, attention_mask, position_ids,
         teacher_models = []
     logits, *mems = hook_model(s_hook, s_inter_vars, model, tokens, position_ids, attention_mask, *mems, hook_op=s_hook_op)
 
-    def compute_loss(logits):
-        losses = mpu.vocab_parallel_cross_entropy(logits.contiguous().float(), labels)
+    def compute_loss(logits, m=None):
+        map_input_to_ids = find_model_inter_var(m, 'map_input_to_ids')
+        labels_ = map_input_to_ids(labels) if map_input_to_ids is not None else labels
+        losses = mpu.vocab_parallel_cross_entropy(logits.contiguous().float(), labels_)
         loss_batch = (losses * loss_mask).sum(-1)
         loss = loss_batch.sum()
         if loss_mask.sum().item() > 0:
             loss = loss / loss_mask.sum()
             loss_batch = loss_batch / loss_mask.sum(-1)
         return loss, loss_batch
-    loss, loss_batch = compute_loss(logits)
+    loss, loss_batch = compute_loss(logits, model)
 
     if is_distill:
         student_model.add_summary('Train/hard_loss', loss)
@@ -186,8 +188,9 @@ def main():
         with FileLock(os.path.join(pathlib.Path.home(), "checkpoint_lock"), timeout=-1):
             load_pretrained(model, args.load_pretrained, args)
     is_load1 = mt_model_load(model, args.mt_model_load)
+    if not (args.load_pretrained or args.load):
+        build_map_vocab_for_student(model, teacher_models, args, tokenizer)
     is_load2 = truncate_teacher_as_student(model, teacher_models, args)
-    build_map_vocab_for_student(model, teacher_models, args, tokenizer)
     if (is_load1 or is_load2 or args.load_pretrained) and args.fp16 and optimizer is not None:
         if args.deepspeed:
             optimizer.refresh_fp32_params()

@@ -19,7 +19,7 @@ import math
 import functools
 import torch
 
-from utils import print_rank_0
+from utils import print_rank_0, find_model_inter_var
 import mpu
 from tasks.data_utils import build_data_loader
 
@@ -148,9 +148,11 @@ def lm_forward_step_(tokens, labels, loss_mask, attention_mask, position_ids,
         m_kw['prompt_pos'] = data["prompt_pos"].long().cuda()
     logits, *mems = hook_model(s_hook, s_inter_vars, model, *m_in, **m_kw, hook_op=s_hook_op)
     # loss
-    def get_loss(logits):
+    def get_loss(logits, m=None):
+        map_input_to_ids = find_model_inter_var(m, 'map_input_to_ids')
+        labels_ = map_input_to_ids(labels) if map_input_to_ids is not None else labels
         if eval_metric is None or eval_metric == 'loss':
-            losses = mpu.vocab_parallel_cross_entropy(logits.contiguous().float(), labels)
+            losses = mpu.vocab_parallel_cross_entropy(logits.contiguous().float(), labels_)
             # The loss is not normalized for fair comparison
             loss_batch = (losses * loss_mask).sum(-1)
             loss = loss_batch.sum()
@@ -160,7 +162,7 @@ def lm_forward_step_(tokens, labels, loss_mask, attention_mask, position_ids,
         elif eval_metric == 'accuracy' or eval_metric == 'classify':
             logits = mpu.gather_from_model_parallel_region(logits)
             outputs = torch.argmax(logits, -1)
-            correct = (outputs == labels).float()
+            correct = (outputs == labels_).float()
             correct[(1 - loss_mask).bool()] = 1
             correct = correct.prod(-1)
             loss_batch = correct
@@ -170,7 +172,7 @@ def lm_forward_step_(tokens, labels, loss_mask, attention_mask, position_ids,
         else:
             raise NotImplementedError("Metric {} not implemented".format(eval_metric))
         return loss, loss_batch
-    loss, loss_batch = get_loss(logits)
+    loss, loss_batch = get_loss(logits, model)
 
     if is_distill:
         student_model.add_summary('Train/hard_loss', loss)

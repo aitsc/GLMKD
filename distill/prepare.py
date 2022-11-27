@@ -12,6 +12,7 @@ import torch
 import time
 import mpu
 import copy
+import torch.nn.functional as F
 
 
 def get_args():
@@ -38,7 +39,7 @@ def get_args():
     py_parser.add_argument('--distill_pt_soft_mse', action='store_true', help="使用mse计算pt_soft")
     py_parser.add_argument('--distill_logits_parallel', action='store_true', help='是否将logits_parallel当作inter_loss使用,只有在NLU的ft阶段有价值,其他重复时可能产生soft权重*2的效果,注意一般受wo_inter类参数的约束')
     py_parser.add_argument('--distill_logit_mask_pad', action='store_true', help='--distill_logits_parallel 参数下是否mask padding')
-    py_parser.add_argument('--distill_logit_mask_map', action='store_true', help='使用logits_parallel计算并且学生有map_vocab时,是否忽略映射token的相似度计算')
+    py_parser.add_argument('--distill_logit_mask_map', action='store_true', help='使用logits_parallel计算并且学生有map_vocab时,是否忽略映射token的蒸馏相似度计算')
     py_parser.add_argument('--distill_logit_mse', action='store_true', help='是否用MSE计算--distill_logits_parallel')
     py_parser.add_argument('--distill_test_output', action='store_true', help='是否测试输出,会运行测试代码,针对有测试的方法,如theseus')
     # 引入随机数据
@@ -393,9 +394,28 @@ def truncate_teacher_as_student(model, teacher_models, args):
     s_model = unpacking_student_model(model).origin_model
     t_model = teacher_models[args.student_truncate_tn]
     s_sd = s_model.state_dict()
+    print_rank_0(f'> 从教师模型 {args.student_truncate_tn} 中截断出学生模型参数 ...')
+    t_state_dict = t_model.state_dict()
+    # map_vocab
+    t_model_glm = unpacking_student_model(t_model, attrs=('map_input_to_ids', 'get_word_embeddings_weight'))
+    if t_model_glm.map_vocab_size:
+        print_rank_0(f'get word_embeddings.weight before mapping from teacher')
+        weight = find_model_inter_var(t_model, 'get_word_embeddings_weight')(
+            parallel_output=True, before_map_vocab=True)
+        t_state_dict['word_embeddings.weight'] = weight
+    if s_model.map_vocab_size:
+        print_rank_0(f'from word_embeddings.weight before mapping to after mapping')
+        unmasked_origin_id = s_model.map_vocab_paras['target_pos_to_origin_id'][:s_model.map_vocab_size]
+        if mpu.get_model_parallel_world_size() == 1:
+            weight = t_state_dict['word_embeddings.weight']
+            t_state_dict['word_embeddings.weight'] = F.embedding(unmasked_origin_id, weight)
+        else:
+            weight = mpu.gather_from_model_parallel_region(t_state_dict['word_embeddings.weight'].T)
+            weight = weight[..., unmasked_origin_id]
+            t_state_dict['word_embeddings.weight'] = mpu.scatter_to_model_parallel_region(weight).T
+    # load
     s_sd_new = {}  # {'状态名称':张量,..}
-    print_rank_0(f'从教师模型 {args.student_truncate_tn} 中截断出学生模型参数 ...')
-    for k, v in t_model.state_dict().items():
+    for k, v in t_state_dict.items():
         if k not in s_sd:
             continue
         if s_sd[k].size() != v.size():

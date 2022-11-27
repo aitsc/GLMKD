@@ -4,7 +4,7 @@ sys.path.append(os.getcwd())
 import json
 from tasks.data_utils import build_data_loader, FakeDataloader
 from utils import get_sample_writer, get_log_dir, print_and_save_args
-from distill.prepare import get_args, get_teacher_model, get_teachers_hook, mt_repeat_operation, glm_wrap, mt_model_load, NoneWith, truncate_teacher_as_student
+from distill.prepare import get_args, get_teacher_model, get_teachers_hook, mt_repeat_operation, glm_wrap, mt_model_load, NoneWith, truncate_teacher_as_student, build_map_vocab_for_student
 from filelock import FileLock
 import pretrain_glm
 from pretrain_glm import initialize_distributed, set_random_seed, get_batch
@@ -321,6 +321,8 @@ def finetune(args, train_valid_datasets_provider, model_kwargs, forward_step=fin
             else:
                 optimizer._model_params_to_master_params()
     is_load1 = mt_model_load(model, args.mt_model_load)
+    if not (args.load_pretrained and not args.pretrained_bert or args.load):
+        build_map_vocab_for_student(model, teacher_models, args, tokenizer)
     is_load2 = truncate_teacher_as_student(model, teacher_models, args)
     if (is_load1 or is_load2) and args.fp16 and optimizer is not None:
         if args.deepspeed:

@@ -70,6 +70,7 @@ class GLMModel(torch.nn.Module):
                  ib_mode=False,
                  ib_ffn_num=1,
                  ib_word_emb=None,
+                 compress_word_emb=None,
                  ):
 
         super(GLMModel, self).__init__()
@@ -80,18 +81,26 @@ class GLMModel(torch.nn.Module):
         self.vocab_size = vocab_size
         self.map_vocab_size = map_vocab_size
         self.unmap_vocab_output = unmap_vocab_output
+        self.word_emb = compress_word_emb if compress_word_emb else hidden_size
 
         init_method = init_method_normal(std=0.02)
 
-        # Word embeddings (parallel).
-        if ib_mode and ib_word_emb:
+        if ib_word_emb:
             self.ib_emb_conv = mpu.ColumnParallelLinear(ib_word_emb * 3, hidden_size,
                                                         gather_output=True,
                                                         init_method=init_method)
             self.ib_word_emb = ib_word_emb
+        if compress_word_emb:
+            self.compress_emb_mlp = mpu.ColumnParallelLinear(self.word_emb, hidden_size,
+                                                            gather_output=True,
+                                                            init_method=init_method)
+            self.decompress_emb_mlp = mpu.ColumnParallelLinear(hidden_size, self.word_emb, 
+                                                               gather_output=True,
+                                                               init_method=init_method)
+        # Word embeddings (parallel).
         if map_vocab_size:
             self.word_embeddings = mpu.VocabParallelEmbedding(
-                map_vocab_size, hidden_size, init_method=init_method)
+                map_vocab_size, self.word_emb, init_method=init_method)
             # 初始化映射, 无法直接使用, 需要外部赋值或加载已有数据
             self.map_vocab_paras = {
                 # origin_id等价于origin_pos, 用途: 原始词表id映射到本地词表位置; 本地词表嵌入还原到原始词表嵌入顺序
@@ -103,7 +112,7 @@ class GLMModel(torch.nn.Module):
             }
         else:
             self.word_embeddings = mpu.VocabParallelEmbedding(
-                vocab_size, hidden_size, init_method=init_method)
+                vocab_size, self.word_emb, init_method=init_method)
 
         # Transformer
         self.transformer = mpu.GPT2ParallelTransformer(num_layers,
@@ -144,6 +153,8 @@ class GLMModel(torch.nn.Module):
         input_ids = self.map_input_to_ids(input_ids, external=False)
         batch_size = input_ids.size(0)
         words_embeddings = self.word_embeddings(input_ids)
+        if hasattr(self, 'compress_emb_mlp'):
+            words_embeddings = self.compress_emb_mlp(words_embeddings)
         if hasattr(self, 'ib_emb_conv') and hasattr(self, 'ib_word_emb'):
             words_embeddings = words_embeddings[..., :self.ib_word_emb]
             words_embeddings = torch.cat([
@@ -166,6 +177,8 @@ class GLMModel(torch.nn.Module):
                                         return_memory=return_memory, detach_memory=detach_memory,
                                         hook_op=hook_child(hook_op, 'transformer'))
         logits, hidden_layers = transformer_output
+        if hasattr(self, 'decompress_emb_mlp'):
+            logits = self.decompress_emb_mlp(logits)
         outputs = hidden_layers
 
         if self.output_predict:

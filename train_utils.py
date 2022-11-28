@@ -114,7 +114,9 @@ def get_model(args, model_type=None, multi_token=True, num_labels=None, spell_le
                          ib_hidden_size=args.ib_hidden_size,
                          ib_mode=args.inverted_bottleneck_mode,
                          ib_ffn_num=args.ib_ffn_num,
-                         ib_word_emb=args.ib_word_emb)
+                         ib_word_emb=args.ib_word_emb,
+                         compress_word_emb=args.compress_word_emb,
+                         )
         if args.freeze_transformer:
             model.freeze_transformer(tune_prefix_layers=args.tune_prefix_layers)
         if glm_wrap is not None:

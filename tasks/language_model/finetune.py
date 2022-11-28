@@ -215,7 +215,7 @@ def classify_evaluate(model, dataloader, example_dict, args):
         # For all the batches in the dataset.
         for iteration, batch in enumerate(dataloader):
             # Forward evaluation.
-            output, _, _ = lm_forward_step(batch, model, args, None, [], eval_metric='classify')
+            output, _, _ = lm_forward_step(batch, model, args, None, [], eval_metric='classify', is_eval=True)
             uid_list = batch['uid']
             example_batch = [example_dict[uid] for uid in uid_list]
             predictions.extend(output.long().tolist())
@@ -237,7 +237,7 @@ def evaluate(model, dataloader, eval_metric, args):
             if (iteration + 1) % args.log_interval == 0:
                 print_rank_0('> working on iteration: {}'.format(iteration))
             # Forward evaluation.
-            output, _, _ = lm_forward_step(batch, model, args, None, [], eval_metric=eval_metric)
+            output, _, _ = lm_forward_step(batch, model, args, None, [], eval_metric=eval_metric, is_eval=True)
             count = batch['text'].size(0)
             count = torch.cuda.LongTensor([count])
             # Reduce across processes.

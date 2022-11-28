@@ -72,11 +72,12 @@ def get_args():
     py_parser.add_argument('--tinybert_wo_final', action='store_true', help="不使用最后层,不适用于tinybert_only_emb_final,tinybert_custom_final,tinybert_inter_final")
     py_parser.add_argument('--tinybert_wo_emb', action='store_true', help="不使用嵌入层,不适用于tinybert_only_emb_final,tinybert_only_emb")
     py_parser.add_argument('--tinybert_fit_parallel', action='store_true', help='转换层是否使用模型并行')
-    py_parser.add_argument('--tinybert_fit_compatible_mt', action='store_true', help='是否使用多个转换层兼容多教师')
+    py_parser.add_argument('--tinybert_fit_compatible_mt', action='store_true', help='是否使用多个转换层兼容多教师,多个HS维度不同的教师必备')
     py_parser.add_argument('--tinybert_random_layers', action='store_true', help="是否随机选择中间层(emb和final不动)")
     py_parser.add_argument('--tinybert_random_e', type=int, default=1, help="每几轮训练后随机选择层,大于0有效,优先")
     py_parser.add_argument('--tinybert_random_i', type=int, default=3000, help="每几次迭代后随机选择层,大于0有效,tinybert_random_i为0这个参数才有效")
     py_parser.add_argument('--tinybert_random_show', action='store_true', help="显示每次随机后的教师中间取层(不含emb/final)")
+    py_parser.add_argument('--tinybert_analysis_inter', action='store_true', help="类似--logitsdistil_analysis_inter.只适用于标准tinybert方法,因为使用这个会导致tinybert_inter_final等等忽略中间层的参数失效,此外使用随机取层会导致分析错位")
     # minilmv2
     py_parser.add_argument('--minilmv2_relation_heads', type=int, default=48, help="base=48,large=64")
     py_parser.add_argument('--minilmv2_teacher_layer', type=int, default=12, help="start at one,-1就代表倒数第一层")
@@ -140,6 +141,7 @@ def get_args():
     py_parser.add_argument('--logitsdistil_teacher_min', action='store_true', help="将教师logits中top_n之后的值都置为最小值,而不是对学生logits进行约束,避免长尾难以压制的问题")
     py_parser.add_argument('--logitsdistil_wo_inter', action='store_true', help="不使用中间层,可用于二次微调")
     py_parser.add_argument('--logitsdistil_teacher_input_ids_map', action='store_true', help="在学生map_vocab状态下,是否也对教师输入映射token,使得学生和教师输入一样")
+    py_parser.add_argument('--logitsdistil_analysis_inter', action='store_true', help="是否分析中间层教师与学生的相关相似度,保存于tensorboard,会增加时空消耗.受到AttHead和HSDim限制的不会统计.混合方法的复杂场景下使用这个可能导致loss计算混乱")
     # sid
     py_parser.add_argument('--sid_accumulate_t', type=float, default=0., help='cosine loss threshold')
     py_parser.add_argument('--sid_lim_e', type=str, default='avg', help='limited number of epochs per layer')

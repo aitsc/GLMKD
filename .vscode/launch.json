@@ -105,18 +105,19 @@
                 // "--teacher_ib_ffn_num=1",
                 // "--teacher_ib_word_emb=128",
                 // VocabDistil
-                "--map_vocab_size=0.5", // 映射
-                "--student_build_map_vocab", // 构建映射, 一般不与load混用
-                "--student_map_vocab_tn=0",
-                "--distill_logit_mask_map",
-                "--unmap_vocab_output",
+                // "--map_vocab_size=0.5", // 映射
+                // "--student_build_map_vocab", // 构建映射, 一般不与load混用
+                // "--student_map_vocab_tn=0",
+                // "--distill_logit_mask_map",
+                // "--unmap_vocab_output",
                 // LogitsDistil
-                "--student_model=logitsdistil",
-                "--logitsdistil_top_n=0",
-                "--distill_temperature=15",
-                "--logitsdistil_teacher_min",
-                "--logitsdistil_teacher_input_ids_map",
-                "--student_truncate_tn=0",
+                // "--student_model=logitsdistil",
+                // "--logitsdistil_top_n=0",
+                // "--distill_temperature=15",
+                // "--logitsdistil_teacher_min",
+                // "--logitsdistil_teacher_input_ids_map",
+                // "--student_truncate_tn=0",
+                // "--logitsdistil_analysis_inter",
                 // KD
                 // "--student_model=kd",
                 // "--distill_pt_soft",
@@ -138,6 +139,9 @@
                 // "--distill_ft_soft",
                 // "--distill_ft_hard",
                 // "--distill_temperature=2",
+                // TinyBERT
+                "--student_model=tinybert",
+                "--tinybert_analysis_inter",
             ],
             "env": {
                 "NCCL_DEBUG":"info",

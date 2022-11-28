@@ -51,19 +51,55 @@ class GLMStudent(torch.nn.Module):
             get_cuda_rng_tracker = deepspeed.checkpointing.get_cuda_rng_tracker
             checkpoint = deepspeed.checkpointing.checkpoint
 
-    def get_teacher_hook(self, t_no=0, **kwargs):
-        hook = {}
-        if self.args.distill_logits_parallel:
-            hook['logits_parallel'] = None
-        return hook
+    def get_teacher_hook(self, t_no=0, analysis_inter=False, **kwargs):
+        """提前设置将要获取的教师中间层
 
-    def get_student_hook(self, **kwargs):
-        hook = {}
+        Args:
+            t_no (int, optional): 多教师时候的教师编号,从0开始
+            analysis_inter (bool, optional): 是否提取所有主要的中间层用于分析.使用这个这可能导致一些只依赖hook传入中间层进行蒸馏loss计算的方法计算了过多的中间层
+
+        Returns:
+            dict: hook
+        """
+        hook_L = []
         if self.args.distill_logits_parallel:
+            hook = {'logits_parallel': None}
+            hook_L.append(hook)
+        if analysis_inter:
+            # 教师采用间隔取层
+            layers = [0] + cumulative_sum(fast_uniform_seg(self.args.num_layers, [1] * self.args.teacher_num_layers))
+            hook ={'transformer': {
+                'layers': merge_dict([
+                    {i: {'layernorm_output': None} for i in layers[:-1]},
+                    {i - 1: {
+                        'attention_scores': None, 'query_layer': None, 'key_layer': None, 'value_layer': None
+                    } for i in layers[1:]},
+                ]),
+                'output': None,
+            }, 'logits_parallel': None}
+            hook_L.append(hook)
+        return merge_dict(hook_L)
+
+    def get_student_hook(self, analysis_inter=False, **kwargs):
+        hook_L = []
+        if self.args.distill_logits_parallel:
+            hook = {'logits_parallel': None}
             if self.args.distill_logit_mask_pad:
                 hook['position_ids'] = None
-            hook['logits_parallel'] = None
-        return hook
+            hook_L.append(hook)
+        if analysis_inter:
+            layers = tuple(range(0, self.args.num_layers + 1))
+            hook ={'transformer': {
+                'layers': merge_dict([
+                    {i: {'layernorm_output': None} for i in layers[:-1]},
+                    {i - 1: {
+                        'attention_scores': None, 'query_layer': None, 'key_layer': None, 'value_layer': None
+                    } for i in layers[1:]},
+                ]),
+                'output': None,
+            }, 'logits_parallel': None}
+            hook_L.append(hook)
+        return merge_dict(hook_L)
 
     def get_teacher_hook_op(self, t_no=0, **kwargs):
         return {}
@@ -264,17 +300,73 @@ class GLMStudent(torch.nn.Module):
                 yield 'student.' + k, v
 
     def add_summary(self, name, value):
-        if self.summary_writer is None or not self.summary_loss:
-            return False
-        if self.args.iteration % self.args.log_interval == 0:
+        if self.is_summary_available():
             if hasattr(value, 'item'):
                 if len(value.shape) > 1 or len(value.shape) >= 1 and value.shape[0] > 1:
                     value = value.mean()
                 value = value.item()
-            self.summary_writer.add_scalar(name + self.summary_suffix, value, self.args.iteration)
+            self.summary_writer.add_scalar(name + self.summary_suffix, value, self.args.iteration + 1)
             return True
         else:
             return False
+
+    def is_summary_available(self):
+        if self.summary_writer is None or not self.summary_loss:
+            return False
+        if (self.args.iteration + 1) % self.args.log_interval == 0:
+            return True
+        return False
+
+    def analysis_inter_vars(self, s_inter_vars, t_inter_vars, s_hook, t_hook, t_no):
+        # 计算并保存教师和学生的主要内层之间的相似度.hook中的layers需要一一对应,否则会出现错位和遗漏统计,例如分析是间隔取层但方法本身使用其他取层方式
+        if not self.is_summary_available():
+            return
+        def get_layer_f(st, name):
+            inter_vars, hook = (s_inter_vars, s_hook) if st == 's' else (t_inter_vars, t_hook)
+            if not ('transformer' in hook and 'layers' in hook['transformer']):
+                return []
+            return [inter_vars[i[1][name]] for i in sorted(hook['transformer']['layers'].items()) if name in i[1]]
+        # 获取中间层
+        self_relation_vars = {}  # {marks:[s_var,t_var],..}
+        if 'transformer' in s_hook and 'output' in s_hook['transformer']:
+            self_relation_vars[('Emb',)] = [
+                s_inter_vars[s_hook['transformer']['output']], t_inter_vars[t_hook['transformer']['output']]]
+        other_vars = {}  # {marks:[s_var,t_var],..}
+        if 'logits_parallel' in s_hook:
+            other_vars[('Pred',)] = [  # The relationship between Emb and HS
+                s_inter_vars[s_hook['logits_parallel']], t_inter_vars[t_hook['logits_parallel']]]
+        for name, mark, _vars in [
+            ('layernorm_output', 'HS', self_relation_vars), 
+            ('query_layer', 'Q', self_relation_vars), 
+            ('key_layer', 'K', self_relation_vars), 
+            ('value_layer', 'V', self_relation_vars),
+            ('attention_scores', 'Att', other_vars),
+        ]:
+            for i, (s_var, t_var) in enumerate(zip(get_layer_f('s', name), get_layer_f('t', name))):
+                _vars[(mark, f'{i+1}')] = [s_var, t_var]
+        # 计算直接相关
+        suffix = f'r{self.args.forward_repeat_current_n}t{t_no}'
+        for marks, (s_var, t_var) in list(self_relation_vars.items()) + list(other_vars.items()):
+            if s_var.size() != t_var.size():
+                continue
+            parallel = 'gather' if marks[0] in {'Q', 'K', 'V', 'Att'} else ''
+            mark = ''.join(marks)
+            l = CustomLoss.mse_loss(s_var, t_var, parallel=parallel)
+            self.add_summary(f'analysis_inter/MSE_{mark}_{suffix}', l)
+            l = CustomLoss.kl_div(s_var, t_var, parallel=parallel)
+            self.add_summary(f'analysis_inter/KL_{mark}_{suffix}', l)
+        # 计算自相关
+        for marks, (s_var, t_var) in list(self_relation_vars.items()):
+            if s_var.size()[:-1] != t_var.size()[:-1]:
+                continue
+            s_var = torch.matmul(s_var, s_var.transpose(-1,-2)) / math.sqrt(s_var.size(-1))
+            t_var = torch.matmul(t_var, t_var.transpose(-1,-2)) / math.sqrt(t_var.size(-1))
+            parallel = 'gather' if marks[0] in {'Q', 'K', 'V', 'Att'} else ''
+            mark = ''.join(marks)
+            l = CustomLoss.mse_loss(s_var, t_var, parallel=parallel)
+            self.add_summary(f'analysis_inter/self_MSE_{mark}_{suffix}', l)
+            l = CustomLoss.kl_div(s_var, t_var, parallel=parallel)
+            self.add_summary(f'analysis_inter/self_KL_{mark}_{suffix}', l)
 
 
 def unpacking_student_model(model, attrs=('origin_model', 'get_teacher_hook')):
@@ -320,7 +412,7 @@ class TinyBERT(GLMStudent):
         self.last_epoch = self.args.custom_current_epoch
         self.last_iter = self.args.iteration
         # 重新生成hook
-        hook_L = [super().get_teacher_hook(t_no=0, **kwargs)]
+        hook_L = [super().get_teacher_hook(t_no=0, analysis_inter=self.args.tinybert_analysis_inter, **kwargs)]
         if self.args.tinybert_random_layers:
             layers = random.sample(range(1, self.args.teacher_num_layers), self.args.num_layers - 1)
             layers.sort()
@@ -355,7 +447,7 @@ class TinyBERT(GLMStudent):
         return copy.deepcopy(self.teachers_hook[t_no])
 
     def get_student_hook(self, **kwargs):
-        hook_L = [super().get_student_hook(**kwargs)]
+        hook_L = [super().get_student_hook(analysis_inter=self.args.tinybert_analysis_inter, **kwargs)]
         layers = tuple(range(self.args.num_layers))
         if self.args.tinybert_wo_inter:
             hook = {}
@@ -435,6 +527,8 @@ class TinyBERT(GLMStudent):
             super().add_summary(f'inter_loss/hidden_states.{i}', l)
             loss_ += l
         loss_ += super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=keep_batch, t_no=t_no, **kwargs)
+        if self.args.tinybert_analysis_inter:
+            self.analysis_inter_vars(s_inter_vars, t_inter_vars, s_hook, t_hook, t_no)
         return loss_
 
 
@@ -1323,14 +1417,14 @@ class LogitsDistil(GLMStudent):
         self.origin_id_to_origin_id = None  # 不在学生词表中的id被替换为替换的id
 
     def get_teacher_hook(self, **kwargs):
-        hook_L = [super().get_teacher_hook(**kwargs)]
+        hook_L = [super().get_teacher_hook(analysis_inter=self.args.logitsdistil_analysis_inter, **kwargs)]
         if not self.args.logitsdistil_wo_inter:
             hook = {'logits_parallel': None}
             hook_L.append(hook)
         return merge_dict(hook_L)
 
     def get_student_hook(self, **kwargs):
-        hook_L = [super().get_student_hook(**kwargs)]
+        hook_L = [super().get_student_hook(analysis_inter=self.args.logitsdistil_analysis_inter, **kwargs)]
         if not self.args.logitsdistil_wo_inter:
             hook = {'logits_parallel': None}
             if self.args.logitsdistil_mask_pad:
@@ -1457,6 +1551,8 @@ class LogitsDistil(GLMStudent):
         self.add_summary('inter_loss/logits_parallel', l)
         loss_ += l
         loss_ += super().inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=keep_batch, t_no=None, **kwargs)
+        if self.args.logitsdistil_analysis_inter:
+            self.analysis_inter_vars(s_inter_vars, t_inter_vars, s_hook, t_hook, t_no)
         return loss_
 
 

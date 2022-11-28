@@ -58,7 +58,9 @@ def get_args():
     py_parser.add_argument('--teacher_inverted_bottleneck_mode', action='store_true')
     py_parser.add_argument('--teacher_ib_hidden_size', type=int, default=1024)
     py_parser.add_argument('--teacher_ib_ffn_num', type=int, default=1)
-    py_parser.add_argument('--teacher_ib_word_emb', type=int, default=128)
+    py_parser.add_argument('--teacher_ib_word_emb', type=int, default=0)
+    py_parser.add_argument('--teacher_compress_word_emb', type=int, default=0)
+    py_parser.add_argument('--teacher_map_vocab_size', type=float, default=0)
 
     # tinybert
     py_parser.add_argument('--tinybert_inter_final', action='store_true', help="只使用最后隐层做损失")
@@ -177,6 +179,8 @@ def get_args():
     py_parser.add_argument('--mt_ib_hidden_size', type=str, default='')
     py_parser.add_argument('--mt_ib_ffn_num', type=str, default='')
     py_parser.add_argument('--mt_ib_word_emb', type=str, default='')
+    py_parser.add_argument('--mt_compress_word_emb', type=str, default='')
+    py_parser.add_argument('--mt_map_vocab_size', type=str, default='')
     # multi-teacher model (指将多个教师联合在一起的模型)
     py_parser.add_argument('--multi_teacher_model', type=str, default=None, help='多教师模型名称')
     py_parser.add_argument('--mt_model_load', type=str, default=None, help='可选额外加载的多教师模型路径,可以自动从其他学生模型路径中提取')
@@ -247,6 +251,8 @@ def get_teacher_model(args, **kwargs):
         'ib_hidden_size',
         'ib_ffn_num',
         'ib_word_emb',
+        'compress_word_emb',
+        'map_vocab_size',
     ]
     original_vars = [getattr(args, i) for i in transfer_vars]
     fp16 = args.fp16
@@ -304,6 +310,8 @@ def get_teachers_hook(args, student_model=None, is_op=False, **kwargs):
         'ib_hidden_size',
         'ib_ffn_num',
         'ib_word_emb',
+        'compress_word_emb',
+        'map_vocab_size',
     ]
     check = [len(getattr(args, 'mt_' + i).split(':')) - 1 for i in transfer_vars]
     assert check[0] * len(transfer_vars) == sum(check), 'args中的多教师参数不是一一对应!'

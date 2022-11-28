@@ -426,14 +426,14 @@ def add_custom_args(parser: argparse.ArgumentParser):
     group.add_argument('--forward_repeat_num', type=int, default=0, help='forward_step对相同数据多重复运行几次,1就代表数据会过2遍.运行loss结果累加,其他非loss值取第0次结果.evaluate的时候不会重复')
     group.add_argument('--forward_repeat_current_n', type=int, default=0, help='当前是重复的第几次,自动分配不用设置,0表示无重复,1表示重复的第一次')
     group.add_argument('--ft_final_save', action='store_true', help='是否在微调的最后一轮保存模型,将覆盖best模型latest_checkpointed_iteration')
-    group.add_argument('--map_vocab_size', type=float, default=None, help='映射的词数量,蒸馏或读取模型文件时使用.0-1表示占vacab-size的比例')
+    group.add_argument('--map_vocab_size', type=float, default=0, help='映射的词数量,蒸馏或读取模型文件时使用.0-1表示占vacab-size的比例')
     group.add_argument('--unmap_vocab_output', action='store_true', help='在使用map_vocab_size时GLM是否不返回映射后的结果,使用这个需要下游所有任务配合乱序且不全的词表,但可以减少时空消耗.可能导致一些使用logits的蒸馏(例如一些自定义的pre_loss)产生兼容性问题,同时因为维度变化可能导致一些任务的loss产生一点变化')
     group.add_argument('--ignore_first_backward_gard', action='store_true', help='当forward_repeat_num大于0的时候是否忽略第1次反向传播的梯度,目前和梯度累积不兼容.可用于LRC_BERT的gradient perturbation等.evaluate时不考虑')
     group.add_argument('--inverted_bottleneck_mode', action='store_true', help='可用于MobileBERT方法')
     group.add_argument('--ib_hidden_size', type=int, default=128, help='IB结构中的隐层维度,线性层依然和--hidden-size一致')
     group.add_argument('--ib_ffn_num', type=int, default=4, help='IB结构中的FFN重复次数')
-    group.add_argument('--ib_word_emb', type=int, default=None, help='IB结构中的词向量维度,None或0表示不使用.可以独立于inverted_bottleneck_mode使用,不会改变weight维度')
-    group.add_argument('--compress_word_emb', type=int, default=None, help='ALBERT词表压缩方法的词向量维度,None或0表示不使用.会改变weight维度')
+    group.add_argument('--ib_word_emb', type=int, default=0, help='IB结构中的词向量维度,None或0表示不使用.可以独立于inverted_bottleneck_mode使用,不会改变weight维度')
+    group.add_argument('--compress_word_emb', type=int, default=0, help='ALBERT词表压缩方法的词向量维度,None或0表示不使用.会改变weight维度')
     group.add_argument('--save_interval_time', type=float, default=0, help='隔多少小时保存一次模型,大于0有效.可以和其他save参数一起使用')
     return parser
 

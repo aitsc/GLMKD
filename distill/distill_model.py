@@ -345,16 +345,16 @@ class GLMStudent(torch.nn.Module):
             for i, (s_var, t_var) in enumerate(zip(get_layer_f('s', name), get_layer_f('t', name))):
                 _vars[(mark, f'{i+1}')] = [s_var, t_var]
         # 计算直接相关
-        suffix = f'r{self.args.forward_repeat_current_n}t{t_no}'
         for marks, (s_var, t_var) in list(self_relation_vars.items()) + list(other_vars.items()):
             if s_var.size() != t_var.size():
                 continue
             parallel = 'gather' if marks[0] in {'Q', 'K', 'V', 'Att'} else ''
             mark = ''.join(marks)
             l = CustomLoss.mse_loss(s_var, t_var, parallel=parallel)
-            self.add_summary(f'analysis_inter/MSE_{mark}_{suffix}', l)
-            l = CustomLoss.kl_div(s_var, t_var, parallel=parallel)
-            self.add_summary(f'analysis_inter/KL_{mark}_{suffix}', l)
+            self.add_summary(f'analysis_inter/MSE_{mark}', l)
+            for T in [1, 5, 10, 15, 20]:
+                l = CustomLoss.kl_div(s_var / T, t_var / T, parallel=parallel) * T ** 2
+                self.add_summary(f'analysis_inter/KL{T}_{mark}', l)
         # 计算自相关
         for marks, (s_var, t_var) in list(self_relation_vars.items()):
             if s_var.size()[:-1] != t_var.size()[:-1]:
@@ -364,9 +364,10 @@ class GLMStudent(torch.nn.Module):
             parallel = 'gather' if marks[0] in {'Q', 'K', 'V', 'Att'} else ''
             mark = ''.join(marks)
             l = CustomLoss.mse_loss(s_var, t_var, parallel=parallel)
-            self.add_summary(f'analysis_inter/self_MSE_{mark}_{suffix}', l)
-            l = CustomLoss.kl_div(s_var, t_var, parallel=parallel)
-            self.add_summary(f'analysis_inter/self_KL_{mark}_{suffix}', l)
+            self.add_summary(f'analysis_inter/self-MSE_{mark}', l)
+            for T in [1, 5, 10, 15, 20]:
+                l = CustomLoss.kl_div(s_var / T, t_var / T, parallel=parallel) * T ** 2
+                self.add_summary(f'analysis_inter/self-KL{T}_{mark}', l)
 
 
 def unpacking_student_model(model, attrs=('origin_model', 'get_teacher_hook')):

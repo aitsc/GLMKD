@@ -160,11 +160,14 @@ class GLMModel(torch.nn.Module):
             words_embeddings = self.compress_emb_mlp(words_embeddings)
         if hasattr(self, 'ib_emb_mlp') and hasattr(self, 'ib_word_emb'):
             words_embeddings = words_embeddings[..., :self.ib_word_emb]  # e.g. ib_word_emb=128
+            ids = torch.arange(words_embeddings.size(1), device=words_embeddings.device, dtype=words_embeddings.dtype)
+            mask = (ids.view(1, -1) < attention_mask.view(-1, 1) - 1).unsqueeze(-1)
+            look_forward = F.pad(words_embeddings[:, :-1], (0, 0, 1, 0, 0, 0))  # 向前看
+            look_forward2 = F.pad(words_embeddings[:, :-2], (0, 0, 2, 0, 0, 0))  # 向前看2步
+            look_backward = F.pad(words_embeddings[:, 1:], (0, 0, 0, 1, 0, 0))  # 向后看
             words_embeddings = torch.cat([
-                F.pad(words_embeddings[:, 1:], (0, 0, 0, 1, 0, 0)),
-                words_embeddings,
-                F.pad(words_embeddings[:, :-1], (0, 0, 1, 0, 0, 0))
-            ], axis=2)
+                look_backward * mask + look_forward2 * ~mask,  # PartA[-1]/PartB/Pad 不能向后看
+                words_embeddings, look_forward], axis=2)
             words_embeddings = self.ib_emb_mlp(words_embeddings)  # e.g. MLP (3*128 → 1024)
         hook_add(hook, inter_vars, 'words_embeddings', words_embeddings)
         hook_add(hook, inter_vars, 'position_ids', position_ids)

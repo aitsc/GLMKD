@@ -7,26 +7,26 @@ It provides a flexible architecture to efficiently implement various language mo
 We have introduced techniques such as model parallelism ([Megatron-LM](https://github.com/NVIDIA/Megatron-LM)) and ZeRO ([DeepSpeed](https://github.com/microsoft/DeepSpeed)) in the toolkit to make it efficient for distilling very large models.
 
 ## Distillation Methods
-We briefly summarize here the 24 model distillation methods that have been implemented by the toolkit.
+We briefly summarize here the 24 model distillation methods and 1 model compression method (ALBERT) that have been implemented by the toolkit.
 
 <img src="distill/img/methods.png" width = "500" alt="" align=center />
 
 ```
 [1] Geoffrey E. Hinton, Oriol Vinyals, Jeffrey Dean. Distilling the Knowledge in a Neural Network[J]. CoRR, 2015, abs/1503.02531.
-[2] Iulia Turc, Ming-Wei Chang, Kenton Lee, Kristina Toutanova. Well-Read Students Learn Better - The Impact of Student Initialization on Knowledge Distillation[J]. CoRR, 2019, abs/1908.08962.
+[2] Iulia Turc, Ming-Wei Chang, Kenton Lee, Kristina Toutanova. Well-Read Students Learn Better: The Impact of Student Initialization on Knowledge Distillation[J]. CoRR, 2019, abs/1908.08962.
 [3] Siqi Sun, Yu Cheng. Zhe Gan, Jingjing Liu. Patient Knowledge Distillation for BERT Model Compression[C]// EMNLP. 2019: 4322-4331.
-[4] Victor Sanh, Lysandre Debut, Julien Chaumond, Thomas Wolf. DistilBERT, a distilled version of BERT - smaller, faster, cheaper and lighter[J]. CoRR, 2019, abs/1910.01108.
-[5] Canwen Xu, Wangchunshu Zhou, Tao Ge, Furu Wei, Ming Zhou. BERT-of-Theseus - Compressing BERT by Progressive Module Replacing[C]// EMNLP. 2020: 7859-7869.
-[6] Xiaoqi Jiao, Yichun Yin, Lifeng Shang, Xin Jiang. Xiao Chen, Linlin Li, Fang Wang. Qun Liu. TinyBERT - Distilling BERT for Natural Language Understanding[C]// EMNLP. 2020: 4163-4174.
-[7] Wenhui Wang, Furu Wei, Li Dong. Hangbo Bao, Nan Yang. Ming Zhou. MiniLM - Deep Self-Attention Distillation for Task-Agnostic Compression of Pre-Trained Transformers[C]// NeurIPS. 2020.
+[4] Victor Sanh, Lysandre Debut, Julien Chaumond, Thomas Wolf. DistilBERT, a distilled version of BERT: smaller, faster, cheaper and lighter[J]. CoRR, 2019, abs/1910.01108.
+[5] Canwen Xu, Wangchunshu Zhou, Tao Ge, Furu Wei, Ming Zhou. BERT-of-Theseus: Compressing BERT by Progressive Module Replacing[C]// EMNLP. 2020: 7859-7869.
+[6] Xiaoqi Jiao, Yichun Yin, Lifeng Shang, Xin Jiang. Xiao Chen, Linlin Li, Fang Wang. Qun Liu. TinyBERT: Distilling BERT for Natural Language Understanding[C]// EMNLP. 2020: 4163-4174.
+[7] Wenhui Wang, Furu Wei, Li Dong. Hangbo Bao, Nan Yang. Ming Zhou. MiniLM: Deep Self-Attention Distillation for Task-Agnostic Compression of Pre-Trained Transformers[C]// NeurIPS. 2020.
 [8] Gustavo Aguilar, Yuan Ling, Yu Zhang, Benjamin Yao, Xing Fan, Chenlei Guo. Knowledge Distillation from Internal Representations[C]// AAAI. 2020: 7350-7357.
-[9] Zhiqing Sun, Hongkun Yu, Xiaodan Song, Renjie Liu, Yiming Yang, Denny Zhou. MobileBERT - a Compact Task-Agnostic BERT for Resource-Limited Devices[C]// ACL. 2020: 2158-2170.
-[10] Wenhui Wang, Hangbo Bao, Shaohan Huang, Li Dong. Furu Wei. MiniLMv2 - Multi-Head Self-Attention Relation Distillation for Compressing Pretrained Transformers[C]// ACL. 2021: 2140-2151.
-[11] Peyman Passban, Yimeng Wu, Mehdi Rezagholizadeh, Qun Liu. ALP-KD - Attention-Based Layer Projection for Knowledge Distillation[C]// AAAI. 2021: 13657-13665.
-[12] Hao Fu, Shaojun Zhou, Qihong Yang, Junjie Tang, Guiquan Liu, Kaikui Liu, Xiaolong Li. LRC-BERT - Latent-representation Contrastive Knowledge Distillation for Natural Language Understanding[C]// AAAI. 2021: 12830-12838.
+[9] Zhiqing Sun, Hongkun Yu, Xiaodan Song, Renjie Liu, Yiming Yang, Denny Zhou. MobileBERT: a Compact Task-Agnostic BERT for Resource-Limited Devices[C]// ACL. 2020: 2158-2170.
+[10] Wenhui Wang, Hangbo Bao, Shaohan Huang, Li Dong. Furu Wei. MiniLMv2: Multi-Head Self-Attention Relation Distillation for Compressing Pretrained Transformers[C]// ACL. 2021: 2140-2151.
+[11] Peyman Passban, Yimeng Wu, Mehdi Rezagholizadeh, Qun Liu. ALP-KD: Attention-Based Layer Projection for Knowledge Distillation[C]// AAAI. 2021: 13657-13665.
+[12] Hao Fu, Shaojun Zhou, Qihong Yang, Junjie Tang, Guiquan Liu, Kaikui Liu, Xiaolong Li. LRC-BERT: Latent-representation Contrastive Knowledge Distillation for Natural Language Understanding[C]// AAAI. 2021: 12830-12838.
 [13] Aref Jafari, Mehdi Rezagholizadeh, Pranav Sharma, Ali Ghodsi. Annealing Knowledge Distillation[C]// EACL. 2021.
 [14] Geondo Park, Gyeongman Kim, Eunho Yang. Distilling Linguistic Context for Language Model Compression[C]// EMNLP. 2021: 364-378.
-[15] Yimeng Wu, Mehdi Rezagholizadeh, Abbas Ghaddar, Md. Akmal Haidar, Ali Ghodsi. Universal-KD - Attention-based Output-Grounded Intermediate Layer Knowledge Distillation[C]// EMNLP. 2021: 7649-7661.
+[15] Yimeng Wu, Mehdi Rezagholizadeh, Abbas Ghaddar, Md. Akmal Haidar, Ali Ghodsi. Universal-KD: Attention-based Output-Grounded Intermediate Layer Knowledge Distillation[C]// EMNLP. 2021: 7649-7661.
 [16] Zhengxuan Wu, Atticus Geiger, Joshua Rozner, Elisa Kreiss, Hanson Lu, Thomas Icard, Christopher Potts, Noah D. Goodman. Causal Distillation for Language Models[C]// NAACL. 2022: 4288-4295.
 [17] Md. Akmal Haidar, Nithin Anchuri, Mehdi Rezagholizadeh, Abbas Ghaddar, Philippe Langlais, Pascal Poupart. RAIL-KD: RAndom Intermediate Layer Mapping for Knowledge Distillation[C]// NAACL. 2022: 1389-1400.
 [18] Chang Liu, Chongyang Tao, Jiazhan Feng, Dongyan Zhao. Multi-Granularity Structural Knowledge Distillation for Language Model Compression[C]// ACL. 2022: 1001-1011.
@@ -36,6 +36,7 @@ We briefly summarize here the 24 model distillation methods that have been imple
 [22] Lei Li, Yankai Lin, Shuhuai Ren, Peng Li, Jie Zhou, Xu Sun. Dynamic Knowledge Distillation for Pre-trained Language Models[C]// EMNLP. 2021: 379-389.
 [23] Seyed-Iman Mirzadeh, Mehrdad Farajtabar, Ang Li, Nir Levine, Akihiro Matsukawa, Hassan Ghasemzadeh. Improved Knowledge Distillation via Teacher Assistant[C]// AAAI. 2020: 5191-5198.
 [24] Wonchul Son, Jaemin Na, Junyong Choi, Wonjun Hwang. Densely Guided Knowledge Distillation using Multiple Teacher Assistants[C]// ICCV. 2021: 9375-9384.
+[25] Zhenzhong Lan, Mingda Chen, Sebastian Goodman, Kevin Gimpel, Piyush Sharma, Radu Soricut. ALBERT: A Lite BERT for Self-supervised Learning of Language Representations[C]// ICLR. 2020.
 ```
 
 ## Results
@@ -154,6 +155,9 @@ Then we can build commands of different methods.
 ### RL-KD
 1. [Prefix-finetune] [Prefix-multi-teacher] --student_model=kd --distill_ft_soft --distill_temperature=10 --student_truncate_tn=0 --multi_teacher_model=rl_kd --rl_kd_only_mask_pad --rl_kd_only_avg --rl_kd_alpha=0.5
 2. [Prefix-finetune] [Prefix-multi-teacher](One more base teacher) --student_model=kd --distill_ft_soft --distill_temperature=10 --multi_teacher_model=rl_kd --rl_kd_only_mask_pad --rl_kd_reward=1 --rl_kd_semantic_model=0 --mt_has_loss --rl_kd_alpha=0.5
+### ALBERT
+1. [Prefix-pretrain] --compress_word_emb=128 --cross_layer_parameter_sharing
+2. [Prefix-finetune] --compress_word_emb=128 --cross_layer_parameter_sharing
 ### Other
 - TAKD simply replaces [Prefix-single-teacher] with the student from the previous training using any of the single-teacher methods.
 - DGKD just needs to replace [Prefix-multi-teacher] with all the teachers and students previously trained using any of the multi-teacher methods.

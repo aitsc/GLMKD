@@ -61,6 +61,7 @@ def get_args():
     py_parser.add_argument('--teacher_ib_word_emb', type=int, default=0)
     py_parser.add_argument('--teacher_compress_word_emb', type=int, default=0)
     py_parser.add_argument('--teacher_map_vocab_size', type=float, default=0)
+    py_parser.add_argument('--teacher_cross_layer_parameter_sharing', action='store_true')
 
     # tinybert
     py_parser.add_argument('--tinybert_inter_final', action='store_true', help="只使用最后隐层做损失")
@@ -257,7 +258,6 @@ def get_teacher_model(args, **kwargs):
         'map_vocab_size',
     ]
     original_vars = [getattr(args, i) for i in transfer_vars]
-    fp16 = args.fp16
     # 统一参数加载
     if args.mt_load_from_s:
         load_dir, tag, release, success = get_checkpoint_iteration(args.mt_load_from_s)
@@ -265,9 +265,12 @@ def get_teacher_model(args, **kwargs):
         sd = torch.load(checkpoint_name, map_location='cpu')['module']
     else:
         sd = {}
-    # 替换
-    args.fp16 = args.teacher_fp16
-    map_vocab_size, args.map_vocab_size = args.map_vocab_size, None
+    # 非mt参数替换
+    fp16, args.fp16 = args.fp16, args.teacher_fp16
+    unmap_vocab_output, args.unmap_vocab_output = args.unmap_vocab_output, False  # 教师不兼容该选项
+    inverted_bottleneck_mode, args.inverted_bottleneck_mode = args.inverted_bottleneck_mode, args.teacher_inverted_bottleneck_mode
+    cross_layer_parameter_sharing, args.cross_layer_parameter_sharing = args.cross_layer_parameter_sharing, args.teacher_cross_layer_parameter_sharing
+    # mt参数替换
     teacher_models = []
     if args.mt_num_attention_heads:
         paras = zip(*[getattr(args, 'mt_' + i).split(':') for i in transfer_vars])
@@ -297,7 +300,9 @@ def get_teacher_model(args, **kwargs):
     for v, name in zip(original_vars, transfer_vars):
         setattr(args, name, v)
     args.fp16 = fp16
-    args.map_vocab_size = map_vocab_size
+    args.unmap_vocab_output = unmap_vocab_output
+    args.inverted_bottleneck_mode = inverted_bottleneck_mode
+    args.cross_layer_parameter_sharing = cross_layer_parameter_sharing
     return teacher_models
 
 

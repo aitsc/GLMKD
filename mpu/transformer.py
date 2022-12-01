@@ -717,6 +717,7 @@ class GPT2ParallelTransformer(torch.nn.Module):
                  output_dim=None,
                  ib_mode=False,
                  ib_ffn_num=1,
+                 cross_layer_parameter_sharing=False,
                  ):
         super(GPT2ParallelTransformer, self).__init__()
         self.hidden_size = hidden_size
@@ -726,6 +727,8 @@ class GPT2ParallelTransformer(torch.nn.Module):
         self.max_memory_length = max_memory_length
         self.performer = performer
         self.use_decoder_layer = use_decoder_layer
+        self.num_layers = num_layers
+        self.cross_layer_parameter_sharing = cross_layer_parameter_sharing
         assert not (performer and relative_encoding)
 
         output_layer_init_method = None
@@ -795,7 +798,7 @@ class GPT2ParallelTransformer(torch.nn.Module):
 
         # Transformer layers.
         self.layers = torch.nn.ModuleList(
-            [get_layer() for _ in range(num_layers)])
+            [get_layer() for _ in range(1 if cross_layer_parameter_sharing else num_layers)])
 
         # Final layer norm before output.
         self.final_layernorm = LayerNorm(hidden_size, eps=layernorm_epsilon)
@@ -870,10 +873,9 @@ class GPT2ParallelTransformer(torch.nn.Module):
             mem_layers = [check_detach(hidden_states)]
         else:
             mem_layers = []
+        self_layers = [self.layers[0]] * self.num_layers if self.cross_layer_parameter_sharing else self.layers
         if hook_op and 'self_layers' in hook_op and callable(hook_op['self_layers']):
-            self_layers = hook_op['self_layers'](self_layers=self.layers)
-        else:
-            self_layers = self.layers
+            self_layers = hook_op['self_layers'](self_layers=self_layers)
             
         def custom(start, end, hook=None, hook_op=None):
             def custom_forward(*inputs):

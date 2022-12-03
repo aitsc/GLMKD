@@ -2006,6 +2006,9 @@ class LRC_BERT(GLMStudent):
         # cos-nce
         s_bs_dim = torch.cat(student_reps, dim=1).permute(1, 0, 2)  # (layer*seq,s_bs,dim)
         t_bs_dim = torch.cat(teacher_reps, dim=1).permute(1, 0, 2)  # (layer*seq,t_bs,dim)
+        if self.args.lrc_bert_gather_dp:
+            s_bs_dim = mpu.gather_from_data_parallel_region(s_bs_dim.permute(0, 2, 1)).permute(0, 2, 1)
+            t_bs_dim = mpu.gather_from_data_parallel_region(t_bs_dim.permute(0, 2, 1)).permute(0, 2, 1)
         s2 = (s_bs_dim ** 2).sum(-1, keepdim=True)
         t2 = (t_bs_dim ** 2).sum(-1, keepdim=True)
         st = torch.bmm(s_bs_dim, t_bs_dim.permute(0, 2, 1))  # (layer*seq,s_bs,t_bs)
@@ -2013,6 +2016,8 @@ class LRC_BERT(GLMStudent):
         st_g = 1 - st_cos.mean(0)  # (s_bs,t_bs)
         st_g_diag = torch.diag(st_g)
         l = 1 - (st_g.sum(-1) - st_g_diag * st_g.size(0)) / (st_g.size(0) - 1) / 2 + st_g_diag
+        if self.args.lrc_bert_gather_dp:
+            l = mpu.scatter_to_data_parallel_region(l)
         if not keep_batch:
             l = l.mean()
         l = l * len(student_reps) * self.args.lrc_bert_alpha

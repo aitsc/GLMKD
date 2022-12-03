@@ -45,6 +45,11 @@ from .mappings import gather_from_model_parallel_region
 from .mappings import reduce_from_model_parallel_region
 from .mappings import scatter_to_model_parallel_region
 
+from .mappings_dp import copy_to_data_parallel_region
+from .mappings_dp import gather_from_data_parallel_region
+from .mappings_dp import reduce_from_data_parallel_region
+from .mappings_dp import scatter_to_data_parallel_region
+
 from .random import checkpoint
 from .random import partition_activations_in_checkpoint
 from .random import get_cuda_rng_tracker

@@ -166,6 +166,7 @@ def get_args():
     # lrc_bert
     py_parser.add_argument('--lrc_bert_alpha', type=float, default=1., help='内层权重')
     py_parser.add_argument('--lrc_bert_gard_perturb', action='store_true', help='Training based on Gradient Perturbation')
+    py_parser.add_argument('--lrc_bert_gather_dp', action='store_true', help='计算对比损失且使用数据并行的时候将中间层输出合并,会增加通讯量和空间,但可以在数据并行的时候维持负例数量等于总batch size-1')
     # annealing_kd
     py_parser.add_argument('--annealing_kd_max_t', type=float, default=7., help='最大温度')
     # mobilebert

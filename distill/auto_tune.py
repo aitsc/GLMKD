@@ -1,6 +1,9 @@
+
+import sys, os
+sys.path.append(os.getcwd())
+
 from datetime import datetime
 import re
-import os
 from collections import OrderedDict
 import sys
 from pprint import pprint
@@ -12,6 +15,7 @@ import copy
 from tsc_base import put, get
 import random
 import traceback
+from change_mp import change_mp
 
 ap = 'data'  # 总目录
 
@@ -1221,6 +1225,27 @@ def auto_tune():
                         if v != v_:
                             print(f'{k}: {v} → {v_}')
                             py_args[i] = (py_args[i][0], v_)
+            # 模型并行的自动切分, 不会修改 py_args_L
+            py_args = OrderedDict(py_args)
+            if '--model-parallel-size' in py_args and int(py_args['--model-parallel-size']) > 1:
+                mp = int(py_args['--model-parallel-size'])
+                for path_para in ['--load-pretrained', '--teacher_load_pretrained', '--mt_load_pretrained']:
+                    if path_para not in py_args or not py_args[path_para]:
+                        continue
+                    path_L = py_args[path_para].split(':') if ':' in py_args[path_para] else [py_args[path_para]]
+                    new_path_L = []
+                    for i, path in enumerate(path_L):  # 兼容多教师
+                        new_path = path
+                        # 对于again_,它的--load-pretrained还不存在,所以不会被修改
+                        if os.path.exists(path) and path.strip(os.path.sep).split('_')[-1] != f'MP{mp}':
+                            new_path = path.strip(os.path.sep) + f'_MP{mp}'
+                            if not os.path.exists(new_path):
+                                print(f'{i} {path_para} to (change_mp in progress): {new_path}')
+                                assert new_path == change_mp(path, mp)
+                            else:
+                                print(f'{i} {path_para} to: {new_path}')
+                        new_path_L.append(new_path)
+                    py_args[path_para] = ':'.join(new_path_L)
             cmds.append(py_args_to_line(py_args))
         # 运行与捕获
         for cmd in cmds:

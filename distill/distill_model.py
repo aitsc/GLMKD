@@ -1450,7 +1450,7 @@ class LogitsDistil(GLMStudent):
             return F.embedding(input_ids, self.origin_id_to_origin_id.unsqueeze(-1)).squeeze(-1)
         return {'input_ids': map_input_ids}
 
-    def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=False, t_no=None, **kwargs):
+    def inter_loss(self, s_inter_vars, t_inter_vars, s_hook, t_hook, keep_batch=False, t_no=None, loss_mask=None, **kwargs):
         loss_ = 0.
         if len(s_inter_vars) == 0 or self.args.logitsdistil_wo_inter:
             return loss_
@@ -1463,6 +1463,10 @@ class LogitsDistil(GLMStudent):
             mask = (position_ids[:, 0] > 0).int()
             mask[:, 0] = 1
             mask = mask.unsqueeze(dim=-1)
+            s_logits = s_logits * mask
+            t_logits = t_logits * mask
+        if self.args.logitsdistil_mask_a:
+            mask = loss_mask.view(*loss_mask.size(), 1)  # (bs,seq,1)
             s_logits = s_logits * mask
             t_logits = t_logits * mask
         if self.args.distill_logit_mask_map and self.origin_model.map_vocab_size:

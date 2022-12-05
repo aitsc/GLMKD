@@ -143,6 +143,7 @@ def get_args():
     py_parser.add_argument('--logitsdistil_wo_inter', action='store_true', help="不使用中间层,可用于二次微调")
     py_parser.add_argument('--logitsdistil_teacher_input_ids_map', action='store_true', help="在学生map_vocab状态下,是否也对教师输入映射token,使得学生和教师输入一样")
     py_parser.add_argument('--logitsdistil_analysis_inter', action='store_true', help="是否分析中间层教师与学生的相关相似度,保存于tensorboard,会增加时空消耗.受到AttHead和HSDim限制的不会统计.混合方法的复杂场景下使用这个可能导致loss计算混乱")
+    py_parser.add_argument('--logitsdistil_mask_a', action='store_true', help="是否mask part A部分")
     # sid
     py_parser.add_argument('--sid_accumulate_t', type=float, default=0., help='cosine loss threshold')
     py_parser.add_argument('--sid_lim_e', type=str, default='avg', help='limited number of epochs per layer')

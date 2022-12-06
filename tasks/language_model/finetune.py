@@ -45,7 +45,7 @@ def lm_forward_step(data, model, args, timers, mems, eval_metric=None, teacher_m
     except BaseException:
         data = data
 
-    if 'mask' in data:
+    if data is not None and 'mask' in data:  # Compatible model parallelism
         # finetune SQuAD
         data['attention_mask'] = data.pop('mask')
         data['position_id'] = data.pop('position')

@@ -1493,6 +1493,7 @@ class LogitsDistil(GLMStudent):
                 t_logits = mpu.scatter_to_model_parallel_region(t_logits)
         # logits 处理
         top_n = self.args.logitsdistil_top_n
+        top_n = int(top_n * (t_logits.size(-1) if 0 < top_n < 1 else 1))
         if top_n:
             t_vals_parallel, t_indices_parallel = t_logits.topk(k=top_n, dim=-1, largest=True, sorted=True)
             if self.args.logitsdistil_teacher_min:

@@ -1,11 +1,9 @@
-
 import sys, os
 sys.path.append(os.getcwd())
 
 from datetime import datetime
 import re
 from collections import OrderedDict
-import sys
 from pprint import pprint
 import json
 import random

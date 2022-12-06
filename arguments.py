@@ -23,6 +23,7 @@ import json
 from utils import get_hostname
 import random
 import socket
+from datetime import datetime
 
 
 def add_model_config_args(parser):
@@ -428,6 +429,7 @@ def add_custom_args(parser: argparse.ArgumentParser):
     group.add_argument('--ignore_first_backward_gard', action='store_true', help='当forward_repeat_num大于0的时候是否忽略第1次反向传播的梯度,目前和梯度累积不兼容.可用于LRC_BERT的gradient perturbation等.evaluate时不考虑')
     group.add_argument('--ft_final_save', action='store_true', help='是否在微调的最后一轮保存模型,将覆盖best模型latest_checkpointed_iteration')
     group.add_argument('--save_interval_time', type=float, default=0, help='隔多少小时保存一次模型,大于0有效.可以和其他save参数一起使用')
+    group.add_argument('--args_to_ds_config', action='store_true', help='args里面的batch-size和gradient-accumulation-steps参数是否反向写入deepspeed配置文件,生成临时配置文件目录')
     # 注意: 以下可能和教师模型共享参数
     group.add_argument('--map_vocab_size', type=float, default=0, help='映射的词数量,蒸馏或读取模型文件时使用.0-1表示占vacab-size的比例')
     group.add_argument('--unmap_vocab_output', action='store_true', help='在使用map_vocab_size时GLM是否不返回映射后的结果,使用这个需要下游所有任务配合乱序且不全的词表,但可以减少时空消耗.可能导致一些使用logits的蒸馏(例如一些自定义的pre_loss)产生兼容性问题,同时因为维度变化可能导致一些任务的loss产生一点变化')
@@ -438,6 +440,33 @@ def add_custom_args(parser: argparse.ArgumentParser):
     group.add_argument('--compress_word_emb', type=int, default=0, help='ALBERT词表压缩方法的词向量维度,None或0表示不使用.会改变weight维度')
     group.add_argument('--cross_layer_parameter_sharing', action='store_true', help='共享所有transformer层参数')
     return parser
+
+
+def generate_unique():
+    return datetime.now().strftime('%y%m%d_%H%M%S.%f') + '_' + str(random.random())[2:]
+
+
+def restructure_ds_config(args):
+    if not (hasattr(args, "deepspeed") and args.deepspeed and args.deepspeed_config is not None):
+        return False
+    with open(args.deepspeed_config) as file:
+        deepspeed_config = json.load(file)
+    has_change = False
+    if args.batch_size != deepspeed_config["train_micro_batch_size_per_gpu"]:
+        has_change = True
+        deepspeed_config["train_micro_batch_size_per_gpu"] = args.batch_size
+        print(f'>> ds.train_micro_batch_size_per_gpu -> {args.batch_size}')
+    if args.gradient_accumulation_steps != deepspeed_config["gradient_accumulation_steps"]:
+        has_change = True
+        deepspeed_config["gradient_accumulation_steps"] = args.gradient_accumulation_steps
+        print(f'>> ds.gradient_accumulation_steps -> {args.gradient_accumulation_steps}')
+    if not has_change:
+        return False
+    args.deepspeed_config = os.path.join('tmp_deepspeed_config', generate_unique() + '.json')
+    print(f'>> args.deepspeed_config -> {args.deepspeed_config}')
+    with open(args.deepspeed_config, 'w', encoding='utf8') as w:
+        json.dump(deepspeed_config, w, ensure_ascii=False, indent=2, sort_keys=True)
+    return True
 
 
 def get_args(arg_list=None):
@@ -498,6 +527,8 @@ def get_args(arg_list=None):
         args.fp32_tokentypes = False
         args.fp32_layernorm = False
 
+    if args.args_to_ds_config:
+        restructure_ds_config(args)
     if hasattr(args, "deepspeed") and args.deepspeed and args.deepspeed_config is not None:
         with open(args.deepspeed_config) as file:
             deepspeed_config = json.load(file)

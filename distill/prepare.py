@@ -37,11 +37,14 @@ def get_args():
     py_parser.add_argument('--distill_pt_soft_ce', action='store_true', help="使用交叉熵计算pt_soft")
     py_parser.add_argument('--distill_ft_soft_mse', action='store_true', help="使用mse计算ft_soft")
     py_parser.add_argument('--distill_pt_soft_mse', action='store_true', help="使用mse计算pt_soft")
-    py_parser.add_argument('--distill_logits_parallel', action='store_true', help='是否将logits_parallel当作inter_loss使用,只有在NLU的ft阶段有价值,其他重复时可能产生soft权重*2的效果,注意一般受wo_inter类参数的约束')
+    py_parser.add_argument('--distill_logits_parallel', action='store_true', help='是否将logits_parallel当作inter_loss使用,只有在NLU的ft阶段有价值,其他重复时可能产生soft权重*2的效果,注意一般不受wo_inter类参数的约束')
     py_parser.add_argument('--distill_logit_mask_pad', action='store_true', help='--distill_logits_parallel 参数下是否mask padding')
     py_parser.add_argument('--distill_logit_mask_map', action='store_true', help='使用logits_parallel计算并且学生有map_vocab时,是否忽略映射token的蒸馏相似度计算')
     py_parser.add_argument('--distill_logit_mse', action='store_true', help='是否用MSE计算--distill_logits_parallel')
+    # 分析
     py_parser.add_argument('--distill_test_output', action='store_true', help='是否测试输出,会运行测试代码,针对有测试的方法,如theseus')
+    py_parser.add_argument('--distil_analysis_inter', action='store_true', help="是否从所有角度分析中间层教师与学生的相关相似度,保存于tensorboard,会增加时空消耗.受到AttHead和HSDim限制的不会统计.小心增加新的蒸馏方法,否则使用这个这可能导致一些只依赖hook传入中间层进行蒸馏loss计算的方法计算了过多的中间层")
+    py_parser.add_argument('--distil_analysis_frcn', type=str, default='0', help="针对distil_analysis_inter,分析哪一次forward_repeat_current_n的中间层,多个用半角逗号隔开")
     # 引入随机数据
     py_parser.add_argument('--distill_random_data', type=str, default='', help='dual:数据batch size变成原来一倍,随机数据加载后面;replace:直接替换数据成随机数据;空则不使用随机数据,评估时也不生效')
     py_parser.add_argument('--distill_random_data_n', type=str, default='0', help='针对args.forward_repeat_num的第几次重复引入随机数据,例如1或者0,1')
@@ -78,7 +81,6 @@ def get_args():
     py_parser.add_argument('--tinybert_random_e', type=int, default=1, help="每几轮训练后随机选择层,大于0有效,优先")
     py_parser.add_argument('--tinybert_random_i', type=int, default=3000, help="每几次迭代后随机选择层,大于0有效,tinybert_random_i为0这个参数才有效")
     py_parser.add_argument('--tinybert_random_show', action='store_true', help="显示每次随机后的教师中间取层(不含emb/final)")
-    py_parser.add_argument('--tinybert_analysis_inter', action='store_true', help="类似--logitsdistil_analysis_inter.只适用于标准tinybert方法,因为使用这个会导致tinybert_inter_final等等忽略中间层的参数失效,此外使用随机取层会导致分析错位")
     # minilmv2
     py_parser.add_argument('--minilmv2_relation_heads', type=int, default=48, help="base=48,large=64")
     py_parser.add_argument('--minilmv2_teacher_layer', type=int, default=12, help="start at one,-1就代表倒数第一层")
@@ -142,7 +144,6 @@ def get_args():
     py_parser.add_argument('--logitsdistil_teacher_min', action='store_true', help="将教师logits中top_n之后的值都置为最小值,而不是对学生logits进行约束,避免长尾难以压制的问题")
     py_parser.add_argument('--logitsdistil_wo_inter', action='store_true', help="不使用中间层,可用于二次微调")
     py_parser.add_argument('--logitsdistil_teacher_input_ids_map', action='store_true', help="在学生map_vocab状态下,是否也对教师输入映射token,使得学生和教师输入一样")
-    py_parser.add_argument('--logitsdistil_analysis_inter', action='store_true', help="是否分析中间层教师与学生的相关相似度,保存于tensorboard,会增加时空消耗.受到AttHead和HSDim限制的不会统计.混合方法的复杂场景下使用这个可能导致loss计算混乱")
     py_parser.add_argument('--logitsdistil_mask_a', action='store_true', help="是否mask part A部分")
     # sid
     py_parser.add_argument('--sid_accumulate_t', type=float, default=0., help='cosine loss threshold')
@@ -180,7 +181,7 @@ def get_args():
     py_parser.add_argument('--mt_num_layers', type=str, default='')
     py_parser.add_argument('--mt_max_position_embeddings', type=str, default='')
     py_parser.add_argument('--mt_load_pretrained', type=str, default='')
-    py_parser.add_argument('--mt_disable_operation', type=str, default='0', help='是否不计算教师模型的输出结果(用替代值),可用于Theseus等只需要教师中间层的方法.0表示计算,1表示不计算,冒号分隔则针对每个教师分别处理')
+    py_parser.add_argument('--mt_disable_operation', type=str, default='0', help='是否不计算教师模型的输出结果(用替代值),可用于Theseus等只需要教师中间层的方法.0表示计算,1表示不计算,冒号分隔则针对每个教师分别处理.如果使用distil_analysis_inter则不能使用这个')
     py_parser.add_argument('--mt_ib_hidden_size', type=str, default='')
     py_parser.add_argument('--mt_ib_ffn_num', type=str, default='')
     py_parser.add_argument('--mt_ib_word_emb', type=str, default='')

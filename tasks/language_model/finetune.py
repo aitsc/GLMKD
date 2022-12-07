@@ -201,6 +201,7 @@ def lm_forward_step_(tokens, labels, loss_mask, attention_mask, position_ids,
             s_hook = s_hook,
             s_inter_vars = s_inter_vars,
             s_out = {'logits': logits, 'loss': loss, 'loss_batch': loss_batch},
+            loss_mask = loss_mask,
             labels = labels,
         )
     return loss, mems, 'bert'

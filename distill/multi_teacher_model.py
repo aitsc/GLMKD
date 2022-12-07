@@ -108,9 +108,9 @@ class AvgTeacher(torch.nn.Module):
         for i, (t_hook, t_inter_vars, t_out, t_model) in enumerate(zip(t_hook_L, t_inter_vars_L, t_out_L, teacher_models)):
             self.record_and_show(student_model, op='t_start', t_no=i)
             # pre_loss
-            pre_loss = student_model.pre_loss(s_out['logits'], t_out['logits'], s_out['loss'], loss_mask=loss_mask, labels=labels, t_no=i)
+            pre_loss = student_model.pre_loss(s_out['logits'], t_out['logits'], s_out['loss'], loss_mask=loss_mask, labels=labels, t_no=i, **kwargs)
             # inter_loss
-            inter_loss = student_model.inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, t_model=t_model, loss_mask=loss_mask, labels=labels, t_no=i)
+            inter_loss = student_model.inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, t_model=t_model, loss_mask=loss_mask, labels=labels, t_no=i, **kwargs)
             # loss
             loss = pre_loss + inter_loss
             loss_L.append(loss)
@@ -179,14 +179,14 @@ class MT_BERT(AvgTeacher):
                 if 'output' in hook['transformer']:
                     inter_vars[hook['transformer']['output']] = aux_layer(self.args, fit_dense, inter_vars[hook['transformer']['output']])
             # pre_loss
-            pre_loss = student_model.pre_loss(s_out['logits'], t_out['logits'], s_out['loss_batch'], loss_mask=loss_mask, labels=labels, keep_batch=True, t_no=i)
+            pre_loss = student_model.pre_loss(s_out['logits'], t_out['logits'], s_out['loss_batch'], loss_mask=loss_mask, labels=labels, keep_batch=True, t_no=i, **kwargs)
             pre_loss *= 1 / (1 + t_out['loss_batch'])  # 加权, 依赖参数 --mt_has_loss
             # inter_loss
             if self.args.mt_bert_fit_teacher:
                 s_iv, t_iv = s_inter_vars, inter_vars
             else:
                 s_iv, t_iv = inter_vars, t_inter_vars
-            inter_loss = student_model.inter_loss(s_iv, t_iv, s_hook, t_hook, t_model=t_model, loss_mask=loss_mask, labels=labels, t_no=i)
+            inter_loss = student_model.inter_loss(s_iv, t_iv, s_hook, t_hook, t_model=t_model, loss_mask=loss_mask, labels=labels, t_no=i, **kwargs)
             loss = pre_loss.mean() + inter_loss
             loss_L.append(loss)
             self.record_and_show(student_model, op='t_end', t_no=i, loss=loss)
@@ -246,11 +246,11 @@ class Uncertainty(AvgTeacher):
         for i, (t_hook, t_inter_vars, t_out, t_model) in enumerate(zip(t_hook_L, t_inter_vars_L, t_out_L, teacher_models)):
             self.record_and_show(student_model, op='t_start', t_no=i)
             # pre_loss
-            pre_loss = student_model.pre_loss(s_out['logits'], t_out['logits'], s_out['loss_batch'], loss_mask=loss_mask, labels=labels, keep_batch=True, t_no=i)
+            pre_loss = student_model.pre_loss(s_out['logits'], t_out['logits'], s_out['loss_batch'], loss_mask=loss_mask, labels=labels, keep_batch=True, t_no=i, **kwargs)
             pre_loss = (rate[...,t_seq[i]] * pre_loss)
             # inter_loss
             keep_batch = True if self.args.uncertainty_inter_entropy else False
-            inter_loss = student_model.inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, t_model=t_model, loss_mask=loss_mask, labels=labels, keep_batch=keep_batch, t_no=i)
+            inter_loss = student_model.inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, t_model=t_model, loss_mask=loss_mask, labels=labels, keep_batch=keep_batch, t_no=i, **kwargs)
             if self.args.uncertainty_inter_entropy:
                 inter_loss = (inter_loss * s_entropy).mean()
                 if inter_loss > 0:
@@ -343,9 +343,9 @@ class RL_KD(AvgTeacher):
                 s_loss, keep_batch = s_out['loss'], False
             else:
                 s_loss, keep_batch = s_out['loss_batch'], True
-            pre_loss = student_model.pre_loss(s_out['logits'], t_out['logits'], s_loss, loss_mask=loss_mask, labels=labels, keep_batch=keep_batch, t_no=i)
+            pre_loss = student_model.pre_loss(s_out['logits'], t_out['logits'], s_loss, loss_mask=loss_mask, labels=labels, keep_batch=keep_batch, t_no=i, **kwargs)
             # inter_loss
-            inter_loss = student_model.inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, t_model=t_model, loss_mask=loss_mask, labels=labels, keep_batch=keep_batch, t_no=i)
+            inter_loss = student_model.inter_loss(s_inter_vars, t_inter_vars, s_hook, t_hook, t_model=t_model, loss_mask=loss_mask, labels=labels, keep_batch=keep_batch, t_no=i, **kwargs)
             # loss
             loss = pre_loss + inter_loss
             loss_L.append(loss)

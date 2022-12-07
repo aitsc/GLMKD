@@ -208,6 +208,7 @@ def finetune_forward_step_(data, batch, model, args, timers, mems, teacher_model
             s_hook = s_hook,
             s_inter_vars = s_inter_vars,
             s_out = {'logits': logits, 'loss': loss, 'loss_batch': loss_batch},
+            logit_mask = data['logit_mask'] if 'logit_mask' in data else None,  # args.cloze_eval and not args.fast_decode
             labels = labels,
         )
     return loss, mems, 'bert'

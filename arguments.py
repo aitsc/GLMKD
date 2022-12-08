@@ -464,6 +464,8 @@ def restructure_ds_config(args):
         return False
     args.deepspeed_config = os.path.join('tmp_deepspeed_config', generate_unique() + '.json')
     print(f'>> args.deepspeed_config -> {args.deepspeed_config}')
+    if not os.path.exists('tmp_deepspeed_config'):
+        os.mkdir('tmp_deepspeed_config')
     with open(args.deepspeed_config, 'w', encoding='utf8') as w:
         json.dump(deepspeed_config, w, ensure_ascii=False, indent=2, sort_keys=True)
     return True

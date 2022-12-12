@@ -987,6 +987,48 @@ def auto_tune():
                 ('--teacher_max_position_embeddings', '512'),
             ]
         },
+        'large_ibglm': {
+            Tasks.copa: f'{ap}/checkpoints/pretrain/blocklm-large-blank-ibglm/ft/COPA/blank-large-COPA-221212_031248.626986',
+            Tasks.wsc_generative: f'{ap}/checkpoints/pretrain/blocklm-large-blank-ibglm/ft/WSC/blank-large-WSC_generative-221212_074918.317566',
+            Tasks.cb: f'{ap}/checkpoints/pretrain/blocklm-large-blank-ibglm/ft/CB/blank-large-CB-221212_052834.482167',
+            Tasks.rte: f'{ap}/checkpoints/pretrain/blocklm-large-blank-ibglm/ft/RTE/blank-large-RTE-221212_034024.023828',
+            Tasks.boolq: f'{ap}/checkpoints/pretrain/blocklm-large-blank-ibglm/ft/BoolQ/blank-large-BoolQ-221212_040831.534974',
+            Tasks.wic: f'{ap}/checkpoints/pretrain/blocklm-large-blank-ibglm/ft/WiC/blank-large-WiC-221212_045159.082385',
+            Tasks.multirc: f'{ap}/checkpoints/pretrain/blocklm-large-blank-ibglm/ft/MultiRC/blank-large-MultiRC-221212_053238.238516',
+            Tasks.wsc: f'{ap}/checkpoints/pretrain/blocklm-large-blank-ibglm/ft/WSC/blank-large-WSC-221212_032735.136253',
+            Tasks.record: f'{ap}/checkpoints/pretrain/blocklm-large-blank-ibglm/ft/ReCoRD/blank-large-ReCoRD-221210_230535.927156',
+            'args': lambda t: [
+                ('--teacher_load_pretrained', task_t_load['large_ibglm'][t]),
+                ('--teacher_num_layers', '24'),
+                ('--teacher_hidden_size', '512'),
+                ('--teacher_num_attention_heads', '4'),
+                ('--teacher_max_position_embeddings', '512'),
+                ('--teacher_ib_word_emb', '128'),
+                ('--teacher_ib_hidden_size', '1024'),
+                ('--teacher_ib_ffn_num', '1'),
+                ('--teacher_inverted_bottleneck_mode', None),
+                ('--teacher_fp16', None),
+            ]
+        },
+        '10b': {
+            Tasks.copa: f'{ap}/checkpoints/pretrain/blocklm-xxlarge/finetune/COPA/blocklm-10B-COPA-220927_174706.280540',
+            Tasks.wsc_generative: f'{ap}/checkpoints/pretrain/blocklm-xxlarge/finetune/WSC/blocklm-10B-WSC_generative-221120_021527.795097',
+            Tasks.cb: f'{ap}/checkpoints/pretrain/blocklm-xxlarge/finetune/CB/blocklm-10B-CB-221120_142638.992303',
+            Tasks.rte: f'{ap}/checkpoints/pretrain/blocklm-xxlarge/finetune/RTE/blocklm-10B-RTE-221120_161035.682437',
+            Tasks.boolq: f'{ap}/checkpoints/pretrain/blocklm-xxlarge/finetune/BoolQ/blocklm-10B-BoolQ-220927_174706.280718',
+            Tasks.wic: f'{ap}/checkpoints/pretrain/blocklm-xxlarge/finetune/WiC/blocklm-10B-WiC-221119_013950.196409',
+            Tasks.multirc: f'{ap}/checkpoints/pretrain/blocklm-xxlarge/finetune/MultiRC/blocklm-10B-MultiRC-221116_154027.417564',
+            Tasks.wsc: f'{ap}/checkpoints/pretrain/blocklm-xxlarge/finetune/WSC/blocklm-10B-WSC-220927_174706.280802',
+            Tasks.record: f'{ap}/checkpoints/pretrain/blocklm-xxlarge/finetune/ReCoRD/blocklm-10B-ReCoRD-221116_062824.860570',
+            'args': lambda t: [
+                ('--teacher_load_pretrained', task_t_load['10b'][t]),
+                ('--teacher_num_layers', '48'),
+                ('--teacher_hidden_size', '4096'),
+                ('--teacher_num_attention_heads', '64'),
+                ('--teacher_max_position_embeddings', '1024'),
+                ('--teacher_fp16', None),
+            ]
+        },
         'base_large': {
             'args': lambda t: [
                 ('--mt_load_pretrained', task_t_load['base'][t] + ':' + task_t_load['large'][t]),

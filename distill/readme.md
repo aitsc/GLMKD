@@ -131,3 +131,6 @@
 2. finetune-rl (One more base teacher): ... --student_model=kd --distill_ft_soft --distill_temperature=10 --multi_teacher_model=rl_kd --rl_kd_only_mask_pad --rl_kd_reward=1 --rl_kd_semantic_model=0 --mt_has_loss --rl_kd_alpha=0.5
 
 ## MixMT
+
+## DGKD
+... --avgmt_sum_loss --avgmt_teacher_survival_p=0.75

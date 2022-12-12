@@ -11,6 +11,7 @@ from apex.normalization.fused_layer_norm import FusedLayerNorm as LayerNorm
 from mpu import checkpoint, get_cuda_rng_tracker
 import deepspeed
 from distill.custom_loss import CustomLoss
+import random
 
 
 class AvgTeacher(torch.nn.Module):
@@ -106,6 +107,8 @@ class AvgTeacher(torch.nn.Module):
         loss_L = []
         self.record_and_show(student_model)
         for i, (t_hook, t_inter_vars, t_out, t_model) in enumerate(zip(t_hook_L, t_inter_vars_L, t_out_L, teacher_models)):
+            if random.random() > self.args.avgmt_teacher_survival_p:
+                continue
             self.record_and_show(student_model, op='t_start', t_no=i)
             # pre_loss
             pre_loss = student_model.pre_loss(s_out['logits'], t_out['logits'], s_out['loss'], loss_mask=loss_mask, labels=labels, t_no=i, **kwargs)
@@ -116,7 +119,10 @@ class AvgTeacher(torch.nn.Module):
             loss_L.append(loss)
             self.record_and_show(student_model, op='t_end', t_no=i, loss=loss)
         self.record_and_show(student_model, op='final_show')
-        return sum(loss_L) / len(loss_L)
+        if self.args.avgmt_sum_loss:
+            return sum(loss_L)
+        else:
+            return sum(loss_L) / len(loss_L)
 
     def hooks_process(self, t_hook_L, **kwargs):
         # get_teachers_hook 之后的结果再处理
@@ -418,6 +424,7 @@ class MixMT(AvgTeacher):
 multi_teacher_model_D = {
     None: AvgTeacher,
     '': AvgTeacher,
+    'avg': AvgTeacher,
     'tmkd': AvgTeacher,
     'mt_bert': MT_BERT,
     'uncertainty': Uncertainty,

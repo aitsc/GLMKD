@@ -197,6 +197,8 @@ def get_args():
     # default
     py_parser.add_argument('--avgmt_inter_checkpoint', action='store_true')
     py_parser.add_argument('--avgmt_pre_checkpoint', action='store_true')
+    py_parser.add_argument('--avgmt_sum_loss', action='store_true', help='是否不对所有教师计算得到的loss求平均')
+    py_parser.add_argument('--avgmt_teacher_survival_p', type=float, default=1., help='不忽略一个教师loss的生存概率,可用于DGKD')
     # mt_bert
     py_parser.add_argument('--mt_bert_fit_teacher', action='store_true', help='内层变换是否针对教师,否则是学生')
     py_parser.add_argument('--mt_bert_wo_hard', action='store_true', help='取消默认自带的硬标签')

@@ -11,7 +11,6 @@ import argparse
 import time
 import copy
 from tsc_base import put, get
-import random
 import traceback
 from change_mp import change_mp
 
@@ -1246,7 +1245,7 @@ def auto_tune():
                     py_args[path_para] = ':'.join(new_path_L)
             cmds.append(py_args_to_line(py_args))
         # 运行与捕获
-        for cmd in cmds:
+        for cmd_i, cmd in enumerate(cmds):
             custom_tmp_result = custom_tmp_result_f()
             cmd += ' --custom_tmp_result=' + custom_tmp_result
             print(cmd, '\n')
@@ -1262,7 +1261,13 @@ def auto_tune():
                             f"epoch未跑完:{max_output['epoch']},{sleep_t}秒后重新运行相同的命令!"
                     except:
                         traceback.print_exc()
-                        print(f'错误, {sleep_t}秒后重新运行相同的命令!')
+                        output = ''
+                        old_master_port = re.search('(?<= --master_port=)[0-9]+(?= )', cmd)  # 第一这个参数的端口
+                        if old_master_port:  # 替换端口防止冲突,这种替换方式小心某字符串中不能出现这种字段(例如路径)
+                            new_master_port = str(random.randint(10000, 60000))
+                            cmd = re.sub('(?<= --master_port=)[0-9]+(?= )', new_master_port, cmd)
+                            output = f' --master_port: {old_master_port.group()} -> {new_master_port}'
+                        print(f'错误, {sleep_t}秒后重新运行相同的命令!{output}')
                         time.sleep(sleep_t)
                         continue
                     # 处理输出

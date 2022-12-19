@@ -59,16 +59,15 @@
 
 ## LogitsDistil
 - old method
-    1. pretrain: ... --student_model=kd --distill_pt_soft --distill_temperature=15 --distill_wo_loss_mask
-        - --distill_only_mask_pad --distill_logits_parallel --distill_temperature=15
-    2. finetune: ... --student_model=kd --distill_logits_parallel --distill_temperature=15
-        - --distill_logit_mask_pad
+    1. pretrain: ... --student_model=kd --distill_pt_soft --distill_temperature=15 --distill_wo_loss_mask --distill_only_mask_pad
+        - --distill_logits_parallel --distill_temperature=15
+    2. finetune: ... --student_model=kd --distill_logits_parallel --distill_temperature=15 --distill_logit_mask_pad
     3. finetune: ... --student_model=kd --distill_ft_soft
 - new method
-    1. pretrain: ... --student_model=logitsdistil --distill_temperature=15
-        - --logitsdistil_mask_pad --logitsdistil_mse --logitsdistil_top_n=20 --logitsdistil_teacher_min
-    2. finetune: ... --student_model=logitsdistil --distill_temperature=15
-        - --logitsdistil_mask_pad --logitsdistil_mse --logitsdistil_top_n=20 --logitsdistil_teacher_min
+    1. pretrain: ... --student_model=logitsdistil --distill_temperature=15 --logitsdistil_mask_pad
+        - --logitsdistil_mse --logitsdistil_top_n=20 --logitsdistil_teacher_min
+    2. finetune: ... --student_model=logitsdistil --distill_temperature=15 --logitsdistil_mask_pad
+        - --logitsdistil_mse --logitsdistil_top_n=20 --logitsdistil_teacher_min
     3. finetune: ... --student_model=logitsdistil --distill_ft_soft --logitsdistil_wo_inter
 
 ## VocabDistil
@@ -117,20 +116,25 @@
 - General parameters: ... --mt_num_attention_heads=a1:a2 --mt_hidden_size=h1:h2 --mt_num_layers=l1:l2 --mt_max_position_embeddings=m1:m2 --mt_load_pretrained=p1:p2 --teacher_fp16
 
 ## TMKD (similar)
-1. pretrain: ... --student_model=kd --distill_pt_soft --distill_pt_soft_mse --distill_only_mask_pad --multi_teacher_model=tmkd --student_truncate_tn=0
-2. finetune: ... --student_model=kd --distill_ft_soft --distill_ft_soft_mse --distill_only_mask_pad --distill_ft_hard --distill_hard_rate=1/teacher_num --multi_teacher_model=tmkd
+1. pretrain: ... --student_model=kd --distill_pt_soft --distill_pt_soft_mse --multi_teacher_model=tmkd --student_truncate_tn=0
+    - --distill_only_mask_pad
+2. finetune: ... --student_model=kd --distill_ft_soft --distill_ft_soft_mse --distill_ft_hard --distill_hard_rate=1/teacher_num --multi_teacher_model=tmkd
+    - --distill_only_mask_pad
 
 ## MT-BERT (similar)
 - finetune: ... --student_model=pkd --distill_ft_soft --distill_temperature=1 --pkd_alpha=1 --pkd_beta=1 --student_truncate_tn=0 --multi_teacher_model=mt_bert --mt_has_loss --mt_bert_fit_teacher
 
 ## Uncertainty
-- finetune: ... --student_model=kd --distill_ft_soft --distill_temperature=1 --distill_ft_soft_kl --distill_only_mask_pad --student_truncate_tn=0 --multi_teacher_model=uncertainty --uncertainty_only_mask_pad --uncertainty_hard
+- finetune: ... --student_model=kd --distill_ft_soft --distill_temperature=1 --distill_ft_soft_kl --student_truncate_tn=0 --multi_teacher_model=uncertainty --uncertainty_hard
+    - --distill_only_mask_pad --uncertainty_only_mask_pad
 
 ## RL-KD (similar)
-1. finetune-avg: ... --student_model=kd --distill_ft_soft --distill_temperature=10 --student_truncate_tn=0 --multi_teacher_model=rl_kd --rl_kd_only_mask_pad --rl_kd_only_avg --rl_kd_alpha=0.5
-2. finetune-rl (One more base teacher): ... --student_model=kd --distill_ft_soft --distill_temperature=10 --multi_teacher_model=rl_kd --rl_kd_only_mask_pad --rl_kd_reward=1 --rl_kd_semantic_model=0 --mt_has_loss --rl_kd_alpha=0.5
+1. finetune-avg: ... --student_model=kd --distill_ft_soft --distill_temperature=10 --student_truncate_tn=0 --multi_teacher_model=rl_kd --rl_kd_only_avg --rl_kd_alpha=0.5
+    - --rl_kd_only_mask_pad
+2. finetune-rl (One more base teacher): ... --student_model=kd --distill_ft_soft --distill_temperature=10 --multi_teacher_model=rl_kd --rl_kd_reward=1 --rl_kd_semantic_model=0 --mt_has_loss --rl_kd_alpha=0.5
+    - --rl_kd_only_mask_pad
 
 ## MixMT
 
 ## DGKD
-... --avgmt_sum_loss --avgmt_teacher_survival_p=0.75
+... --multi_teacher_model=avg --avgmt_sum_loss --avgmt_teacher_survival_p=0.75

@@ -212,12 +212,12 @@ class GLMStudent(torch.nn.Module):
         """下游任务预测层损失
 
         Args:
-            s_logits (tensor): 学生的下游任务logits
+            s_logits (tensor): (batch_size,class_num)/(batch_size,seq,vocab_size); 学生的下游任务logits
             t_logits (tensor): 教师的下游任务logits
             loss (tensor): 学生的硬标签损失
             loss_mask (tensor, optional): (batch_size,seq_len); 1的位置代表part b,0表示为part a+pad. 必须和s_logits/t_logits可配对
             return_dict (bool, optional): 是否返回loss的各个部分,用于其他方法加权处理
-            labels (bool, optional): (batch_size,seq_len); 0表示pad符号或者文档结束符,大于0则是其他的token id
+            labels (bool, optional): (batch_size,seq_len)/(batch_size); 0表示pad符号或者文档结束符,大于0则是其他的token id
                 注意part b中间部分也可能存在0
             keep_batch (bool, optional): 是否对返回的loss保留每个样本的loss
             t_no (int, optional): 多教师时该教师的序号
@@ -234,7 +234,8 @@ class GLMStudent(torch.nn.Module):
         if loss_mask is None or self.args.distill_wo_loss_mask:
             mask = 1.
             self.pre_loss_description += '/wom'
-        elif labels is not None and self.args.distill_only_mask_pad:
+        elif labels is not None and self.args.distill_only_mask_pad and labels.dim() > 1:
+            # 保证 labels.dim() > 1 用于约束分类任务不用mask
             mask = labels.view(*labels.size(), 1) > 0
             self.pre_loss_description += '/mask_pad'
         else:  # 在 finetune 中一般用于 seq2seq_forward_step
@@ -770,7 +771,7 @@ class DistilBERT(GLMStudent):
             if self.args.distill_wo_loss_mask or loss_mask is None:
                 loss_mask = 1.
                 self.pre_loss_description += '/wom'
-            elif self.args.distilbert_ce_mask_padding:
+            elif self.args.distilbert_ce_mask_padding and labels.dim() > 1:
                 loss_mask = labels.view(*labels.size(), 1) > 0
                 self.pre_loss_description += '/mask_pad'
             else:
@@ -1533,7 +1534,7 @@ class LogitsDistil(GLMStudent):
         loss_ = 0.
         if len(s_inter_vars) == 0 or self.args.logitsdistil_wo_inter:
             return loss_ + super().inter_loss(s_inter_vars, t_inter_vars, s_hook_, t_hook_, keep_batch=keep_batch, t_no=t_no, **kwargs)
-        s_logits = s_inter_vars[s_hook['logits_parallel']]
+        s_logits = s_inter_vars[s_hook['logits_parallel']]  # (bs,seq,vocab)/(bs*class_num,seq,vocab)
         t_logits = t_inter_vars[t_hook['logits_parallel']]
         s_logits.distill = t_logits.distill = True
         if self.args.logitsdistil_mask_pad:
@@ -1545,7 +1546,7 @@ class LogitsDistil(GLMStudent):
             s_logits = s_logits * mask
             t_logits = t_logits * mask
         if self.args.logitsdistil_mask_a:
-            mask = logit_mask if loss_mask is None else loss_mask
+            mask = logit_mask if loss_mask is None else loss_mask  # (bs,seq)/(bs,class_num,seq)
             if mask.dim() == 3 and mask.size(0) * mask.size(1) == s_logits.size(0):  # e.g. MultiTokenCloze task
                 mask = mask.reshape(-1, mask.size(-1))
             mask = mask.view(*mask.size(), 1)  # (bs,seq,1)

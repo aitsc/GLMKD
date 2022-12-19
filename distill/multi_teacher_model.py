@@ -215,7 +215,7 @@ class Uncertainty(AvgTeacher):
         # mask
         if self.args.uncertainty_wo_loss_mask or loss_mask is None:
             mask = 1.
-        elif labels is not None and self.args.uncertainty_only_mask_pad:
+        elif labels is not None and self.args.uncertainty_only_mask_pad and labels.dim() > 1:
             mask = labels.view(*labels.size(), 1) > 0
         else:
             mask = loss_mask.view(*loss_mask.size(), 1)
@@ -320,7 +320,7 @@ class RL_KD(AvgTeacher):
         # mask
         if self.args.rl_kd_wo_loss_mask or loss_mask is None:
             mask = 1.
-        elif labels is not None and self.args.rl_kd_only_mask_pad:
+        elif labels is not None and self.args.rl_kd_only_mask_pad and labels.dim() > 1:
             mask = labels.view(*labels.size(), 1) > 0
         else:
             mask = loss_mask.view(*loss_mask.size(), 1)

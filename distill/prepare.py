@@ -175,18 +175,18 @@ def get_args():
     py_parser.add_argument('--mobilebert_kd_w', type=float, default=0.5, help='中间层损失权重')
     py_parser.add_argument('--mobilebert_pkt_small_lr', type=float, default=0.1, help='pkt中间stage的较低学习率')
 
-    # multi-teacher 多个教师的模型参数用冒号分隔, 优先级高于 teacher_ 参数
+    # multi-teacher 多个教师的模型参数用冒号分隔, 优先级高于 teacher_ 参数. 在有参数使用多教师的情况下,留空默认使用teacher_参数,填1个参数扩展成多个教师
     py_parser.add_argument('--mt_num_attention_heads', type=str, default='')
     py_parser.add_argument('--mt_hidden_size', type=str, default='')
     py_parser.add_argument('--mt_num_layers', type=str, default='')
     py_parser.add_argument('--mt_max_position_embeddings', type=str, default='')
     py_parser.add_argument('--mt_load_pretrained', type=str, default='')
-    py_parser.add_argument('--mt_disable_operation', type=str, default='0', help='是否不计算教师模型的输出结果(用替代值),可用于Theseus等只需要教师中间层的方法.0表示计算,1表示不计算,冒号分隔则针对每个教师分别处理.如果使用distil_analysis_inter则不能使用这个')
     py_parser.add_argument('--mt_ib_hidden_size', type=str, default='')
     py_parser.add_argument('--mt_ib_ffn_num', type=str, default='')
     py_parser.add_argument('--mt_ib_word_emb', type=str, default='')
     py_parser.add_argument('--mt_compress_word_emb', type=str, default='')
     py_parser.add_argument('--mt_map_vocab_size', type=str, default='')
+    py_parser.add_argument('--mt_disable_operation', type=str, default='0', help='是否不计算教师模型的输出结果(用替代值),可用于Theseus等只需要教师中间层的方法.0表示计算,1表示不计算,冒号分隔则针对每个教师分别处理.如果使用distil_analysis_inter则不能使用这个')
     # multi-teacher model (指将多个教师联合在一起的模型)
     py_parser.add_argument('--multi_teacher_model', type=str, default=None, help='多教师模型名称')
     py_parser.add_argument('--mt_model_load', type=str, default=None, help='可选额外加载的多教师模型路径,可以自动从其他学生模型路径中提取')
@@ -216,6 +216,7 @@ def get_args():
     py_parser.add_argument('--rl_kd_only_mask_pad', action='store_true', help='用于agent-NLG的logits只mask padding')
     py_parser.add_argument('--rl_kd_reward', type=int, default=1, help='reward type')
     py_parser.add_argument('--rl_kd_semantic_model', type=int, default=None, help='第几个教师模型会拿来做Environment的Semantic Representation,这个教师模型将不参与其他计算,默认不使用Semantic')
+    py_parser.add_argument('--rl_kd_semantic_model_dim', type=int, default=None, help='在未指定rl_kd_semantic_model的阶段(例如avg阶段)需要用这个指定接下来的语义模型的维度,以便提前构建agent模型,否则该参数无用.')
     py_parser.add_argument('--rl_kd_only_avg', action='store_true', help='只使用平均教师loss不使用强化学习')
     py_parser.add_argument('--rl_kd_wo_hard', action='store_true', help='取消默认自带的硬标签')
     py_parser.add_argument('--rl_kd_alpha', type=float, default=0.5, help='非自带硬标签部分的权重,(1-权重)为自带硬标签的权重,保留默认自带的硬标签才生效')
@@ -325,7 +326,19 @@ def get_teachers_hook(args, student_model=None, is_op=False, **kwargs):
         'compress_word_emb',
         'map_vocab_size',
     ]
-    check = [len(getattr(args, 'mt_' + i).split(':')) - 1 for i in transfer_vars]
+    check = [getattr(args, 'mt_' + i).count(':') + (1 if getattr(args, 'mt_' + i) else 0) for i in transfer_vars]
+    if len(set(check) - {0, 1}) <= 1 and max(check) >= 1:  # 重新归化mt参数
+        mt_num = max(check)
+        for name in transfer_vars:
+            mt_ = getattr(args, 'mt_' + name).split(':') if getattr(args, 'mt_' + name) else []
+            if len(mt_) < mt_num:
+                if len(mt_) == 0:
+                    new_ = ':'.join([str(getattr(args, 'teacher_' + name))] * mt_num)
+                else:
+                    new_ = ':'.join([str(getattr(args, 'mt_' + name))] * mt_num)
+                print_rank_0(f' > args.mt_{name}: {new_}')
+                setattr(args, 'mt_' + name, new_)
+        check = [getattr(args, 'mt_' + i).count(':') + (1 if getattr(args, 'mt_' + i) else 0) for i in transfer_vars]
     assert check[0] * len(transfer_vars) == sum(check), 'args中的多教师参数不是一一对应!'
     if student_model is None:  # only check
         return None

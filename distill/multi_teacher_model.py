@@ -278,6 +278,9 @@ class RL_KD(AvgTeacher):
         if args.rl_kd_semantic_model is not None:
             semantic_len = int(args.mt_hidden_size.split(':')[args.rl_kd_semantic_model])
             tn -= 1  # multi Teacher CE Loss
+        else:
+            assert args.rl_kd_semantic_model_dim, '需要手动指定语义模型的维度！'
+            semantic_len = args.rl_kd_semantic_model_dim
         semantic_len *= self.get_class_num()  # 分类方式差异
         self.agent_semantic_mt_loss = torch.nn.Linear(semantic_len + tn, tn)
         # Teacher soft labels

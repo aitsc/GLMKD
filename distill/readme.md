@@ -73,7 +73,7 @@
 ## VocabDistil
 1. pretrain: ... --student_model=logitsdistil --distill_temperature=15 --map_vocab_size=0.5 --distill_logit_mask_map --student_build_map_vocab --student_map_vocab_tn=0 --student_map_vocab_method=decoder
     - --logitsdistil_teacher_input_ids_map
-2. finetune: ... --student_model=logitsdistil --distill_temperature=1 --map_vocab_size=0.5 --distill_logit_mask_map
+2. finetune: ... --student_model=logitsdistil --distill_temperature=15 --map_vocab_size=0.5 --distill_logit_mask_map
     - --logitsdistil_teacher_input_ids_map
 3. finetune: ... --student_model=logitsdistil --distill_ft_soft --logitsdistil_wo_inter --map_vocab_size=0.5
 
@@ -129,7 +129,7 @@
     - --distill_only_mask_pad --uncertainty_only_mask_pad
 
 ## RL-KD (similar)
-1. finetune-avg: ... --student_model=kd --distill_ft_soft --distill_temperature=10 --student_truncate_tn=0 --multi_teacher_model=rl_kd --rl_kd_only_avg --rl_kd_alpha=0.5
+1. finetune-avg: ... --student_model=kd --distill_ft_soft --distill_temperature=10 --student_truncate_tn=0 --multi_teacher_model=rl_kd --rl_kd_only_avg --rl_kd_alpha=0.5 --rl_kd_semantic_model_dim=768
     - --rl_kd_only_mask_pad
 2. finetune-rl (One more base teacher): ... --student_model=kd --distill_ft_soft --distill_temperature=10 --multi_teacher_model=rl_kd --rl_kd_reward=1 --rl_kd_semantic_model=0 --mt_has_loss --rl_kd_alpha=0.5
     - --rl_kd_only_mask_pad

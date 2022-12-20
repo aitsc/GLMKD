@@ -1158,6 +1158,26 @@ def auto_tune():
                 ('--teacher_fp16', None),
             ]
         },
+        # 原版 TAKD 24.1024-18.896_64-15w_takd
+        'tune_221212_233738.203054': {
+            Tasks.copa: f'{ap}/checkpoints/pretrain/block_tiny6/ft_takd/COPA/blank-tiny6-COPA-221214_154201.333804',
+            Tasks.wsc_generative: f'{ap}/checkpoints/pretrain/block_tiny6/ft_takd/WSC/blank-tiny6-WSC_generative-221215_005937.087055',
+            Tasks.cb: f'{ap}/checkpoints/pretrain/block_tiny6/ft_takd/CB/blank-tiny6-CB-221214_204457.394140',
+            Tasks.rte: f'{ap}/checkpoints/pretrain/block_tiny6/ft_takd/RTE/blank-tiny6-RTE-221214_162224.145663',
+            Tasks.boolq: f'{ap}/checkpoints/pretrain/block_tiny6/ft_takd/BoolQ/blank-tiny6-BoolQ-221214_173040.746828',
+            Tasks.wic: f'{ap}/checkpoints/pretrain/block_tiny6/ft_takd/WiC/blank-tiny6-WiC-221214_191536.551846',
+            Tasks.multirc: f'{ap}/checkpoints/pretrain/block_tiny6/ft_takd/MultiRC/blank-tiny6-MultiRC-221214_205237.761535',
+            Tasks.wsc: f'{ap}/checkpoints/pretrain/block_tiny6/ft_takd/WSC/blank-tiny6-WSC-221214_160754.117964',
+            Tasks.record: f'{ap}/checkpoints/pretrain/block_tiny6/ft_takd/ReCoRD/blank-tiny6-ReCoRD-221212_233738.204790',
+            'args': lambda t: [
+                ('--teacher_load_pretrained', task_t_load['tune_221212_233738.203054'][t]),
+                ('--teacher_num_layers', '18'),
+                ('--teacher_hidden_size', '896'),
+                ('--teacher_num_attention_heads', '14'),
+                ('--teacher_max_position_embeddings', '512'),
+                ('--teacher_fp16', None),
+            ]
+        }
     }
 
     max_output_L = []

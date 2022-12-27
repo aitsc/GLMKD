@@ -238,7 +238,7 @@ class Uncertainty(AvgTeacher):
                 rate = torch.arange(0, len(t_hook_L), device=s_entropy.device) / (len(t_hook_L) - 1.)
                 rate = (1 - 2 * s_entropy).unsqueeze(-1) * rate
                 rate = rate + s_entropy.unsqueeze(-1)
-                rate = rate / rate.sum(-1).unsqueeze(-1)
+                rate = rate / rate.sum(-1).unsqueeze(-1) * len(t_hook_L)
         else:
             rate = s_entropy.new_ones([*s_entropy.shape, len(t_hook_L)])
         # 教师大小顺序
@@ -266,7 +266,12 @@ class Uncertainty(AvgTeacher):
             loss_L.append(loss)
             self.record_and_show(student_model, op='t_end', t_no=i, loss=loss)
         self.record_and_show(student_model, op='final_show')
-        return sum(loss_L) / len(loss_L)
+        l = sum(loss_L) / len(loss_L)
+        if not self.args.uncertainty_wo_hard:
+            hard_loss = s_out['loss'] * self.args.distill_hard_rate
+            student_model.add_summary('multi_teacher_model/hard_loss', hard_loss)
+            l = l + hard_loss  # 这里加入了硬标签, pre_loss 不应再有硬标签参数
+        return l
 
 
 class RL_KD(AvgTeacher):

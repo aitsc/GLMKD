@@ -110,7 +110,7 @@ Then we can build commands of different methods.
 1. [Prefix-pretrain] [Prefix-single-teacher] --student_model=distilbert --distill_temperature=2 --distilbert_alpha_ce=5 --distilbert_alpha_mlm=2 --distilbert_alpha_cos=1 --distilbert_cos_mask_padding
 2. [Prefix-finetune]
 ### PKD
-1. [Prefix-finetune] [Prefix-single-teacher] --student_model=pkd --distill_ft_soft --distill_ft_soft_kl --distill_ft_hard --distill_temperature=10 --pkd_normalized_patience --pkd_alpha=0.5 --pkd_beta=100 --student_truncate_tn=0 --pkd_wo_final
+1. [Prefix-finetune] [Prefix-single-teacher] --student_model=pkd --distill_ft_soft --distill_ft_soft_kl --distill_ft_hard --distill_temperature=10 --pkd_normalized_patience --pkd_alpha=0.5 --pkd_beta=100 --student_truncate_tn=0 --pkd_wo_final --pkd_only_cls
 ### RAIL_KD
 1. from DistilBERT
 2. [Prefix-finetune] [Prefix-single-teacher] --student_model=rail_kd --distill_ft_soft --distill_soft_rate=0.3333 --distill_ft_hard --distill_hard_rate=0.3333 --distill_temperature=10 --rail_kd_inter_rate=0.3333 --rail_kd_layer_wise_alpha=1 --rail_kd_u=128 --rail_kd_concatenated --rail_kd_epochs=1 --rail_kd_show_hook_change
@@ -152,7 +152,7 @@ Then we can build commands of different methods.
 ### MT-BERT
 1. [Prefix-finetune] [Prefix-multi-teacher] --student_model=pkd --distill_ft_soft --distill_temperature=1 --pkd_alpha=1 --pkd_beta=1 --student_truncate_tn=0 --multi_teacher_model=mt_bert --mt_has_loss --mt_bert_fit_teacher
 ### Uncertainty
-1. [Prefix-finetune] [Prefix-multi-teacher] --student_model=kd --distill_ft_soft --distill_temperature=1 --distill_ft_soft_kl --student_truncate_tn=0 --multi_teacher_model=uncertainty --uncertainty_hard
+1. [Prefix-finetune] [Prefix-multi-teacher] --student_model=kd --distill_ft_soft --distill_temperature=1 --distill_ft_soft_kl --distill_soft_rate=0.5 --distill_hard_rate=0.5 --student_truncate_tn=0 --multi_teacher_model=uncertainty --uncertainty_hard
 ### RL-KD
 1. [Prefix-finetune] [Prefix-multi-teacher] --student_model=kd --distill_ft_soft --distill_temperature=10 --student_truncate_tn=0 --multi_teacher_model=rl_kd --rl_kd_only_avg --rl_kd_alpha=0.5 --rl_kd_semantic_model_dim=768
 2. [Prefix-finetune] [Prefix-multi-teacher](One more base teacher) --student_model=kd --distill_ft_soft --distill_temperature=10 --multi_teacher_model=rl_kd --rl_kd_reward=1 --rl_kd_semantic_model=0 --mt_has_loss --rl_kd_alpha=0.5

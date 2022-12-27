@@ -1022,6 +1022,9 @@ class PKD(GLMStudent):
             teacher_reps += [t_inter_vars[t_hook['transformer']['output']]]
         for i, (student_rep, teacher_rep) in enumerate(zip(student_reps, teacher_reps)):
             student_rep.distill = teacher_rep.distill = True
+            if self.args.pkd_only_cls:
+                student_rep = student_rep[:, 0, :]
+                teacher_rep = teacher_rep[:, 0, :]
             if self.args.pkd_normalized_patience:
                 student_rep = F.normalize(student_rep, p=2, dim=-1)
                 teacher_rep = F.normalize(teacher_rep, p=2, dim=-1)

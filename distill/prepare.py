@@ -106,6 +106,7 @@ def get_args():
     py_parser.add_argument('--pkd_beta', type=float, default=100., help="中间层权重")
     py_parser.add_argument('--pkd_use_embed', action='store_true', help="中间层是否包括嵌入层")
     py_parser.add_argument('--pkd_wo_final', action='store_true', help="中间层是否去除最后一层")
+    py_parser.add_argument('--pkd_only_cls', action='store_true', help="中间层只使用CLS而不是所有序列特征")
     # rail_kd
     py_parser.add_argument('--rail_kd_inter_rate', type=float, default=0.3334, help="中间层权重")
     py_parser.add_argument('--rail_kd_layer_wise_alpha', type=float, default=1., help="Layer-wise RAIL-KD方法的权重alpha i")
@@ -211,6 +212,7 @@ def get_args():
     py_parser.add_argument('--uncertainty_teacher_seq', type=str, default=None, help='教师模型从小到大的序号顺序(从0开始),默认mt_*参数是从小到大,冒号分隔')
     py_parser.add_argument('--uncertainty_hard', action='store_true', help='pre_loss Hard Selection,要求单卡batch size大于等于教师数量')
     py_parser.add_argument('--uncertainty_wo_rate', action='store_true', help='是否不使用软标签的权重')
+    py_parser.add_argument('--uncertainty_wo_hard', action='store_true', help='取消默认自带的硬标签')
     # rl_kd
     py_parser.add_argument('--rl_kd_wo_loss_mask', action='store_true', help='用于agent-NLG的logits不mask')
     py_parser.add_argument('--rl_kd_only_mask_pad', action='store_true', help='用于agent-NLG的logits只mask padding')

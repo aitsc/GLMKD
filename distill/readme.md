@@ -41,7 +41,7 @@
     - --distill_ft_soft_kl
 
 ## PKD
-- finetune: ... --student_model=pkd --distill_ft_soft --distill_ft_soft_kl --distill_ft_hard --distill_temperature=10 --pkd_normalized_patience --pkd_alpha=0.5 --pkd_beta=100 --student_truncate_tn=0 --pkd_wo_final
+- finetune: ... --student_model=pkd --distill_ft_soft --distill_ft_soft_kl --distill_ft_hard --distill_temperature=10 --pkd_normalized_patience --pkd_alpha=0.5 --pkd_beta=100 --student_truncate_tn=0 --pkd_wo_final --pkd_only_cls
 
 ## RAIL_KD
 1. pretrain: DistilBERT
@@ -59,8 +59,7 @@
 
 ## LogitsDistil
 - old method
-    1. pretrain: ... --student_model=kd --distill_pt_soft --distill_temperature=15 --distill_wo_loss_mask --distill_only_mask_pad
-        - --distill_logits_parallel --distill_temperature=15
+    1. pretrain: ... --student_model=kd --distill_pt_soft --distill_temperature=15 --distill_only_mask_pad
     2. finetune: ... --student_model=kd --distill_logits_parallel --distill_temperature=15 --distill_logit_mask_pad
     3. finetune: ... --student_model=kd --distill_ft_soft
 - new method
@@ -125,7 +124,7 @@
 - finetune: ... --student_model=pkd --distill_ft_soft --distill_temperature=1 --pkd_alpha=1 --pkd_beta=1 --student_truncate_tn=0 --multi_teacher_model=mt_bert --mt_has_loss --mt_bert_fit_teacher
 
 ## Uncertainty
-- finetune: ... --student_model=kd --distill_ft_soft --distill_temperature=1 --distill_ft_soft_kl --student_truncate_tn=0 --multi_teacher_model=uncertainty --uncertainty_hard
+- finetune: ... --student_model=kd --distill_ft_soft --distill_temperature=1 --distill_ft_soft_kl --distill_soft_rate=0.5 --distill_hard_rate=0.5 --student_truncate_tn=0 --multi_teacher_model=uncertainty --uncertainty_hard
     - --distill_only_mask_pad --uncertainty_only_mask_pad
 
 ## RL-KD (similar)

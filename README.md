@@ -136,8 +136,8 @@ Then we can build commands of different methods.
 2. [Prefix-finetune]
 ### LRC_BERT
 1. [Prefix-pretrain]
-2. [Prefix-finetune] [Prefix-single-teacher] --student_model=lrc_bert --lrc_bert_gard_perturb --ignore_first_backward_gard --forward_repeat_num=1
-3. [Prefix-finetune] [Prefix-single-teacher] --student_model=lrc_bert --lrc_bert_alpha=1 --distill_ft_soft --distill_ft_soft_kl --distill_soft_rate=1 --distill_ft_hard --distill_hard_rate=3 --distill_temperature=1.1 --lrc_bert_gard_perturb --ignore_first_backward_gard --forward_repeat_num=1
+2. [Prefix-finetune] [Prefix-single-teacher] --student_model=lrc_bert --lrc_bert_gard_perturb --ignore_first_backward_gard --forward_repeat_num=1 --lrc_bert_gather_dp --fix_variable_num_choices
+3. [Prefix-finetune] [Prefix-single-teacher] --student_model=lrc_bert --lrc_bert_alpha=1 --distill_ft_soft --distill_ft_soft_kl --distill_soft_rate=1 --distill_ft_hard --distill_hard_rate=3 --distill_temperature=1.1 --lrc_bert_gard_perturb --ignore_first_backward_gard --forward_repeat_num=1 --lrc_bert_gather_dp --fix_variable_num_choices
 ### Annealing_KD
 1. [Prefix-pretrain]
 2. [Prefix-finetune] [Prefix-single-teacher] --student_model=annealing_kd --annealing_kd_max_t=7 --distill_ft_soft --distill_ft_soft_mse

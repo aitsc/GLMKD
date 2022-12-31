@@ -1199,7 +1199,20 @@ def auto_tune():
                 ('--teacher_max_position_embeddings', '512'),
                 ('--teacher_fp16', None),
             ]
-        }
+        },
+        # 221231
+        '24.1024,18.896-12.768_64-15w_dgkd': {
+            'args': lambda t: [
+                ('--mt_load_pretrained', ':'.join([
+                    task_t_load['tune_221212_233738.203054'][t], 
+                    task_t_load['large'][t]])),
+                ('--mt_num_layers', '18:24'),
+                ('--mt_hidden_size', '896:1024'),
+                ('--mt_num_attention_heads', '14:16'),
+                ('--mt_max_position_embeddings', '512:512'),
+                ('--teacher_fp16', None),
+            ]
+        },
     }
 
     max_output_L = []
@@ -1208,7 +1221,8 @@ def auto_tune():
     print(str(datetime.now()), 'max_output_path:', max_output_path, '\n')
     custom_tmp_result_f = lambda: f"{ap}/tmp/result_{datetime.now().strftime('%y%m%d_%H%M%S.%f')}.json"
     Tasks.EPOCH_SINGLE = getattr(Tasks, args.epoch_type)
-    Tasks.EPOCH_SINGLE = {t: math.ceil(e * args.epoch_rate) for t, e in Tasks.EPOCH_SINGLE.items()}
+    Tasks.EPOCH_SINGLE = {
+        t: str(math.ceil(float(e) * args.epoch_rate)) for t, e in Tasks.EPOCH_SINGLE.items()}
     print(f'epochs: {Tasks.EPOCH_SINGLE}')
     rate_ds_D = {k[5:]: v for k, v in vars(args).items() if k[:8] == 'rate_ds_'}  # ds_ 倍率
     rate_arg_D = {'--' + k[9:]: v for k, v in vars(args).items() if k[:9] == 'rate_arg_'}  # arg_ 倍率

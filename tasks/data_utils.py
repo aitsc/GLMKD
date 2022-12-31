@@ -271,14 +271,13 @@ def my_collate(batch, max_choice_num_=None):
     new_batch = [{key: value for key, value in sample.items() if key != 'uid'} for sample in batch]
     text_list = [sample['text'] for sample in batch]
 
-    def pad_choice_dim(data, choice_num, sample):
+    def pad_choice_dim(data, choice_num, label=None):
         if len(data) < choice_num:
             data = np.concatenate([data] + [data[0:1]] * (choice_num - len(data)))
-        if sample and 'label' in sample and len(data) > choice_num == max_choice_num_:
+        if label is not None and len(data) > choice_num:
             data_ = data[:choice_num]
-            if sample.get('label') >= choice_num:
-                data_[0] = data[sample.get('label')]
-                sample['label'] = 0
+            if label >= choice_num:
+                data_[0] = data[label]
             data = data_
         return data
 
@@ -288,11 +287,13 @@ def my_collate(batch, max_choice_num_=None):
         for i, sample in enumerate(new_batch):
             for key, value in sample.items():
                 if key != 'label':
-                    sample[key] = pad_choice_dim(value, max_choice_num, sample)
+                    sample[key] = pad_choice_dim(value, max_choice_num, sample.get('label'))
                 else:
                     sample[key] = value
-            sample['loss_mask'] = np.array([1] * choice_nums[i] + [0] * (max_choice_num - choice_nums[i]),
-                                           dtype=np.int64)
+            if 'label' in sample and sample['label'] >= max_choice_num:
+                sample['label'] = 0
+            sample['loss_mask'] = np.array(
+                [1] * min(choice_nums[i], max_choice_num) + [0] * (max_choice_num - choice_nums[i]), dtype=np.int64)
 
     if 'dec_text' in new_batch[0]:
         choice_nums = [len(sample['dec_text']) for sample in new_batch]

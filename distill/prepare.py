@@ -175,7 +175,12 @@ def get_args():
     # mobilebert
     py_parser.add_argument('--mobilebert_kd_w', type=float, default=0.5, help='中间层损失权重')
     py_parser.add_argument('--mobilebert_pkt_small_lr', type=float, default=0.1, help='pkt中间stage的较低学习率')
-
+    # continuation_kd
+    py_parser.add_argument('--continuation_kd_max_t', type=float, default=10., help='最大温度')
+    py_parser.add_argument('--continuation_kd_margin', type=float, default=1., help='margin of the hinge loss')
+    py_parser.add_argument('--continuation_kd_psi_sep', type=float, default=0.666, help='跑到百分之多少次迭代后就只使用硬标签')
+    py_parser.add_argument('--continuation_kd_psi_denominator', type=float, default=1.333, help='硬标签权重为当前迭代次数除以这个数和总迭代次数')
+    
     # multi-teacher 多个教师的模型参数用冒号分隔, 优先级高于 teacher_ 参数. 在有参数使用多教师的情况下,留空默认使用teacher_参数,填1个参数扩展成多个教师
     py_parser.add_argument('--mt_num_attention_heads', type=str, default='')
     py_parser.add_argument('--mt_hidden_size', type=str, default='')

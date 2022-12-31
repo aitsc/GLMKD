@@ -112,6 +112,10 @@
 1. pretrain(pretrain w/o distil): ... --inverted_bottleneck_mode --ib_hidden_size=1024 --ib_ffn_num=1 --hidden-size=512 --num-attention-heads=4 --ib_word_emb=128
 2. pretrain: ... --student_model=mobilebert --mobilebert_kd_w=0.5 --mobilebert_pkt_small_lr=0.1 --distill_pt_hard --inverted_bottleneck_mode --ib_hidden_size=128 --ib_ffn_num=4 --hidden-size=512 --num-attention-heads=4 --ib_word_emb=128 --teacher_inverted_bottleneck_mode --teacher_ib_hidden_size=1024 --teacher_ib_ffn_num=1 --teacher_hidden_size=512 --teacher_num_attention_heads=4 --teacher_ib_word_emb=128
 
+# Continuation_KD
+1. pretrain(pretrain w/o distil): ...
+2. finetune: ... --student_model=continuation_kd --continuation_kd_max_t=10 --continuation_kd_margin=1 --continuation_kd_psi_sep=0.666 --continuation_kd_psi_denominator=1.333 --distill_ft_soft --distill_ft_soft_mse --distill_ft_hard
+
 
 # Multi-teacher distillation
 - General parameters: ... --mt_num_attention_heads=a1:a2 --mt_hidden_size=h1:h2 --mt_num_layers=l1:l2 --mt_max_position_embeddings=m1:m2 --mt_load_pretrained=p1:p2 --teacher_fp16
@@ -133,7 +137,7 @@
 1. finetune-avg: ... --student_model=kd --distill_ft_soft --distill_temperature=10 --student_truncate_tn=0 --multi_teacher_model=rl_kd --rl_kd_only_avg --rl_kd_alpha=0.5 --rl_kd_semantic_model_dim=768
     - --rl_kd_only_mask_pad
 2. finetune-rl (One more base teacher): ... --student_model=kd --distill_ft_soft --distill_temperature=10 --multi_teacher_model=rl_kd --rl_kd_reward=1 --rl_kd_semantic_model=0 --mt_has_loss --rl_kd_alpha=0.5
-    - --rl_kd_only_mask_pad
+    - --rl_kd_only_mask_pad --fix_variable_num_choices
 
 ## MixMT
 

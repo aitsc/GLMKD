@@ -335,6 +335,7 @@ class WicProcessor(SuperGLUEProcessor):
 
 class WscProcessor(SuperGLUEProcessor):
     """Processor for the WSC data set."""
+    max_candidates_per_question = 10
 
     @property
     def variable_num_choices(self):
@@ -428,12 +429,13 @@ class WscProcessor(SuperGLUEProcessor):
 
                 if cloze_eval and set_type == 'train' and label != 'True':
                     continue
-                if set_type == 'train' and 'candidates' in example_json and len(candidates) > 9:
-                    for i in range(0, len(candidates), 9):
+                neg_candidates_num = self.max_candidates_per_question - 1
+                if set_type == 'train' and 'candidates' in example_json and len(candidates) > neg_candidates_num:
+                    for i in range(0, len(candidates), neg_candidates_num):
                         _meta = copy.deepcopy(meta)
-                        _meta['candidates'] = candidates[i:i + 9]
-                        if len(_meta['candidates']) < 9:
-                            _meta['candidates'] += candidates[:9 - len(_meta['candidates'])]
+                        _meta['candidates'] = candidates[i:i + neg_candidates_num]
+                        if len(_meta['candidates']) < neg_candidates_num:
+                            _meta['candidates'] += candidates[:neg_candidates_num - len(_meta['candidates'])]
                         example = InputExample(guid=guid, text_a=text_a, label=label, meta=_meta, idx=idx)
                         examples.append(example)
                 else:
@@ -677,6 +679,7 @@ class RaceProcessor(DataProcessor):
 
 class RecordProcessor(SuperGLUEProcessor):
     """Processor for the ReCoRD data set."""
+    max_candidates_per_question = 10
 
     def get_dev_examples(self, data_dir, for_train=False):
         return self._create_examples(os.path.join(data_dir, "val.jsonl"), "dev", for_train=for_train)
@@ -731,8 +734,10 @@ class RecordProcessor(SuperGLUEProcessor):
         return sample
 
     @staticmethod
-    def _create_examples(path, set_type, seed=42, max_train_candidates_per_question: int = 10, for_train=False) -> List[
+    def _create_examples(path, set_type, seed=42, max_train_candidates_per_question: int = None, for_train=False) -> List[
         InputExample]:
+        if max_train_candidates_per_question is None:
+            max_train_candidates_per_question = RecordProcessor.max_candidates_per_question
         examples = []
 
         entity_shuffler = random.Random(seed)

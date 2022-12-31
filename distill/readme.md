@@ -99,7 +99,9 @@
 1. pretrain(pretrain w/o distil): ...
 2. finetune-1: ... --student_model=lrc_bert --lrc_bert_gard_perturb --ignore_first_backward_gard --forward_repeat_num=1
     - It is not recommended to use data parallelism or accumulate steps, which will lead to negative sample reduction.
+    - --lrc_bert_gather_dp --fix_variable_num_choices
 3. finetune-2: ... --student_model=lrc_bert --lrc_bert_alpha=1 --distill_ft_soft --distill_ft_soft_kl --distill_soft_rate=1 --distill_ft_hard --distill_hard_rate=3 --distill_temperature=1.1 --lrc_bert_gard_perturb --ignore_first_backward_gard --forward_repeat_num=1
+    - --lrc_bert_gather_dp --fix_variable_num_choices
 
 ## Annealing_KD
 1. pretrain(pretrain w/o distil): ...

@@ -282,12 +282,14 @@ class RL_KD(AvgTeacher):
         tn = len(args.mt_hidden_size.split(':')) if args.mt_hidden_size else 1
         if args.rl_kd_semantic_model is not None:
             semantic_len = int(args.mt_hidden_size.split(':')[args.rl_kd_semantic_model])
+            args.rl_kd_semantic_model_dim = semantic_len
             tn -= 1  # multi Teacher CE Loss
         else:
             assert args.rl_kd_semantic_model_dim, '需要手动指定语义模型的维度！'
             semantic_len = args.rl_kd_semantic_model_dim
         semantic_len *= self.get_class_num()  # 分类方式差异
         self.agent_semantic_mt_loss = torch.nn.Linear(semantic_len + tn, tn)
+        self.semantic_len = semantic_len
         # Teacher soft labels
         class_dim = self.get_class_num() if self.get_class_num() else args.vocab_size
         if args.custom_logits_paralle:  # 注意这里教师序号等于是连续的
@@ -301,10 +303,10 @@ class RL_KD(AvgTeacher):
     
     def get_class_num(self):
         from tasks.superglue.dataset import PROCESSORS  # 参考
-        task_class_num = {  # {任务:当作几分类,..}
+        task_class_num = {  # {任务:当作几分类,..}; 这里可以新增任务
             'copa': 2,
-            'wsc': 10,
-            'record': 10,
+            'wsc': 10,  # task.superglue.dataset.WscProcessor.max_candidates_per_question
+            'record': 10,  # task.superglue.dataset.RecordProcessor.max_candidates_per_question
             'rte': 2,
             'boolq': 2,
             'wic': 2,
@@ -314,7 +316,7 @@ class RL_KD(AvgTeacher):
         if self.args.task.lower() in task_class_num and not self.args.custom_logits_paralle:
             return task_class_num[self.args.task.lower()]
         else:
-            return 1.
+            return 1
 
     def hooks_process(self, t_hook_L, **kwargs):
         if self.args.rl_kd_semantic_model is not None:
@@ -341,17 +343,39 @@ class RL_KD(AvgTeacher):
                 if not self.args.rl_kd_only_avg:
                     rep = t_inter_vars[t_hook['transformer']['output']][...,0,:].squeeze(-2)
                     rep = rep.contiguous().view(s_out['loss_batch'].size(0), -1)
+                    if rep.size(-1) != self.semantic_len:  # 数据集的类别数量可能有变化
+                        rep_size = list(rep.size())
+                        if rep.size(-1) < self.semantic_len:
+                            rep = F.pad(rep, (0, self.semantic_len - rep.size(-1)))
+                        else:
+                            rep = rep[..., :self.semantic_len]
+                        new_rep_size = list(rep.size())
+                        s_logits_size = list(s_out['logits'].size())
+                        print(f'> RL-KD, Semantic Representation: {rep_size} -> {new_rep_size}; s_logits_size{s_logits_size}; iter-{self.args.iteration}; rank-{torch.distributed.get_rank()}')
+                        assert abs(self.semantic_len - rep_size[-1]) % self.args.rl_kd_semantic_model_dim == 0
+                        assert self.args.variable_num_choices and not self.args.fix_variable_num_choices
                     semantic_mt_loss_rep = [rep.detach().clone()] + semantic_mt_loss_rep
                 continue
             self.record_and_show(student_model, op='t_start', t_no=i)
             # other Environment rep
             if not self.args.rl_kd_only_avg:
                 semantic_mt_loss_rep.append(t_out['loss_batch'].detach().clone().unsqueeze(-1))
-                if len(t_out['logits'].shape) == 3:
+                if len(t_out['logits'].shape) == 3:  # NLU
                     logits = (t_out['logits'] * mask).mean(-2)
                 else:
                     logits = t_out['logits'] * mask
-                mt_soft_rep.append(logits.detach().clone())
+                rep = logits.detach().clone()  # (bs,class_num)
+                if rep.size(-1) != self.get_class_num():
+                    rep_size = list(rep.size())
+                    if rep.size(-1) < self.get_class_num():
+                        rep = F.pad(rep, (0, self.get_class_num() - rep.size(-1)))
+                    else:
+                        rep = rep[..., :self.get_class_num()]
+                    new_rep_size = list(rep.size())
+                    s_logits_size = list(s_out['logits'].size())
+                    print(f'> RL-KD, teacher soft: {rep_size} -> {new_rep_size}; s_logits_size{s_logits_size}; iter-{self.args.iteration}; rank-{torch.distributed.get_rank()}; teacher-{i}')
+                    assert self.args.variable_num_choices and not self.args.fix_variable_num_choices
+                mt_soft_rep.append(rep)
             # pre_loss
             if self.args.rl_kd_only_avg:
                 s_loss, keep_batch = s_out['loss'], False
@@ -373,7 +397,7 @@ class RL_KD(AvgTeacher):
             mt_soft_rep = torch.cat(mt_soft_rep, -1)
             s = aux_layer(self.args, self.agent_semantic_mt_loss, semantic_mt_loss_rep)
             s += aux_layer(self.args, self.agent_mt_soft, mt_soft_rep)
-            s = s.sigmoid()
+            s = s.sigmoid()  # (bs,tn)
             teacher_select = torch.rand(*s.shape, device=s.device) < s
             final_loss = torch.stack(loss_L, -1) * teacher_select
             final_loss = final_loss.mean()

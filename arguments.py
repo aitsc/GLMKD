@@ -430,6 +430,7 @@ def add_custom_args(parser: argparse.ArgumentParser):
     group.add_argument('--ft_final_save', action='store_true', help='是否在微调的最后一轮保存模型,将覆盖best模型latest_checkpointed_iteration')
     group.add_argument('--save_interval_time', type=float, default=0, help='隔多少小时保存一次模型,大于0有效.可以和其他save参数一起使用')
     group.add_argument('--args_to_ds_config', action='store_true', help='args里面的batch-size和gradient-accumulation-steps参数是否反向写入deepspeed配置文件,生成临时配置文件目录')
+    group.add_argument('--fix_variable_num_choices', action='store_true', help='对于一些多分类样本的nlu任务,使用这个保证每次样本的num_choices都保持一致')
     # 注意: 以下可能和教师模型共享参数
     group.add_argument('--map_vocab_size', type=float, default=0, help='映射的词数量,蒸馏或读取模型文件时使用.0-1表示占vacab-size的比例')
     group.add_argument('--unmap_vocab_output', action='store_true', help='在使用map_vocab_size时GLM是否不返回映射后的结果,使用这个需要下游所有任务配合乱序且不全的词表,但可以减少时空消耗.可能导致一些使用logits的蒸馏(例如一些自定义的pre_loss)产生兼容性问题,同时因为维度变化可能导致一些任务的loss产生一点变化')

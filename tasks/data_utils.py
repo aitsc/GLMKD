@@ -267,7 +267,7 @@ def build_decoder_sample(sample, dec_ids, dec_position, dec_masks, dec_target, d
     return sample
 
 
-def my_collate(batch):
+def my_collate(batch, max_choice_num_=None):
     new_batch = [{key: value for key, value in sample.items() if key != 'uid'} for sample in batch]
     text_list = [sample['text'] for sample in batch]
 
@@ -278,7 +278,7 @@ def my_collate(batch):
 
     if len(text_list[0].shape) == 2:
         choice_nums = list(map(len, text_list))
-        max_choice_num = max(choice_nums)
+        max_choice_num = max_choice_num_ if max_choice_num_ else max(choice_nums)
         for i, sample in enumerate(new_batch):
             for key, value in sample.items():
                 if key != 'label':
@@ -291,7 +291,7 @@ def my_collate(batch):
     if 'dec_text' in new_batch[0]:
         choice_nums = [len(sample['dec_text']) for sample in new_batch]
         if choice_nums.count(choice_nums[0]) != len(choice_nums):
-            max_choice_num = max(choice_nums)
+            max_choice_num = max_choice_num_ if max_choice_num_ else max(choice_nums)
             for i, sample in enumerate(new_batch):
                 for key, value in sample.items():
                     if key.startswith('dec_'):
@@ -330,7 +330,14 @@ def build_data_loader(dataset, batch_size, num_workers, drop_last, shuffle=True,
         rank = mpu.get_data_parallel_rank()
     sampler = torch.utils.data.distributed.DistributedSampler(
         dataset, num_replicas=world_size, rank=rank, shuffle=shuffle)
-
+    
+    if dataset.args.fix_variable_num_choices and \
+        dataset.processor.variable_num_choices and \
+        hasattr(dataset.processor, 'max_candidates_per_question'):
+        my_collate_ = lambda batch: my_collate(batch, dataset.processor.max_candidates_per_question)
+    else:
+        my_collate_ = my_collate
+    
     # Data loader. Note that batch size is the per GPU batch size.
     data_loader = torch.utils.data.DataLoader(dataset,
                                               batch_size=batch_size,
@@ -339,6 +346,6 @@ def build_data_loader(dataset, batch_size, num_workers, drop_last, shuffle=True,
                                               num_workers=num_workers,
                                               drop_last=drop_last,
                                               pin_memory=True,
-                                              collate_fn=my_collate)
+                                              collate_fn=my_collate_)
 
     return data_loader

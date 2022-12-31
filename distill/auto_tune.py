@@ -13,6 +13,7 @@ import copy
 from tsc_base import put, get
 import traceback
 from change_mp import change_mp
+import math
 
 ap = 'data'  # 总目录
 
@@ -890,6 +891,7 @@ def auto_tune():
     py_parser.add_argument('--save_sub', type=str, default=None)
     py_parser.add_argument('--test', action='store_true')
     py_parser.add_argument('--epoch_type', type=str, default='EPOCH_SINGLE')  # EPOCH_SINGLE,XXLARGE_EPOCH,EPOCH_0
+    py_parser.add_argument('--epoch_rate', type=float, default=1., help='缩放原来的epoch,上取整')
     py_parser.add_argument('--tasks', type=str, default='copa,wsc_generative,cb,rte,boolq,wic,wsc,multirc,record')  # 可以大任务放在前面先使用多卡
     py_parser.add_argument('--script', type=str, default='finetune_superglue')  # finetune_superglue,evaluate_lm,finetune_blank,finetune_seq2seq
     py_parser.add_argument('--mask_ratio', type=str, default='0.1')
@@ -1177,6 +1179,26 @@ def auto_tune():
                 ('--teacher_max_position_embeddings', '512'),
                 ('--teacher_fp16', None),
             ]
+        },
+        # 原版 TAKD 18.896-12.768_64-15w_takd
+        'tune_221220_170515.739218': {
+            Tasks.copa: f'{ap}/checkpoints/pretrain/block_tiny6/ft_takd/COPA/blank-tiny6-COPA-221221_134928.259289',
+            Tasks.wsc_generative: f'{ap}/checkpoints/pretrain/block_tiny6/ft_takd/WSC/blank-tiny6-WSC_generative-221221_170140.010836',
+            Tasks.cb: f'{ap}/checkpoints/pretrain/block_tiny6/ft_takd/CB/blank-tiny6-CB-221221_152338.505089',
+            Tasks.rte: f'{ap}/checkpoints/pretrain/block_tiny6/ft_takd/RTE/blank-tiny6-RTE-221221_140721.542324',
+            Tasks.boolq: f'{ap}/checkpoints/pretrain/block_tiny6/ft_takd/BoolQ/blank-tiny6-BoolQ-221221_142725.844600',
+            Tasks.wic: f'{ap}/checkpoints/pretrain/block_tiny6/ft_takd/WiC/blank-tiny6-WiC-221221_145722.722552',
+            Tasks.multirc: f'{ap}/checkpoints/pretrain/block_tiny6/ft_takd/MultiRC/blank-tiny6-MultiRC-221221_152626.996802',
+            Tasks.wsc: f'{ap}/checkpoints/pretrain/block_tiny6/ft_takd/WSC/blank-tiny6-WSC-221221_135944.222943',
+            Tasks.record: f'{ap}/checkpoints/pretrain/block_tiny6/ft_takd/ReCoRD/blank-tiny6-ReCoRD-221220_170515.739531',
+            'args': lambda t: [
+                ('--teacher_load_pretrained', task_t_load['tune_221220_170515.739218'][t]),
+                ('--teacher_num_layers', '12'),
+                ('--teacher_hidden_size', '768'),
+                ('--teacher_num_attention_heads', '12'),
+                ('--teacher_max_position_embeddings', '512'),
+                ('--teacher_fp16', None),
+            ]
         }
     }
 
@@ -1186,6 +1208,8 @@ def auto_tune():
     print(str(datetime.now()), 'max_output_path:', max_output_path, '\n')
     custom_tmp_result_f = lambda: f"{ap}/tmp/result_{datetime.now().strftime('%y%m%d_%H%M%S.%f')}.json"
     Tasks.EPOCH_SINGLE = getattr(Tasks, args.epoch_type)
+    Tasks.EPOCH_SINGLE = {t: math.ceil(e * args.epoch_rate) for t, e in Tasks.EPOCH_SINGLE.items()}
+    print(f'epochs: {Tasks.EPOCH_SINGLE}')
     rate_ds_D = {k[5:]: v for k, v in vars(args).items() if k[:8] == 'rate_ds_'}  # ds_ 倍率
     rate_arg_D = {'--' + k[9:]: v for k, v in vars(args).items() if k[:9] == 'rate_arg_'}  # arg_ 倍率
     for tni, (tn, task) in enumerate([(i, getattr(Tasks, i)) for i in args.tasks.split(',')]):

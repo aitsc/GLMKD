@@ -277,7 +277,7 @@ def my_collate(batch, max_choice_num_=None):
         if sample and 'label' in sample and len(data) > choice_num == max_choice_num_:
             data_ = data[:choice_num]
             if sample.get('label') >= choice_num:
-                data_[0] = data[label]
+                data_[0] = data[sample.get('label')]
                 sample['label'] = 0
             data = data_
         return data

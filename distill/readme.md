@@ -137,5 +137,8 @@
 
 ## MixMT
 
+## TAKD
+- finetune: ... --student_model=kd --student_truncate_tn=0 --distill_ft_soft --distill_ft_soft_kl --distill_ft_hard --distill_temperature=10
+
 ## DGKD
-... --multi_teacher_model=avg --avgmt_sum_loss --avgmt_teacher_survival_p=0.75
+- finetune: ... --student_model=kd --student_truncate_tn=0 --multi_teacher_model=avg --avgmt_sum_loss --avgmt_teacher_survival_p=0.75 --distill_ft_soft --distill_soft_rate=0.5 --distill_hard_rate=0.5 --distill_temperature=10

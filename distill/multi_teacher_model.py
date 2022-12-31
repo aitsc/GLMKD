@@ -118,6 +118,10 @@ class AvgTeacher(torch.nn.Module):
             loss = pre_loss + inter_loss
             loss_L.append(loss)
             self.record_and_show(student_model, op='t_end', t_no=i, loss=loss)
+        if self.args.avgmt_teacher_survival_p < 1:  # 可以用于 DGKD
+            hard_loss = s_out['loss'] * self.args.distill_hard_rate
+            student_model.add_summary('multi_teacher_model/hard_loss', hard_loss)
+            loss_L.append(hard_loss)
         self.record_and_show(student_model, op='final_show')
         if self.args.avgmt_sum_loss:
             return sum(loss_L)

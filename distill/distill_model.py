@@ -214,7 +214,7 @@ class GLMStudent(torch.nn.Module):
         Args:
             s_logits (tensor): (batch_size,class_num)/(batch_size,seq,vocab_size); 学生的下游任务logits
             t_logits (tensor): 教师的下游任务logits
-            loss (tensor): 学生的硬标签损失
+            loss (tensor): 学生的硬标签损失.注意当loss_batch=True时这里应该传入每个样本的loss
             loss_mask (tensor, optional): (batch_size,seq_len); 1的位置代表part b,0表示为part a+pad. 必须和s_logits/t_logits可配对
             return_dict (bool, optional): 是否返回loss的各个部分,用于其他方法加权处理
             labels (bool, optional): (batch_size,seq_len)/(batch_size); 0表示pad符号或者文档结束符,大于0则是其他的token id
@@ -2235,7 +2235,7 @@ class Continuation_KD(GLMStudent):
         if 'hard' in loss_D and psi > 0:
             loss_ += psi * loss_D['hard']
         if 'soft' in loss_D and psi < 1:
-            loss_ += (1 - psi) * loss_D['soft'] * (loss_D['soft'] > self.args.continuation_kd_margin * fai_t)
+            loss_ = loss_ + (1 - psi) * loss_D['soft'] * (loss_D['soft'] > self.args.continuation_kd_margin * fai_t)
         if not keep_batch:
             loss_ = loss_.mean()
         return loss_

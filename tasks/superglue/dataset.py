@@ -1373,6 +1373,16 @@ class CMRCProcessor(DataProcessor):
 
 CLASSIFICATION_DATASETS = {"wic", "rte", "cb", "boolq", "multirc", "wsc"}
 MULTI_CHOICE_DATASETS = {"copa", "record"}
+DATASETS_CLASS_NUM = {
+    'copa': 2,
+    'wsc': WscProcessor.max_candidates_per_question,
+    'record': RecordProcessor.max_candidates_per_question,
+    'rte': 2,
+    'boolq': 2,
+    'wic': 2,
+    'cb': 3,
+    'multirc': 2,
+}
 
 PROCESSORS = {
     "mnli": MnliProcessor,

@@ -12,6 +12,7 @@ from mpu import checkpoint, get_cuda_rng_tracker
 import deepspeed
 from distill.custom_loss import CustomLoss
 import random
+from tasks.superglue.dataset import MULTI_CHOICE_DATASETS, DATASETS_CLASS_NUM
 
 
 class AvgTeacher(torch.nn.Module):
@@ -291,7 +292,7 @@ class RL_KD(AvgTeacher):
         else:
             assert args.rl_kd_semantic_model_dim, '需要手动指定语义模型的维度！'
             semantic_len = args.rl_kd_semantic_model_dim
-        semantic_len *= self.get_class_num()  # 分类方式差异
+        semantic_len *= self.get_class_num() if self.is_multi_choice() else 1
         self.agent_semantic_mt_loss = torch.nn.Linear(semantic_len + tn, tn)
         self.semantic_len = semantic_len
         # Teacher soft labels
@@ -306,21 +307,17 @@ class RL_KD(AvgTeacher):
         self.teacher_select = None  # a
     
     def get_class_num(self):
-        from tasks.superglue.dataset import PROCESSORS  # 参考
-        task_class_num = {  # {任务:当作几分类,..}; 这里可以新增任务
-            'copa': 2,
-            'wsc': 10,  # task.superglue.dataset.WscProcessor.max_candidates_per_question
-            'record': 10,  # task.superglue.dataset.RecordProcessor.max_candidates_per_question
-            'rte': 2,
-            'boolq': 2,
-            'wic': 2,
-            'cb': 3,
-            'multirc': 2,
-        }
-        if self.args.task.lower() in task_class_num and not self.args.custom_logits_paralle:
-            return task_class_num[self.args.task.lower()]
+        # DATASETS_CLASS_NUM:{任务:当作几分类,..}; 这里面可以新增任务保持一致
+        if self.args.task.lower() in DATASETS_CLASS_NUM and not self.args.custom_logits_paralle:
+            return DATASETS_CLASS_NUM[self.args.task.lower()]
         else:
             return 1
+
+    def is_multi_choice(self):
+        # 满足 not self.args.custom_logits_paralle 和 wsc 就满足 self.args.wsc_negative
+        if (self.args.task.lower() in MULTI_CHOICE_DATASETS or self.args.task.lower() == 'wsc') and not self.args.custom_logits_paralle:
+            return True
+        return False
 
     def hooks_process(self, t_hook_L, **kwargs):
         if self.args.rl_kd_semantic_model is not None:

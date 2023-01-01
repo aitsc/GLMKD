@@ -888,6 +888,7 @@ def auto_tune():
     py_parser.add_argument('--model', type=str, default='block_tiny6')
     py_parser.add_argument('--model_path', type=str, default=None)  # checkpoints/pretrain/blocklm-base-blank
     py_parser.add_argument('--task_t_load', type=str, default=None)
+    py_parser.add_argument('--task_t_load_path', type=str, default='distill/task_t_load.json', help='关于文件内容:args中参数的第二个值是列表就合并任务路径,如果列表中的值不是task_t_load名称就当作固定路径.路径的前面会在代码中加入主目录前缀,这里保留')
     py_parser.add_argument('--save_sub', type=str, default=None)
     py_parser.add_argument('--test', action='store_true')
     py_parser.add_argument('--epoch_type', type=str, default='EPOCH_SINGLE')  # EPOCH_SINGLE,XXLARGE_EPOCH,EPOCH_0
@@ -950,270 +951,17 @@ def auto_tune():
     # args 处理
     big_tasks = set(args.big_task.split(',')) if args.big_task_gpus and args.big_task else set()
 
-    task_t_load = {  # --teacher_load_pretrained
-        'base': {
-            Tasks.copa: f'{ap}/checkpoints/pretrain/blocklm-base-blank/finetune/COPA/blank-base-COPA-220813_064749',
-            Tasks.wsc_generative: f'{ap}/checkpoints/pretrain/blocklm-base-blank/finetune/WSC/blank-base-WSC_generative-220813_065345',
-            Tasks.cb: f'{ap}/checkpoints/pretrain/blocklm-base-blank/finetune/CB/blank-base-CB-220813_065532',
-            Tasks.rte: f'{ap}/checkpoints/pretrain/blocklm-base-blank/finetune/RTE/blank-base-RTE-220813_065724',
-            Tasks.boolq: f'{ap}/checkpoints/pretrain/blocklm-base-blank/finetune/BoolQ/blank-base-BoolQ-220813_070712',
-            Tasks.wic: f'{ap}/checkpoints/pretrain/blocklm-base-blank/finetune/WiC/blank-base-WiC-220813_072213',
-            Tasks.multirc: f'{ap}/checkpoints/pretrain/blocklm-base-blank/finetune/MultiRC/blank-base-MultiRC-220813_074014',
-            Tasks.wsc: f'{ap}/checkpoints/pretrain/blocklm-base-blank/finetune/WSC/blank-base-WSC-220813_073441',
-            Tasks.record: f'{ap}/checkpoints/pretrain/blocklm-base-blank/finetune/ReCoRD/blank-base-ReCoRD-220813_083745',
-            Tasks.seq_cnndm_org: f'{ap}/checkpoints/pretrain/blocklm-base-blank/finetune_seq2seq/cnn_dm_original/blank-base-cnn_dm_original-220823_213924',
-            'args': lambda t: [
-                ('--teacher_load_pretrained', task_t_load['base'][t]),
-                ('--teacher_num_layers', '12'),
-                ('--teacher_hidden_size', '768'),
-                ('--teacher_num_attention_heads', '12'),
-                ('--teacher_max_position_embeddings', '512'),
-                ('--teacher_fp16', None),
-            ]
-        },
-        'large': {
-            Tasks.copa: f'{ap}/checkpoints/pretrain/blocklm-large-blank/finetune/COPA/blank-large-COPA-220813_123629',
-            Tasks.wsc_generative: f'{ap}/checkpoints/pretrain/blocklm-large-blank/finetune/WSC/blank-large-WSC_generative-220813_125540',
-            Tasks.cb: f'{ap}/checkpoints/pretrain/blocklm-large-blank/finetune/CB/blank-large-CB-220813_125843',
-            Tasks.rte: f'{ap}/checkpoints/pretrain/blocklm-large-blank/finetune/RTE/blank-large-RTE-220813_130259',
-            Tasks.boolq: f'{ap}/checkpoints/pretrain/blocklm-large-blank/finetune/BoolQ/blank-large-BoolQ-220813_133458',
-            Tasks.wic: f'{ap}/checkpoints/pretrain/blocklm-large-blank/finetune/WiC/blank-large-WiC-220813_142454',
-            Tasks.multirc: f'{ap}/checkpoints/pretrain/blocklm-large-blank/finetune/MultiRC/blank-large-MultiRC-220813_152437',
-            Tasks.wsc: f'{ap}/checkpoints/pretrain/blocklm-large-blank/finetune/WSC/blank-large-WSC-220813_150605',
-            Tasks.record: f'{ap}/checkpoints/pretrain/blocklm-large-blank/finetune/ReCoRD/blank-large-ReCoRD-220813_190003',
-            'args': lambda t: [
-                ('--teacher_load_pretrained', task_t_load['large'][t]),
-                ('--teacher_num_layers', '24'),
-                ('--teacher_hidden_size', '1024'),
-                ('--teacher_num_attention_heads', '16'),
-                ('--teacher_max_position_embeddings', '512'),
-            ]
-        },
-        'large_ibglm': {
-            Tasks.copa: f'{ap}/checkpoints/pretrain/blocklm-large-blank-ibglm/ft/COPA/blank-large-COPA-221212_031248.626986',
-            Tasks.wsc_generative: f'{ap}/checkpoints/pretrain/blocklm-large-blank-ibglm/ft/WSC/blank-large-WSC_generative-221212_074918.317566',
-            Tasks.cb: f'{ap}/checkpoints/pretrain/blocklm-large-blank-ibglm/ft/CB/blank-large-CB-221212_052834.482167',
-            Tasks.rte: f'{ap}/checkpoints/pretrain/blocklm-large-blank-ibglm/ft/RTE/blank-large-RTE-221212_034024.023828',
-            Tasks.boolq: f'{ap}/checkpoints/pretrain/blocklm-large-blank-ibglm/ft/BoolQ/blank-large-BoolQ-221212_040831.534974',
-            Tasks.wic: f'{ap}/checkpoints/pretrain/blocklm-large-blank-ibglm/ft/WiC/blank-large-WiC-221212_045159.082385',
-            Tasks.multirc: f'{ap}/checkpoints/pretrain/blocklm-large-blank-ibglm/ft/MultiRC/blank-large-MultiRC-221212_053238.238516',
-            Tasks.wsc: f'{ap}/checkpoints/pretrain/blocklm-large-blank-ibglm/ft/WSC/blank-large-WSC-221212_032735.136253',
-            Tasks.record: f'{ap}/checkpoints/pretrain/blocklm-large-blank-ibglm/ft/ReCoRD/blank-large-ReCoRD-221210_230535.927156',
-            'args': lambda t: [
-                ('--teacher_load_pretrained', task_t_load['large_ibglm'][t]),
-                ('--teacher_num_layers', '24'),
-                ('--teacher_hidden_size', '512'),
-                ('--teacher_num_attention_heads', '4'),
-                ('--teacher_max_position_embeddings', '512'),
-                ('--teacher_ib_word_emb', '128'),
-                ('--teacher_ib_hidden_size', '1024'),
-                ('--teacher_ib_ffn_num', '1'),
-                ('--teacher_inverted_bottleneck_mode', None),
-                ('--teacher_fp16', None),
-            ]
-        },
-        '10b': {
-            Tasks.copa: f'{ap}/checkpoints/pretrain/blocklm-xxlarge/finetune/COPA/blocklm-10B-COPA-220927_174706.280540',
-            Tasks.wsc_generative: f'{ap}/checkpoints/pretrain/blocklm-xxlarge/finetune/WSC/blocklm-10B-WSC_generative-221120_021527.795097',
-            Tasks.cb: f'{ap}/checkpoints/pretrain/blocklm-xxlarge/finetune/CB/blocklm-10B-CB-221120_142638.992303',
-            Tasks.rte: f'{ap}/checkpoints/pretrain/blocklm-xxlarge/finetune/RTE/blocklm-10B-RTE-221120_161035.682437',
-            Tasks.boolq: f'{ap}/checkpoints/pretrain/blocklm-xxlarge/finetune/BoolQ/blocklm-10B-BoolQ-220927_174706.280718',
-            Tasks.wic: f'{ap}/checkpoints/pretrain/blocklm-xxlarge/finetune/WiC/blocklm-10B-WiC-221119_013950.196409',
-            Tasks.multirc: f'{ap}/checkpoints/pretrain/blocklm-xxlarge/finetune/MultiRC/blocklm-10B-MultiRC-221116_154027.417564',
-            Tasks.wsc: f'{ap}/checkpoints/pretrain/blocklm-xxlarge/finetune/WSC/blocklm-10B-WSC-220927_174706.280802',
-            Tasks.record: f'{ap}/checkpoints/pretrain/blocklm-xxlarge/finetune/ReCoRD/blocklm-10B-ReCoRD-221116_062824.860570',
-            'args': lambda t: [
-                ('--teacher_load_pretrained', task_t_load['10b'][t]),
-                ('--teacher_num_layers', '48'),
-                ('--teacher_hidden_size', '4096'),
-                ('--teacher_num_attention_heads', '64'),
-                ('--teacher_max_position_embeddings', '1024'),
-                ('--teacher_fp16', None),
-            ]
-        },
-        'base_large': {
-            'args': lambda t: [
-                ('--mt_load_pretrained', task_t_load['base'][t] + ':' + task_t_load['large'][t]),
-                ('--mt_num_layers', '12:24'),
-                ('--mt_hidden_size', '768:1024'),
-                ('--mt_num_attention_heads', '12:16'),
-                ('--mt_max_position_embeddings', '512:512'),
-                ('--teacher_fp16', None),
-            ]
-        },
-        'base_base_large': {  # 第一个base是预训练的,用于RL-KD
-            'args': lambda t: [
-                ('--mt_load_pretrained', f'{ap}/checkpoints/pretrain/blocklm-base-blank:' + task_t_load['base'][t] + ':' + task_t_load['large'][t]),
-                ('--mt_num_layers', '12:12:24'),
-                ('--mt_hidden_size', '768:768:1024'),
-                ('--mt_num_attention_heads', '12:12:16'),
-                ('--mt_max_position_embeddings', '512:512:512'),
-                ('--teacher_fp16', None),
-            ]
-        },
-        # distill24.1024-18.896_mix2 (logitsdistil) 200M
-        'tune_221006_170005.145602': {
-            Tasks.copa: f'{ap}/checkpoints/distill/tiny12/distill24.1024-18.896_mix2/ft_kd/COPA/blank-base-COPA-221008_084623.965766/ft_kd/COPA/blank-base-COPA-221008_084625.067243',
-            Tasks.wsc_generative: f'{ap}/checkpoints/distill/tiny12/distill24.1024-18.896_mix2/ft_kd/WSC/blank-base-WSC_generative-221008_090932.817304/ft_kd/WSC/blank-base-WSC_generative-221008_090933.918785',
-            Tasks.cb: f'{ap}/checkpoints/distill/tiny12/distill24.1024-18.896_mix2/ft_kd/CB/blank-base-CB-221008_091721.813896/ft_kd/CB/blank-base-CB-221008_091722.915296',
-            Tasks.rte: f'{ap}/checkpoints/distill/tiny12/distill24.1024-18.896_mix2/ft_kd/RTE/blank-base-RTE-221008_092548.958127/ft_kd/RTE/blank-base-RTE-221008_092550.059740',
-            Tasks.boolq: f'{ap}/checkpoints/distill/tiny12/distill24.1024-18.896_mix2/ft_kd/BoolQ/blank-base-BoolQ-221008_101743.557232/ft_kd/BoolQ/blank-base-BoolQ-221008_101744.658682',
-            Tasks.wic: f'{ap}/checkpoints/distill/tiny12/distill24.1024-18.896_mix2/ft_kd/WiC/blank-base-WiC-221008_113434.837390/ft_kd/WiC/blank-base-WiC-221008_113435.938793',
-            Tasks.multirc: f'{ap}/checkpoints/distill/tiny12/distill24.1024-18.896_mix2/ft_kd/MultiRC/blank-base-MultiRC-221008_131055.701624/ft_kd/MultiRC/blank-base-MultiRC-221008_131056.803034',
-            Tasks.wsc: f'{ap}/checkpoints/distill/tiny12/distill24.1024-18.896_mix2/ft_kd/WSC/blank-base-WSC-221008_124751.748433/ft_kd/WSC/blank-base-WSC-221008_124752.849713',
-            Tasks.record: f'{ap}/checkpoints/distill/tiny12/distill24.1024-18.896_mix2/ft_kd/ReCoRD/blank-base-ReCoRD-221006_170005.145677/ft_kd/ReCoRD/blank-base-ReCoRD-221006_170006.247077',
-            'args': lambda t: [
-                ('--teacher_load_pretrained', task_t_load['tune_221006_170005.145602'][t]),
-                ('--teacher_num_layers', '18'),
-                ('--teacher_hidden_size', '896'),
-                ('--teacher_num_attention_heads', '14'),
-                ('--teacher_max_position_embeddings', '512'),
-                ('--teacher_fp16', None),
-            ]
-        },
-        # distill18.896-12.768_mix2 (logitsdistil) 110M
-        'tune_221009_173050.702880': {
-            Tasks.copa: f'{ap}/checkpoints/distill/tiny12/distill18.896-12.768_mix2/ft_kd/COPA/blank-base-COPA-221010_185736.644660/ft_kd/COPA/blank-base-COPA-221010_185737.746157',
-            Tasks.wsc_generative: f'{ap}/checkpoints/distill/tiny12/distill18.896-12.768_mix2/ft_kd/WSC/blank-base-WSC_generative-221010_191608.607141/ft_kd/WSC/blank-base-WSC_generative-221010_191609.708584',
-            Tasks.cb: f'{ap}/checkpoints/distill/tiny12/distill18.896-12.768_mix2/ft_kd/CB/blank-base-CB-221010_192247.742439/ft_kd/CB/blank-base-CB-221010_192248.843763',
-            Tasks.rte: f'{ap}/checkpoints/distill/tiny12/distill18.896-12.768_mix2/ft_kd/RTE/blank-base-RTE-221010_193034.715783/ft_kd/RTE/blank-base-RTE-221010_193035.817385',
-            Tasks.boolq: f'{ap}/checkpoints/distill/tiny12/distill18.896-12.768_mix2/ft_kd/BoolQ/blank-base-BoolQ-221010_201256.221705/ft_kd/BoolQ/blank-base-BoolQ-221010_201257.323046',
-            Tasks.wic: f'{ap}/checkpoints/distill/tiny12/distill18.896-12.768_mix2/ft_kd/WiC/blank-base-WiC-221010_212113.481188/ft_kd/WiC/blank-base-WiC-221010_212114.582578',
-            Tasks.multirc: f'{ap}/checkpoints/distill/tiny12/distill18.896-12.768_mix2/ft_kd/MultiRC/blank-base-MultiRC-221010_222612.125780/ft_kd/MultiRC/blank-base-MultiRC-221010_222613.227076',
-            Tasks.wsc: f'{ap}/checkpoints/distill/tiny12/distill18.896-12.768_mix2/ft_kd/WSC/blank-base-WSC-221010_221305.055794/ft_kd/WSC/blank-base-WSC-221010_221306.157390',
-            Tasks.record: f'{ap}/checkpoints/distill/tiny12/distill18.896-12.768_mix2/ft_kd/ReCoRD/blank-base-ReCoRD-221009_173050.702958/ft_kd/ReCoRD/blank-base-ReCoRD-221009_173051.808541',
-            'args': lambda t: [
-                ('--teacher_load_pretrained', task_t_load['tune_221009_173050.702880'][t]),
-                ('--teacher_num_layers', '12'),
-                ('--teacher_hidden_size', '768'),
-                ('--teacher_num_attention_heads', '12'),
-                ('--teacher_max_position_embeddings', '512'),
-                ('--teacher_fp16', None),
-            ]
-        },
-        # distill12.768-6.768_mix2 (logitsdistil) 66M
-        'tune_221011_101500.766969': {
-            Tasks.copa: f'{ap}/checkpoints/distill/tiny6/distill12.768-6.768_mix2/ft_kd/COPA/blank-tiny6-COPA-221012_001702.677294/ft_kd/COPA/blank-tiny6-COPA-221012_001703.778772',
-            Tasks.wsc_generative: f'{ap}/checkpoints/distill/tiny6/distill12.768-6.768_mix2/ft_kd/WSC/blank-tiny6-WSC_generative-221012_003106.315605/ft_kd/WSC/blank-tiny6-WSC_generative-221012_003107.416016',
-            Tasks.cb: f'{ap}/checkpoints/distill/tiny6/distill12.768-6.768_mix2/ft_kd/CB/blank-tiny6-CB-221012_003646.768917/ft_kd/CB/blank-tiny6-CB-221012_003647.870362',
-            Tasks.rte: f'{ap}/checkpoints/distill/tiny6/distill12.768-6.768_mix2/ft_kd/RTE/blank-tiny6-RTE-221012_004334.467392/ft_kd/RTE/blank-tiny6-RTE-221012_004335.568770',
-            Tasks.boolq: f'{ap}/checkpoints/distill/tiny6/distill12.768-6.768_mix2/ft_kd/BoolQ/blank-tiny6-BoolQ-221012_011411.535615/ft_kd/BoolQ/blank-tiny6-BoolQ-221012_011412.636984',
-            Tasks.wic: f'{ap}/checkpoints/distill/tiny6/distill12.768-6.768_mix2/ft_kd/WiC/blank-tiny6-WiC-221012_015951.235099/ft_kd/WiC/blank-tiny6-WiC-221012_015952.335994',
-            Tasks.multirc: f'{ap}/checkpoints/distill/tiny6/distill12.768-6.768_mix2/ft_kd/MultiRC/blank-tiny6-MultiRC-221012_024748.779231/ft_kd/MultiRC/blank-tiny6-MultiRC-221012_024749.879988',
-            Tasks.wsc: f'{ap}/checkpoints/distill/tiny6/distill12.768-6.768_mix2/ft_kd/WSC/blank-tiny6-WSC-221012_023841.651092/ft_kd/WSC/blank-tiny6-WSC-221012_023842.751981',
-            Tasks.record: f'{ap}/checkpoints/distill/tiny6/distill12.768-6.768_mix2/ft_kd/ReCoRD/blank-tiny6-ReCoRD-221011_101500.767113/ft_kd/ReCoRD/blank-tiny6-ReCoRD-221011_101501.868044',
-            'args': lambda t: [
-                ('--teacher_load_pretrained', task_t_load['tune_221011_101500.766969'][t]),
-                ('--teacher_num_layers', '6'),
-                ('--teacher_hidden_size', '768'),
-                ('--teacher_num_attention_heads', '12'),
-                ('--teacher_max_position_embeddings', '512'),
-                ('--teacher_fp16', None),
-            ]
-        },
-        # distill18.896-12.768-6.768_b (logitsdistil) 66M
-        'tune_221012_143057.727192': {
-            Tasks.copa: f'{ap}/checkpoints/distill/tiny6/distill18.896-12.768-6.768_b/ft_kd/COPA/blank-tiny6-COPA-221013_081544.749969/ft_kd/COPA/blank-tiny6-COPA-221013_081545.851413',
-            Tasks.wsc_generative: f'{ap}/checkpoints/distill/tiny6/distill18.896-12.768-6.768_b/ft_kd/WSC/blank-tiny6-WSC_generative-221013_083034.373427/ft_kd/WSC/blank-tiny6-WSC_generative-221013_083035.474919',
-            Tasks.cb: f'{ap}/checkpoints/distill/tiny6/distill18.896-12.768-6.768_b/ft_kd/CB/blank-tiny6-CB-221013_083705.043801/ft_kd/CB/blank-tiny6-CB-221013_083706.145277',
-            Tasks.rte: f'{ap}/checkpoints/distill/tiny6/distill18.896-12.768-6.768_b/ft_kd/RTE/blank-tiny6-RTE-221013_084314.623689/ft_kd/RTE/blank-tiny6-RTE-221013_084315.725175',
-            Tasks.boolq: f'{ap}/checkpoints/distill/tiny6/distill18.896-12.768-6.768_b/ft_kd/BoolQ/blank-tiny6-BoolQ-221013_091628.327639/ft_kd/BoolQ/blank-tiny6-BoolQ-221013_091629.429409',
-            Tasks.wic: f'{ap}/checkpoints/distill/tiny6/distill18.896-12.768-6.768_b/ft_kd/WiC/blank-tiny6-WiC-221013_100514.802376/ft_kd/WiC/blank-tiny6-WiC-221013_100515.903949',
-            Tasks.multirc: f'{ap}/checkpoints/distill/tiny6/distill18.896-12.768-6.768_b/ft_kd/MultiRC/blank-tiny6-MultiRC-221013_105714.177239/ft_kd/MultiRC/blank-tiny6-MultiRC-221013_105715.278701',
-            Tasks.wsc: f'{ap}/checkpoints/distill/tiny6/distill18.896-12.768-6.768_b/ft_kd/WSC/blank-tiny6-WSC-221013_104706.918815/ft_kd/WSC/blank-tiny6-WSC-221013_104708.020043',
-            Tasks.record: f'{ap}/checkpoints/distill/tiny6/distill18.896-12.768-6.768_b/ft_kd/ReCoRD/blank-tiny6-ReCoRD-221012_143057.727276/ft_kd/ReCoRD/blank-tiny6-ReCoRD-221012_143058.828645',
-            'args': lambda t: [
-                ('--teacher_load_pretrained', task_t_load['tune_221012_143057.727192'][t]),
-                ('--teacher_num_layers', '6'),
-                ('--teacher_hidden_size', '768'),
-                ('--teacher_num_attention_heads', '12'),
-                ('--teacher_max_position_embeddings', '512'),
-                ('--teacher_fp16', None),
-            ]
-        },
-        # 用于 distill24.1024_18.896_12.768-6.768_avg1 (logitsdistil)
-        'distill24.1024_18.896_12.768-6.768_avg1': {
-            'args': lambda t: [
-                ('--mt_load_pretrained', ':'.join([
-                    task_t_load['tune_221009_173050.702880'][t], 
-                    task_t_load['tune_221006_170005.145602'][t], 
-                    task_t_load['large'][t]])),
-                ('--mt_num_layers', '12:18:24'),
-                ('--mt_hidden_size', '768:896:1024'),
-                ('--mt_num_attention_heads', '12:14:16'),
-                ('--mt_max_position_embeddings', '512:512:512'),
-                ('--teacher_fp16', None),
-            ]
-        },
-        # 用于 distill24.1024_18.896_12.768-6.768_rl_kd
-        'distill24.1024_18.896_12.768-6.768_rl_kd': {
-            'args': lambda t: [
-                ('--mt_load_pretrained', ':'.join([
-                    f'{ap}/checkpoints/pretrain/blocklm-base-blank',
-                    task_t_load['tune_221009_173050.702880'][t], 
-                    task_t_load['tune_221006_170005.145602'][t], 
-                    task_t_load['large'][t]])),
-                ('--mt_num_layers', '12:12:18:24'),
-                ('--mt_hidden_size', '768:768:896:1024'),
-                ('--mt_num_attention_heads', '12:12:14:16'),
-                ('--mt_max_position_embeddings', '512:512:512:512'),
-                ('--teacher_fp16', None),
-            ]
-        },
-        # 原版 TAKD 24.1024-18.896_64-15w_takd
-        'tune_221212_233738.203054': {
-            Tasks.copa: f'{ap}/checkpoints/pretrain/block_tiny6/ft_takd/COPA/blank-tiny6-COPA-221214_154201.333804',
-            Tasks.wsc_generative: f'{ap}/checkpoints/pretrain/block_tiny6/ft_takd/WSC/blank-tiny6-WSC_generative-221215_005937.087055',
-            Tasks.cb: f'{ap}/checkpoints/pretrain/block_tiny6/ft_takd/CB/blank-tiny6-CB-221214_204457.394140',
-            Tasks.rte: f'{ap}/checkpoints/pretrain/block_tiny6/ft_takd/RTE/blank-tiny6-RTE-221214_162224.145663',
-            Tasks.boolq: f'{ap}/checkpoints/pretrain/block_tiny6/ft_takd/BoolQ/blank-tiny6-BoolQ-221214_173040.746828',
-            Tasks.wic: f'{ap}/checkpoints/pretrain/block_tiny6/ft_takd/WiC/blank-tiny6-WiC-221214_191536.551846',
-            Tasks.multirc: f'{ap}/checkpoints/pretrain/block_tiny6/ft_takd/MultiRC/blank-tiny6-MultiRC-221214_205237.761535',
-            Tasks.wsc: f'{ap}/checkpoints/pretrain/block_tiny6/ft_takd/WSC/blank-tiny6-WSC-221214_160754.117964',
-            Tasks.record: f'{ap}/checkpoints/pretrain/block_tiny6/ft_takd/ReCoRD/blank-tiny6-ReCoRD-221212_233738.204790',
-            'args': lambda t: [
-                ('--teacher_load_pretrained', task_t_load['tune_221212_233738.203054'][t]),
-                ('--teacher_num_layers', '18'),
-                ('--teacher_hidden_size', '896'),
-                ('--teacher_num_attention_heads', '14'),
-                ('--teacher_max_position_embeddings', '512'),
-                ('--teacher_fp16', None),
-            ]
-        },
-        # 原版 TAKD 18.896-12.768_64-15w_takd
-        'tune_221220_170515.739218': {
-            Tasks.copa: f'{ap}/checkpoints/pretrain/block_tiny6/ft_takd/COPA/blank-tiny6-COPA-221221_134928.259289',
-            Tasks.wsc_generative: f'{ap}/checkpoints/pretrain/block_tiny6/ft_takd/WSC/blank-tiny6-WSC_generative-221221_170140.010836',
-            Tasks.cb: f'{ap}/checkpoints/pretrain/block_tiny6/ft_takd/CB/blank-tiny6-CB-221221_152338.505089',
-            Tasks.rte: f'{ap}/checkpoints/pretrain/block_tiny6/ft_takd/RTE/blank-tiny6-RTE-221221_140721.542324',
-            Tasks.boolq: f'{ap}/checkpoints/pretrain/block_tiny6/ft_takd/BoolQ/blank-tiny6-BoolQ-221221_142725.844600',
-            Tasks.wic: f'{ap}/checkpoints/pretrain/block_tiny6/ft_takd/WiC/blank-tiny6-WiC-221221_145722.722552',
-            Tasks.multirc: f'{ap}/checkpoints/pretrain/block_tiny6/ft_takd/MultiRC/blank-tiny6-MultiRC-221221_152626.996802',
-            Tasks.wsc: f'{ap}/checkpoints/pretrain/block_tiny6/ft_takd/WSC/blank-tiny6-WSC-221221_135944.222943',
-            Tasks.record: f'{ap}/checkpoints/pretrain/block_tiny6/ft_takd/ReCoRD/blank-tiny6-ReCoRD-221220_170515.739531',
-            'args': lambda t: [
-                ('--teacher_load_pretrained', task_t_load['tune_221220_170515.739218'][t]),
-                ('--teacher_num_layers', '12'),
-                ('--teacher_hidden_size', '768'),
-                ('--teacher_num_attention_heads', '12'),
-                ('--teacher_max_position_embeddings', '512'),
-                ('--teacher_fp16', None),
-            ]
-        },
-        # 221231
-        '24.1024,18.896-12.768_64-15w_dgkd': {
-            'args': lambda t: [
-                ('--mt_load_pretrained', ':'.join([
-                    task_t_load['tune_221212_233738.203054'][t], 
-                    task_t_load['large'][t]])),
-                ('--mt_num_layers', '18:24'),
-                ('--mt_hidden_size', '896:1024'),
-                ('--mt_num_attention_heads', '14:16'),
-                ('--mt_max_position_embeddings', '512:512'),
-                ('--teacher_fp16', None),
-            ]
-        },
-    }
+    with open(args.task_t_load_path, 'r', encoding='utf8') as r:
+        task_t_load = json.load(r)  # --teacher_load_pretrained / --mt_load_pretrained
+    def get_args_from_task_t_load(key, tn):
+        task_t_load_args = task_t_load[key]['args']
+        for i, a in enumerate(task_t_load_args):
+            if isinstance(a[1], list):
+                paths = [ap + (task_t_load[aa]['tasks'][tn] if aa in task_t_load else aa) for aa in a[1]]
+                task_t_load_args[i] = (a[0], ':'.join(paths))
+            else:
+                task_t_load_args[i] = tuple(a)
+        return task_t_load_args
 
     max_output_L = []
     max_output_path = f"{ap}/tmp/tune_{datetime.now().strftime('%y%m%d_%H%M%S.%f')}.json"
@@ -1256,7 +1004,7 @@ def auto_tune():
         py_args = create_cmd(**create_cmd_paras) + args_other
         if args.task_t_load:
             print('distill')
-            teacher_args = task_t_load[args.task_t_load]['args'](task)
+            teacher_args = get_args_from_task_t_load(args.task_t_load, tn)
             py_args_L.append(py_args + teacher_args)
             create_cmd_paras['env']['MODEL_PATH'] = os.path.join(OrderedDict(py_args)['--save'], OrderedDict(py_args)['--experiment-name'])
             for again in [f'again_{i}__' for i in range(10)]:
@@ -1275,7 +1023,7 @@ def auto_tune():
                 again_args, again_args_ = [], again_args
                 for k, v in again_args_:
                     if k == '--task_t_load':
-                        teacher_args_ = task_t_load[v]['args'](task)
+                        teacher_args_ = get_args_from_task_t_load(v, tn)
                     else:
                         again_args.append((k, v))
                 time.sleep(1.1)

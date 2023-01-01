@@ -2223,19 +2223,21 @@ class Continuation_KD(GLMStudent):
     def __init__(self, language_model, args, **kwargs):
         super().__init__(language_model, args, **kwargs)
 
-    def pre_loss(self, s_logits, t_logits, loss, **kwargs):
+    def pre_loss(self, s_logits, t_logits, loss, keep_batch=False, **kwargs):
         t = (1 - self.args.iteration / self.args.train_iters) * self.args.continuation_kd_max_t
         fai_t = 1 - (max(1, math.ceil(t)) - 1) / self.args.continuation_kd_max_t
         self.add_summary('pre_loss/fai_t', fai_t)
         psi = self.args.iteration / (self.args.continuation_kd_psi_denominator * self.args.train_iters)
         psi = 1 if self.args.iteration > self.args.continuation_kd_psi_sep * self.args.train_iters else psi
         self.add_summary('pre_loss/psi', psi)
-        loss_D = super().pre_loss(s_logits, t_logits, loss, return_dict=True, mse_t_w=fai_t, **kwargs)
+        loss_D = super().pre_loss(s_logits, t_logits, loss, return_dict=True, mse_t_w=fai_t, keep_batch=True, **kwargs)
         loss_ = 0.
         if 'hard' in loss_D and psi > 0:
             loss_ += psi * loss_D['hard']
         if 'soft' in loss_D and psi < 1:
-            loss_ += (1 - psi) * loss_D['soft']
+            loss_ += (1 - psi) * loss_D['soft'] * (loss_D['soft'] > self.args.continuation_kd_margin * fai_t)
+        if not keep_batch:
+            loss_ = loss_.mean()
         return loss_
 
 

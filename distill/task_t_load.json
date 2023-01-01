@@ -388,5 +388,27 @@
             ["--teacher_max_position_embeddings", "512"],
             ["--teacher_fp16", null]
         ]
+    },
+    "tune_221231_195438.588958": {
+        "comments": "ft45 24.1024-18.896_64-5w_glmd_takd bs=16 lr=1e-5 zpai2",
+        "tasks": {
+            "copa": "/checkpoints/distill/paper/24.1024-18.896_64-5w_glmd_takd/ft_glmd_takd/COPA/blank-tiny6-COPA-230101_130505.088985/ft_glmd_takd/COPA/blank-tiny6-COPA-230101_130506.190531",
+            "wsc_generative": "/checkpoints/distill/paper/24.1024-18.896_64-5w_glmd_takd/ft_glmd_takd/WSC/blank-tiny6-WSC_generative-230101_155143.665958/ft_glmd_takd/WSC/blank-tiny6-WSC_generative-230101_155144.767448",
+            "cb": "/checkpoints/distill/paper/24.1024-18.896_64-5w_glmd_takd/ft_glmd_takd/CB/blank-tiny6-CB-230101_143622.082123/ft_glmd_takd/CB/blank-tiny6-CB-230101_143623.183846",
+            "rte": "/checkpoints/distill/paper/24.1024-18.896_64-5w_glmd_takd/ft_glmd_takd/RTE/blank-tiny6-RTE-230101_132111.702244/ft_glmd_takd/RTE/blank-tiny6-RTE-230101_132112.803812",
+            "boolq": "/checkpoints/distill/paper/24.1024-18.896_64-5w_glmd_takd/ft_glmd_takd/BoolQ/blank-tiny6-BoolQ-230101_134044.474026/ft_glmd_takd/BoolQ/blank-tiny6-BoolQ-230101_134045.575479",
+            "wic": "/checkpoints/distill/paper/24.1024-18.896_64-5w_glmd_takd/ft_glmd_takd/WiC/blank-tiny6-WiC-230101_141122.751802/ft_glmd_takd/WiC/blank-tiny6-WiC-230101_141123.852288",
+            "multirc": "/checkpoints/distill/paper/24.1024-18.896_64-5w_glmd_takd/ft_glmd_takd/MultiRC/blank-tiny6-MultiRC-230101_143956.161111/ft_glmd_takd/MultiRC/blank-tiny6-MultiRC-230101_143957.262691",
+            "wsc": "/checkpoints/distill/paper/24.1024-18.896_64-5w_glmd_takd/ft_glmd_takd/WSC/blank-tiny6-WSC-230101_131428.242438/ft_glmd_takd/WSC/blank-tiny6-WSC-230101_131429.344023",
+            "record": "/checkpoints/distill/paper/24.1024-18.896_64-5w_glmd_takd/ft_glmd_takd/ReCoRD/blank-tiny6-ReCoRD-221231_195438.589266/ft_glmd_takd/ReCoRD/blank-tiny6-ReCoRD-221231_195439.690671"
+        },
+        "args": [
+            ["--teacher_load_pretrained", ["tune_221231_195438.588958"]],
+            ["--teacher_num_layers", "18"],
+            ["--teacher_hidden_size", "896"],
+            ["--teacher_num_attention_heads", "14"],
+            ["--teacher_max_position_embeddings", "512"],
+            ["--teacher_fp16", null]
+        ]
     }
 }

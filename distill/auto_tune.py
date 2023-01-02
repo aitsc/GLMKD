@@ -14,6 +14,7 @@ from tsc_base import put, get
 import traceback
 from change_mp import change_mp
 import math
+import copy
 
 ap = 'data'  # 总目录
 
@@ -954,7 +955,7 @@ def auto_tune():
     with open(args.task_t_load_path, 'r', encoding='utf8') as r:
         task_t_load = json.load(r)  # --teacher_load_pretrained / --mt_load_pretrained
     def get_args_from_task_t_load(key, tn):
-        task_t_load_args = task_t_load[key]['args']
+        task_t_load_args = copy.deepcopy(task_t_load[key]['args'])
         for i, a in enumerate(task_t_load_args):
             if isinstance(a[1], list):
                 paths = [ap + (task_t_load[aa]['tasks'][tn] if aa in task_t_load else aa) for aa in a[1]]

@@ -296,7 +296,7 @@ class RL_KD(AvgTeacher):
         self.agent_semantic_mt_loss = torch.nn.Linear(semantic_len + tn, tn)
         self.semantic_len = semantic_len
         # Teacher soft labels
-        class_dim = self.get_class_num() if self.get_class_num() else args.vocab_size
+        class_dim = self.get_class_num()
         if args.custom_logits_paralle:  # 注意这里教师序号等于是连续的
             self.agent_mt_soft = mpu.RowParallelLinear(class_dim * tn, tn, input_is_parallel=True)
         else:
@@ -311,7 +311,7 @@ class RL_KD(AvgTeacher):
         if self.args.task.lower() in DATASETS_CLASS_NUM and not self.args.custom_logits_paralle:
             return DATASETS_CLASS_NUM[self.args.task.lower()]
         else:
-            return 1
+            return self.args.vocab_size  # NLU task
 
     def is_multi_choice(self):
         # 满足 not self.args.custom_logits_paralle 和 wsc 就满足 self.args.wsc_negative

@@ -902,6 +902,7 @@ def auto_tune():
     py_parser.add_argument('--big_task_dsc_suffix', type=str, default='_big_task', help='大任务的 deepspeed_config 补充后缀')
     py_parser.add_argument('--show_tune', type=str, default='', help='只用来展示保存的tune文件,而不是运行')
     py_parser.add_argument('--rate_arg_epochs', type=float, default=1., help='倍率,对所有任务的epochs乘以这个倍率')
+    py_parser.add_argument('--del_checkpoint_activations', action='store_true', help='是否取消所有任务的--checkpoint-activations参数')
     # deepspeed_config 重构,会新建一个json文件用于模型调用
     # 多个值用英文分号分隔,与--tasks一一对应; 保证原始deepspeed配置文件中有对应值做类型转换; bool用有值和无值代替True/False
     py_parser.add_argument('--ds_train_micro_batch_size_per_gpu', type=str, default=None, help='')
@@ -1033,6 +1034,12 @@ def auto_tune():
             print()
         else:
             py_args_L.append(py_args)
+        # 删除 --checkpoint-activations 参数
+        if args.del_checkpoint_activations:
+            for i in range(len(py_args) - 1, -1, -1):
+                if py_args[i][0] == '--checkpoint-activations':
+                    del py_args[i]
+                    print('del --checkpoint-activations')
         # cmds 处理
         cmds = []
         for py_args in py_args_L:

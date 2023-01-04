@@ -429,7 +429,7 @@ def add_custom_args(parser: argparse.ArgumentParser):
     group.add_argument('--ignore_first_backward_gard', action='store_true', help='当forward_repeat_num大于0的时候是否忽略第1次反向传播的梯度,目前和梯度累积不兼容.可用于LRC_BERT的gradient perturbation等.evaluate时不考虑')
     group.add_argument('--ft_final_save', action='store_true', help='是否在微调的最后一轮保存模型,将覆盖best模型latest_checkpointed_iteration')
     group.add_argument('--save_interval_time', type=float, default=0, help='隔多少小时保存一次模型,大于0有效.可以和其他save参数一起使用')
-    group.add_argument('--args_to_ds_config', action='store_true', help='args里面的batch-size和gradient-accumulation-steps参数是否反向写入deepspeed配置文件,生成临时配置文件目录')
+    group.add_argument('--args_to_ds_config', action='store_true', help='args里面的 fp16/batch-size/gradient-accumulation-steps 参数是否反向写入deepspeed配置文件,生成临时配置文件目录')
     group.add_argument('--fix_variable_num_choices', action='store_true', help='对于一些多分类样本的nlu任务,使用这个保证每次样本的num_choices都保持一致.不够的0填充,多于max_candidates_per_question的则切掉尾部候选(尾部有标签的把标签放置在第0个)')
     # 注意: 以下可能和教师模型共享参数
     group.add_argument('--map_vocab_size', type=float, default=0, help='映射的词数量,蒸馏或读取模型文件时使用.0-1表示占vacab-size的比例')
@@ -461,6 +461,10 @@ def restructure_ds_config(args):
         has_change = True
         deepspeed_config["gradient_accumulation_steps"] = args.gradient_accumulation_steps
         print(f'>> ds.gradient_accumulation_steps -> {args.gradient_accumulation_steps}')
+    if args.fp16 != deepspeed_config.get('fp16', {}).get('enabled', {}):
+        has_change = True
+        deepspeed_config.setdefault('fp16', {})['enabled'] = args.fp16
+        print(f'>> ds.fp16.enabled -> {args.fp16}')
     if not has_change:
         return False
     args.deepspeed_config = os.path.join('tmp_deepspeed_config', generate_unique() + '.json')

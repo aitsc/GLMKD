@@ -447,6 +447,8 @@ class GLMStudent(torch.nn.Module):
 
 def unpacking_student_model(model, attrs=('origin_model', 'get_teacher_hook')):
     # 默认拆包 model 直到遇到 GLMStudent, 用于使用 GLMStudent 内部的函数, 或者修改 attrs 用于其他内部模型
+    if "<class 'deepspeed.runtime.engine.DeepSpeedEngine'>" in str(type(model)):
+        model = model.module
     while True:
         if sum([hasattr(model, a) for a in attrs]) == len(attrs):
             return model

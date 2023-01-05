@@ -341,6 +341,7 @@ def train_step(data_iterator, model, optimizer, lr_scheduler, args, timers, forw
                single_step=False, **kwargs):
     """Single training step."""
     lm_loss_total, count = 0.0, 0
+    args.current_gradient_accumulation_steps = 0
     mems = [] if mems is None else mems
     if not args.deepspeed:
         optimizer.zero_grad()
@@ -375,10 +376,12 @@ def train_step(data_iterator, model, optimizer, lr_scheduler, args, timers, forw
                     complete = True
                     if not (args.fp16 and optimizer.overflow):
                         lr_scheduler.step()
+                        args.current_gradient_accumulation_steps += 1
                     else:
                         skipped_iter = 1
                 else:
                     model.step()
+                    args.current_gradient_accumulation_steps += 1
             else:
                 if count == args.gradient_accumulation_steps:
                     optimizer.step()
@@ -388,6 +391,7 @@ def train_step(data_iterator, model, optimizer, lr_scheduler, args, timers, forw
                         lr_scheduler.step()
                     else:
                         skipped_iter = 1
+                args.current_gradient_accumulation_steps += 1
             # print_rank_0("Optimizer step")
             timers('optimizer').stop()
             if complete:
@@ -398,6 +402,7 @@ def train_step(data_iterator, model, optimizer, lr_scheduler, args, timers, forw
             mems = []
         if single_step:
             break
+    args.current_gradient_accumulation_steps = 0
     if args.deepspeed:
         lm_loss_total = lm_loss_total / count
     return lm_loss_total, skipped_iter, mems

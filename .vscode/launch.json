@@ -32,7 +32,7 @@
                 "--task-mask",
                 "--num-layers=36",
                 "--hidden-size=2048",
-                "--num-attention-heads=64",
+                "--num-attention-heads=32",
                 "--max-position-embeddings=1024",
                 "--tokenizer-type=GPT2BPETokenizer",
                 "--checkpoint-activations",
@@ -71,7 +71,12 @@
                 "--teacher_fp16",
                 // 蒸馏
                 // TinyBERT
-                "--student_model=tinybert",
+                // "--student_model=tinybert",
+                // "--num-attention-heads=64",
+                // GLMD
+                "--student_model=logitsdistil",
+                "--distill_temperature=15",
+                "--logitsdistil_mask_pad",
             ],
             "env": {
                 "NCCL_DEBUG":"info",

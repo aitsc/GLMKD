@@ -489,6 +489,7 @@ class BertBaseData(BertData):
 
 class BertLargeData(BertData):
     PATH = '/dataset/c07bd62b/cognitive/zhengxiao/formatted_one_article_per_line_large'
+    PATH = '../GLM/data/pretrain/bertlarge/wikibook_glm_10b.txt'
 
 
 class WuDaoCorpus(PromptReader):

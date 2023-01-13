@@ -903,8 +903,10 @@ def auto_tune():
     py_parser.add_argument('--show_tune', type=str, default='', help='只用来展示保存的tune文件,而不是运行')
     py_parser.add_argument('--rate_arg_epochs', type=float, default=1., help='倍率,对所有任务的epochs乘以这个倍率')
     py_parser.add_argument('--del_checkpoint_activations', action='store_true', help='是否取消所有任务的--checkpoint-activations参数')
+    py_parser.add_argument('--del_fp16', action='store_true', help='是否取消所有任务的--fp16参数,并自动修改deepconfig文件')
     # deepspeed_config 重构,会新建一个json文件用于模型调用
     # 多个值用英文分号分隔,与--tasks一一对应; 保证原始deepspeed配置文件中有对应值做类型转换; bool用有值和无值代替True/False
+    # 暂不支持 --args_to_ds_config
     py_parser.add_argument('--ds_train_micro_batch_size_per_gpu', type=str, default=None, help='')
     py_parser.add_argument('--ds_gradient_accumulation_steps', type=str, default=None, help='')
     py_parser.add_argument('--ds_optimizer__params__lr', type=str, default=None, help='')
@@ -1034,15 +1036,21 @@ def auto_tune():
             print()
         else:
             py_args_L.append(py_args)
-        # 删除 --checkpoint-activations 参数
-        if args.del_checkpoint_activations:
-            for i in range(len(py_args) - 1, -1, -1):
-                if py_args[i][0] == '--checkpoint-activations':
-                    del py_args[i]
-                    print('del --checkpoint-activations')
         # cmds 处理
         cmds = []
         for py_args in py_args_L:
+            # 删除参数
+            if args.del_checkpoint_activations:
+                for i in range(len(py_args) - 1, -1, -1):
+                    if py_args[i][0] == '--checkpoint-activations':
+                        del py_args[i]
+                        print('del --checkpoint-activations')
+            if args.del_fp16:
+                for i in range(len(py_args) - 1, -1, -1):
+                    if py_args[i][0] == '--fp16':
+                        del py_args[i]
+                        print('del --fp16')
+            # deepspeed_config 修改
             for i, (k, v) in enumerate(py_args):
                 if k in {'--deepspeed_config'} and v and os.path.exists(v):
                     with open(v, 'r', encoding='utf8') as r:
@@ -1063,6 +1071,10 @@ def auto_tune():
                         if origin_dsv == dsv:
                             continue
                         print(f'deepspeed_config: {key}: {origin_dsv} → {put(key, deepspeed_config, dsv)}')
+                        restructure = True
+                    if not args.del_fp16 != deepspeed_config.get('fp16', {}).get('enabled', {}):
+                        deepspeed_config.setdefault('fp16', {})['enabled'] = not args.del_fp16
+                        print(f'deepspeed_config: fp16.enabled: {args.del_fp16} → {not args.del_fp16}')
                         restructure = True
                     if restructure:
                         config_path = 'tmp_deepspeed_config'

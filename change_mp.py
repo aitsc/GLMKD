@@ -4,7 +4,7 @@ import torch
 import copy
 
 
-def change_mp(cp_path: str, target_mp: int):
+def change_mp(cp_path: str, target_mp: int, fix_module_parameters: set=None):
     checkpoint = cp_path
 
     assert os.path.isdir(checkpoint)
@@ -78,7 +78,9 @@ def change_mp(cp_path: str, target_mp: int):
                                 map_location='cpu')
                 for k, v in d_new['module'].items():
                     assert len(v.shape) < 3
-                    if len(v.shape) == 2 and 'position' not in k:
+                    if k in fix_module_parameters:
+                        d['module'][k] = v.clone()
+                    elif len(v.shape) == 2 and 'position' not in k:
                         if 'query' in k:
                             size_1 = d['module'][k].shape[0] // 3
                             size_2 = v.shape[0] // 3
@@ -128,7 +130,9 @@ def change_mp(cp_path: str, target_mp: int):
                 with torch.no_grad():
                     for k, v in d['module'].items():
                         assert len(v.shape) < 3
-                        if len(v.shape) == 2 and 'position' not in k:
+                        if k in fix_module_parameters:
+                            d_new['module'][k] = v.clone()
+                        elif len(v.shape) == 2 and 'position' not in k:
                             if 'query' in k:
                                 part = v.shape[0] // ratio // 3
                                 d_new['module'][k] = torch.cat([v[shift * part:(shift + 1) * part, :].clone(),

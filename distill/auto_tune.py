@@ -844,7 +844,7 @@ def create_cmd(script, model=None, model_pre=None, task=None, ds=False, gpus='6'
             ('NCCL_NET_GDR_LEVEL', '2'),
             ('deepspeed', None),
             ('--master_port', str(random.randint(10000, 60000))),
-            ('--include', f'localhost:{gpus}'),  # 占用显卡
+            ('--include', gpus if ':' in gpus else f'localhost:{gpus}'),  # 占用显卡
             ('--hostfile', ''),
         ])
     else:
@@ -904,6 +904,7 @@ def auto_tune():
     py_parser.add_argument('--rate_arg_epochs', type=float, default=1., help='倍率,对所有任务的epochs乘以这个倍率')
     py_parser.add_argument('--del_checkpoint_activations', action='store_true', help='是否取消所有任务的--checkpoint-activations参数')
     py_parser.add_argument('--del_fp16', action='store_true', help='是否取消所有任务的--fp16参数,并自动修改deepconfig文件')
+    py_parser.add_argument('--fix_module_parameters_mp', type=str, default='', help='用于模型并行切分模型的时候不改变某些module中的参数,英文分号分割.例如tinybert的student.fit_dense.weight;student.fit_dense.bias')
     # deepspeed_config 重构,会新建一个json文件用于模型调用
     # 多个值用英文分号分隔,与--tasks一一对应; 保证原始deepspeed配置文件中有对应值做类型转换; bool用有值和无值代替True/False
     # 暂不支持 --args_to_ds_config
@@ -1092,7 +1093,7 @@ def auto_tune():
                             py_args[i] = (py_args[i][0], v_)
             # 模型并行的自动切分, 不会修改 py_args_L
             py_args = OrderedDict(py_args)
-            if '--model-parallel-size' in py_args and int(py_args['--model-parallel-size']) > 1:
+            if '--model-parallel-size' in py_args:
                 mp = int(py_args['--model-parallel-size'])
                 for path_para in ['--load-pretrained', '--teacher_load_pretrained', '--mt_load_pretrained']:
                     if path_para not in py_args or not py_args[path_para]:
@@ -1102,11 +1103,19 @@ def auto_tune():
                     for i, path in enumerate(path_L):  # 兼容多教师
                         new_path = path
                         # 对于again_,它的--load-pretrained还不存在,所以不会被修改
-                        if os.path.exists(path) and path.strip(os.path.sep).split('_')[-1] != f'MP{mp}':
-                            new_path = path.strip(os.path.sep) + f'_MP{mp}'
+                        if os.path.exists(path) and path.strip(os.path.sep).split('_')[-1] != f'MP{mp}' and \
+                            (mp > 1 or re.search('^MP[0-9]+$', path.strip(os.path.sep).split('_')[-1])):
+                            new_path = re.sub(r'_MP[0-9]+$', '', path.strip(os.path.sep)) + (f'_MP{mp}' if mp > 1 else '')
                             if not os.path.exists(new_path):
                                 print(f'{i} {path_para} to (change_mp in progress): {new_path}')
-                                assert new_path == change_mp(path, mp)
+                                fix_module_parameters = set()
+                                if args.fix_module_parameters_mp:
+                                    fix_module_parameters = set(args.fix_module_parameters_mp.split(';'))
+                                    print('fix_module_parameters:', fix_module_parameters)
+                                new_path_ = change_mp(path, mp, fix_module_parameters)
+                                if new_path != new_path_:
+                                    os.rename(new_path_, new_path)
+                                    print(f'{new_path_} -> {new_path}')
                             else:
                                 print(f'{i} {path_para} to: {new_path}')
                         new_path_L.append(new_path)

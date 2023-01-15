@@ -7,7 +7,7 @@ It provides a flexible architecture to efficiently implement various language mo
 We have introduced techniques such as model parallelism ([Megatron-LM](https://github.com/NVIDIA/Megatron-LM)) and ZeRO ([DeepSpeed](https://github.com/microsoft/DeepSpeed)) in the toolkit to make it efficient for distilling very large models.
 
 ## Distillation Methods
-We briefly summarize here the 24 model distillation methods and 1 model compression method (ALBERT) that have been implemented by the toolkit.
+We briefly summarize here the 25 model distillation methods and 1 model compression method (ALBERT) that have been implemented by the toolkit.
 
 <img src="distill/img/methods.png" width = "500" alt="" align=center />
 
@@ -27,16 +27,17 @@ We briefly summarize here the 24 model distillation methods and 1 model compress
 [13] Aref Jafari, Mehdi Rezagholizadeh, Pranav Sharma, Ali Ghodsi. Annealing Knowledge Distillation[C]// EACL. 2021.
 [14] Geondo Park, Gyeongman Kim, Eunho Yang. Distilling Linguistic Context for Language Model Compression[C]// EMNLP. 2021: 364-378.
 [15] Yimeng Wu, Mehdi Rezagholizadeh, Abbas Ghaddar, Md. Akmal Haidar, Ali Ghodsi. Universal-KD: Attention-based Output-Grounded Intermediate Layer Knowledge Distillation[C]// EMNLP. 2021: 7649-7661.
-[16] Zhengxuan Wu, Atticus Geiger, Joshua Rozner, Elisa Kreiss, Hanson Lu, Thomas Icard, Christopher Potts, Noah D. Goodman. Causal Distillation for Language Models[C]// NAACL. 2022: 4288-4295.
-[17] Md. Akmal Haidar, Nithin Anchuri, Mehdi Rezagholizadeh, Abbas Ghaddar, Philippe Langlais, Pascal Poupart. RAIL-KD: RAndom Intermediate Layer Mapping for Knowledge Distillation[C]// NAACL. 2022: 1389-1400.
-[18] Chang Liu, Chongyang Tao, Jiazhan Feng, Dongyan Zhao. Multi-Granularity Structural Knowledge Distillation for Language Model Compression[C]// ACL. 2022: 1001-1011.
-[19] Ze Yang, Linjun Shou, Ming Gong, Wutao Lin, Daxin Jiang. Model Compression with Two-stage Multi-teacher Knowledge Distillation for Web Question Answering System[C]// WSDM. 2020: 690-698.
-[20] Chuhan Wu, Fangzhao Wu, Yongfeng Huang. One Teacher is Enough? Pre-trained Language Model Distillation from Multiple Teachers[C]// ACL. 2021: 4408-4413.
-[21] Fei Yuan, Linjun Shou, Jian Pei, Wutao Lin, Ming Gong, Yan Fu, Daxin Jiang. Reinforced Multi-Teacher Selection for Knowledge Distillation[C]// AAAI. 2021: 14284-14291.
-[22] Lei Li, Yankai Lin, Shuhuai Ren, Peng Li, Jie Zhou, Xu Sun. Dynamic Knowledge Distillation for Pre-trained Language Models[C]// EMNLP. 2021: 379-389.
-[23] Seyed-Iman Mirzadeh, Mehrdad Farajtabar, Ang Li, Nir Levine, Akihiro Matsukawa, Hassan Ghasemzadeh. Improved Knowledge Distillation via Teacher Assistant[C]// AAAI. 2020: 5191-5198.
-[24] Wonchul Son, Jaemin Na, Junyong Choi, Wonjun Hwang. Densely Guided Knowledge Distillation using Multiple Teacher Assistants[C]// ICCV. 2021: 9375-9384.
-[25] Zhenzhong Lan, Mingda Chen, Sebastian Goodman, Kevin Gimpel, Piyush Sharma, Radu Soricut. ALBERT: A Lite BERT for Self-supervised Learning of Language Representations[C]// ICLR. 2020.
+[16] Aref Jafari, Ivan Kobyzev, Mehdi Rezagholizadeh, Pascal Poupart, and Ali Ghodsi. Continuation-KD: Improved knowledge distillation through the lens of continuation optimization[C]//EMNLP. 2022
+[17] Zhengxuan Wu, Atticus Geiger, Joshua Rozner, Elisa Kreiss, Hanson Lu, Thomas Icard, Christopher Potts, Noah D. Goodman. Causal Distillation for Language Models[C]// NAACL. 2022: 4288-4295.
+[18] Md. Akmal Haidar, Nithin Anchuri, Mehdi Rezagholizadeh, Abbas Ghaddar, Philippe Langlais, Pascal Poupart. RAIL-KD: RAndom Intermediate Layer Mapping for Knowledge Distillation[C]// NAACL. 2022: 1389-1400.
+[19] Chang Liu, Chongyang Tao, Jiazhan Feng, Dongyan Zhao. Multi-Granularity Structural Knowledge Distillation for Language Model Compression[C]// ACL. 2022: 1001-1011.
+[20] Ze Yang, Linjun Shou, Ming Gong, Wutao Lin, Daxin Jiang. Model Compression with Two-stage Multi-teacher Knowledge Distillation for Web Question Answering System[C]// WSDM. 2020: 690-698.
+[21] Chuhan Wu, Fangzhao Wu, Yongfeng Huang. One Teacher is Enough? Pre-trained Language Model Distillation from Multiple Teachers[C]// ACL. 2021: 4408-4413.
+[22] Fei Yuan, Linjun Shou, Jian Pei, Wutao Lin, Ming Gong, Yan Fu, Daxin Jiang. Reinforced Multi-Teacher Selection for Knowledge Distillation[C]// AAAI. 2021: 14284-14291.
+[23] Lei Li, Yankai Lin, Shuhuai Ren, Peng Li, Jie Zhou, Xu Sun. Dynamic Knowledge Distillation for Pre-trained Language Models[C]// EMNLP. 2021: 379-389.
+[24] Seyed-Iman Mirzadeh, Mehrdad Farajtabar, Ang Li, Nir Levine, Akihiro Matsukawa, Hassan Ghasemzadeh. Improved Knowledge Distillation via Teacher Assistant[C]// AAAI. 2020: 5191-5198.
+[25] Wonchul Son, Jaemin Na, Junyong Choi, Wonjun Hwang. Densely Guided Knowledge Distillation using Multiple Teacher Assistants[C]// ICCV. 2021: 9375-9384.
+[26] Zhenzhong Lan, Mingda Chen, Sebastian Goodman, Kevin Gimpel, Piyush Sharma, Radu Soricut. ALBERT: A Lite BERT for Self-supervised Learning of Language Representations[C]// ICLR. 2020.
 ```
 
 ## Results

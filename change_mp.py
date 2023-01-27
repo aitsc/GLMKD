@@ -130,7 +130,7 @@ def change_mp(cp_path: str, target_mp: int, fix_module_parameters: set=None):
                 with torch.no_grad():
                     for k, v in d['module'].items():
                         assert len(v.shape) < 3
-                        if k in fix_module_parameters:
+                        if fix_module_parameters and k in fix_module_parameters:
                             d_new['module'][k] = v.clone()
                         elif len(v.shape) == 2 and 'position' not in k:
                             if 'query' in k:

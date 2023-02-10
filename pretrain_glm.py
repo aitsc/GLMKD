@@ -25,6 +25,7 @@ import torch.distributed
 from filelock import FileLock
 import numpy as np
 import torch
+import psutil
 
 import deepspeed
 from contextlib import ExitStack
@@ -39,7 +40,7 @@ from utils import save_checkpoint
 from utils import load_checkpoint
 from utils import report_memory
 from utils import print_and_save_args
-from utils import print_rank_0, get_distributed_formatted_time
+from utils import print_rank_0, get_distributed_formatted_time, look_memory_usage
 from utils import get_sample_writer, get_log_dir, get_hostname, ensure_directory_exists
 import torch.distributed as dist
 import json
@@ -274,7 +275,7 @@ def forward_step(data_iterator, model, args, timers, mems, **kwargs):
 report_iteration_metrics_num = 0
 def report_iteration_metrics(summary_writer, optimizer, lr, loss, elapsed_time, step, total_step, args, iter_loss=0):
     log_string = ' iteration {:8d}/{:8d} |'.format(step, total_step)
-    log_string += ' elapsed time per iteration (ms): {:.1f} |'.format(elapsed_time)
+    log_string += ' elapsed time per iteration/sample (ms): {:.1f}/{:.2f} |'.format(elapsed_time, elapsed_time / mpu.get_data_parallel_world_size())
     log_string += ' learning rate {:.3E} |'.format(lr)
     log_string += ' lm loss {:.6E} |'.format(loss)
     if args.fp16:
@@ -350,6 +351,7 @@ def train(model, optimizer, lr_scheduler,
     report_memory_flag = True
     mems = []
     save_checkpoint(0, model, optimizer, lr_scheduler, args)
+    look_memory_usage()
     current_time = get_distributed_formatted_time(True)
     while args.iteration < args.train_iters:
 
@@ -410,6 +412,8 @@ def train(model, optimizer, lr_scheduler,
                 prefix, val_data_iterator, model, args, timers, verbose=False, step=args.iteration,
                 summary_writer=summary_writer, forward_step_func=forward_step_func)
 
+    look_memory_usage()
+    print_rank_0(set_gpu(return_more=True))
     return args.iteration, skipped_iters
 
 

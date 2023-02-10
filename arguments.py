@@ -429,7 +429,9 @@ def add_custom_args(parser: argparse.ArgumentParser):
     group.add_argument('--ignore_first_backward_gard', action='store_true', help='当forward_repeat_num大于0的时候是否忽略第1次反向传播的梯度,目前和梯度累积不兼容.可用于LRC_BERT的gradient perturbation等.evaluate时不考虑')
     group.add_argument('--ft_final_save', action='store_true', help='是否在微调的最后一轮保存模型,将覆盖best模型latest_checkpointed_iteration')
     group.add_argument('--save_interval_time', type=float, default=0, help='隔多少小时保存一次模型,大于0有效.可以和其他save参数一起使用')
-    group.add_argument('--args_to_ds_config', action='store_true', help='args里面的 fp16/batch-size/gradient-accumulation-steps 参数是否反向写入deepspeed配置文件,生成临时配置文件目录')
+    group.add_argument('--zero_stage', type=int, default=0, help='zero_optimization.stage')
+    group.add_argument('--cpu_offload', action='store_true', help='zero_optimization.cpu_offload, zero_stage=1/2/3')
+    group.add_argument('--args_to_ds_config', action='store_true', help='args里面的 fp16/batch-size/gradient-accumulation-steps/zero_stage/cpu_offload 参数是否反向写入deepspeed配置文件,生成临时配置文件目录')
     group.add_argument('--fix_variable_num_choices', action='store_true', help='对于一些多分类样本的nlu任务,使用这个保证每次样本的num_choices都保持一致.不够的0填充,多于max_candidates_per_question的则切掉尾部候选(尾部有标签的把标签放置在第0个)')
     group.add_argument('--current_gradient_accumulation_steps', type=int, default=0, help='记录当前的gas,自动分配不用设置')
     # 注意: 以下可能和教师模型共享参数
@@ -466,6 +468,30 @@ def restructure_ds_config(args):
         has_change = True
         deepspeed_config.setdefault('fp16', {})['enabled'] = args.fp16
         print(f'>> ds.fp16.enabled -> {args.fp16}')
+    zero_stage = deepspeed_config.get('zero_optimization', {}).get('stage', {})
+    zero_stage = zero_stage if isinstance(zero_stage, int) else 0
+    if args.zero_stage != zero_stage:
+        has_change = True
+        if 'zero_optimization' not in deepspeed_config:
+            deepspeed_config['zero_optimization'] = {
+                'stage': args.zero_stage,
+                'contiguous_gradients': False,
+                'overlap_comm': True,
+                'reduce_scatter': True,
+                'reduce_bucket_size': 5e7,
+                'allgather_bucket_size': 5e7,
+                'cpu_offload': False,
+            }
+            deepspeed_config['zero_allow_untested_optimizer'] = True
+            print(f'>> ds.zero_optimization.zero_allow_untested_optimizer -> True')
+        else:
+            deepspeed_config['zero_optimization']['stage'] = args.zero_stage
+        zero_stage = args.zero_stage
+        print(f'>> ds.zero_optimization.stage -> {args.zero_stage}')
+    if args.cpu_offload != deepspeed_config.get('zero_optimization', {}).get('cpu_offload', {}) and zero_stage > 0:
+        has_change = True
+        deepspeed_config.setdefault('zero_optimization', {})['cpu_offload'] = args.cpu_offload
+        print(f'>> ds.zero_optimization.cpu_offload -> {args.cpu_offload}')
     if not has_change:
         return False
     args.deepspeed_config = os.path.join('tmp_deepspeed_config', generate_unique() + '.json')

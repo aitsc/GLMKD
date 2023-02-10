@@ -65,6 +65,7 @@ def get_args():
     py_parser.add_argument('--teacher_compress_word_emb', type=int, default=0)
     py_parser.add_argument('--teacher_map_vocab_size', type=float, default=0)
     py_parser.add_argument('--teacher_cross_layer_parameter_sharing', action='store_true')
+    py_parser.add_argument('--teacher_random_para', action='store_true', help='随机填充教师的参数用于测试,但是teacher_load_pretrained/mt_load_pretrained之类的参数还是要填充无意义的路径,不影响mt_load_from_s')
 
     # tinybert
     py_parser.add_argument('--tinybert_inter_final', action='store_true', help="只使用最后隐层做损失")
@@ -199,7 +200,7 @@ def get_args():
     py_parser.add_argument('--mt_has_loss', action='store_true', help='是否每个教师都需要计算最终loss,配合某些多教师模型')
     py_parser.add_argument('--mt_has_grad', action='store_true', help='是否每个教师都需要梯度,是的话教师模型会作为学生模型的一部分进行更新')
     py_parser.add_argument('--student_use_empty_glm', action='store_true', help='学生模型中的glm模型置空,可配合mt_has_grad训练活的多教师')
-    py_parser.add_argument('--mt_load_from_s', type=str, default=None, help='从整合多教师模型的学生模型路径中加载多教师的参数,将替代teacher_/mt_load_pretrained,mt_*参数中多教师顺序与当初保存的要一致')
+    py_parser.add_argument('--mt_load_from_s', type=str, default=None, help='从整合多教师的模型的学生模型路径中加载多教师的参数,将替代teacher_/mt_load_pretrained,mt_*参数中多教师顺序与当初保存的要一致')
     # default
     py_parser.add_argument('--avgmt_inter_checkpoint', action='store_true')
     py_parser.add_argument('--avgmt_pre_checkpoint', action='store_true')
@@ -305,7 +306,10 @@ def get_teacher_model(args, **kwargs):
             print_rank_0(f'mt_load_from_s: student.teacher_model_{i}')
         else:
             sd_ = None
-        load_pretrained(teacher_model, args.load_pretrained, args, sd=sd_)
+        if args.teacher_random_para and sd_ is None:
+            print_rank_0(' > 使用随机的教师参数!')
+        else:
+            load_pretrained(teacher_model, args.load_pretrained, args, sd=sd_)
         if not args.mt_has_grad:
             teacher_model.eval()
         teacher_models.append(teacher_model)

@@ -113,6 +113,28 @@
             ["--teacher_fp16", null]
         ]
     },
+    "2b": {
+        "comments": "",
+        "tasks": {
+            "copa": "/checkpoints/pretrain/blocklm-2b-512/finetune/COPA/blocklm-10B-COPA-230105_163246.695625",
+            "wsc_generative": "/checkpoints/pretrain/blocklm-2b-512/finetune/WSC/blocklm-10B-WSC_generative-230106_194553.687563",
+            "cb": "/checkpoints/pretrain/blocklm-2b-512/finetune/CB/blocklm-10B-CB-230106_071846.567972",
+            "rte": "/checkpoints/pretrain/blocklm-2b-512/finetune/RTE/blocklm-10B-RTE-230105_183050.824891",
+            "boolq": "/checkpoints/pretrain/blocklm-2b-512/finetune/BoolQ/blocklm-10B-BoolQ-230105_215248.694230",
+            "wic": "/checkpoints/pretrain/blocklm-2b-512/finetune/WiC/blocklm-10B-WiC-230106_025856.266341",
+            "multirc": "/checkpoints/pretrain/blocklm-2b-512/finetune/MultiRC/blocklm-10B-MultiRC-230106_074527.670288",
+            "wsc": "/checkpoints/pretrain/blocklm-2b-512/finetune/WSC/blocklm-10B-WSC-230105_174925.529740",
+            "record": "/checkpoints/pretrain/blocklm-2b-512/finetune/ReCoRD/blocklm-10B-ReCoRD-230103_133234.493239"
+        },
+        "args": [
+            ["--teacher_load_pretrained", ["2b"]],
+            ["--teacher_num_layers", "36"],
+            ["--teacher_hidden_size", "2048"],
+            ["--teacher_num_attention_heads", "32"],
+            ["--teacher_max_position_embeddings", "1024"],
+            ["--teacher_fp16", null]
+        ]
+    },
     "base_large": {
         "comments": "",
         "args": [

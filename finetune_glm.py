@@ -18,7 +18,7 @@ import torch
 import torch.utils.data
 from configure_data import prepare_tokenizer
 
-from utils import print_rank_0, get_distributed_formatted_time
+from utils import print_rank_0, get_distributed_formatted_time, look_memory_usage
 from utils import Timers
 from train_utils import setup_model_and_optimizer, train_step, load_pretrained
 from utils import load_checkpoint, save_checkpoint
@@ -207,6 +207,7 @@ def _train(model, optimizer, lr_scheduler, forward_step,
     if not args.block_lm_ratio:
         valid_dataloader = valid_dataloader[0]
     # For each remaining epoch
+    look_memory_usage()
     timers('interval time').start()
     current_time = get_distributed_formatted_time(True)
     for epoch in range(start_epoch, args.epochs):
@@ -313,6 +314,7 @@ def _train(model, optimizer, lr_scheduler, forward_step,
                             output.write(json.dumps(score_dict) + "\n")
                         with open(os.path.join(args.save, "best_checkpointed_iteration.txt"), "w") as output:
                             output.write(str(best_iteration))
+    look_memory_usage()
     if args.save and args.ft_final_save:
         save_checkpoint(args.iteration, model, optimizer, lr_scheduler, args, barrier=False,
                         only_changed_parameters=True, no_deepspeed=True, no_save_optim=True)

@@ -22,6 +22,8 @@ import numpy as np
 import torch
 import json
 import subprocess
+import gc
+import psutil
 
 from fp16 import FP16_Optimizer
 import mpu
@@ -71,6 +73,36 @@ def print_rank_0(message):
             print(message, flush=True)
     else:
         print(message, flush=True)
+
+
+def look_memory_usage(message='see_memory_usage'):
+    # from deepspeed.runtime.utils import see_memory_usage
+    gc.collect()
+    
+    used_mem = psutil.Process(os.getpid()).memory_info().rss / 1024**3
+    world_size = torch.distributed.get_world_size()
+    if world_size > 1:
+        used_mem = torch.tensor(used_mem, device=torch.cuda.current_device())
+        tensor_list = [torch.empty_like(used_mem) for _ in range(world_size)]
+        tensor_list[torch.distributed.get_rank()] = used_mem
+        torch.distributed.all_gather(tensor_list, used_mem)
+        used_mems = torch.tensor(tensor_list).tolist()
+    else:
+        used_mems = [used_mem]
+        
+    mem = {
+        'MA': torch.cuda.memory_allocated() / 1024**3,
+        'Max_MA': torch.cuda.max_memory_allocated() / 1024**3,
+        'CA': torch.cuda.memory_cached() / 1024**3,
+        'Max_CA': torch.cuda.max_memory_cached() / 1024**3,
+        'VM': sum(used_mems),
+        'VMs': used_mems,
+    }
+    if message:
+        print_rank_0(f' > {message} (GB)')
+        print_rank_0({k: round(mem[k], 2) for k in ['MA', 'Max_MA', 'CA', 'Max_CA', 'VM']})
+        print_rank_0({'VMs': [round(k, 2) for k in mem['VMs']]})
+    return mem
 
 
 def get_hostname():

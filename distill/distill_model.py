@@ -347,7 +347,7 @@ class GLMStudent(torch.nn.Module):
     def is_summary_available(self):
         if self.summary_writer is None or not self.summary_loss:
             return False
-        if self.args.current_gradient_accumulation_steps != self.args.gradient_accumulation_steps - 1:
+        if self.args.current_gradient_accumulation_steps != self.args.gradient_accumulation_steps - 1 and not self.args.single_step:
             return False  # 只记录最后一次迭代的结果
         if (self.args.iteration + 1) % self.args.log_interval == 0:
             return True

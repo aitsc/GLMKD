@@ -339,6 +339,7 @@ def see_memory_usage(message, force=False):
 
 def train_step(data_iterator, model, optimizer, lr_scheduler, args, timers, forward_step_func, mems=None,
                single_step=False, **kwargs):
+    args.single_step = single_step
     """Single training step."""
     lm_loss_total, count = 0.0, 0
     args.current_gradient_accumulation_steps = 0

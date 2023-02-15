@@ -277,7 +277,7 @@ def report_iteration_metrics(summary_writer, optimizer, lr, loss, elapsed_time, 
     log_string = ' iteration {:8d}/{:8d} |'.format(step, total_step)
     log_string += ' elapsed time per iteration/sample (ms): {:.1f}/{:.2f} |'.format(
         elapsed_time, 
-        elapsed_time / mpu.get_data_parallel_world_size() / (1 if args.single_step else args.gradient_accumulation_steps)
+        elapsed_time / mpu.get_data_parallel_world_size() / (1 if args.single_step else args.gradient_accumulation_steps) / args.batch_size
     )
     log_string += ' learning rate {:.3E} |'.format(lr)
     log_string += ' lm loss {:.6E} |'.format(loss)

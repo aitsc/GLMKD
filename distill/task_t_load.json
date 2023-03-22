@@ -519,5 +519,82 @@
             ["--teacher_max_position_embeddings", "512"],
             ["--teacher_fp16", null]
         ]
+    },
+    "tune_230216_113127.287433": {
+        "comments": "GLMD TAKD 24.1024-18.896_64-15w_glmd_takd",
+        "tasks": {
+            "copa": "/checkpoints/distill/paper/24.1024-18.896_64-15w_glmd_takd/ft_glmd_takd/COPA/blank-tiny6-COPA-230217_101140.374680/ft_glmd_takd/COPA/blank-tiny6-COPA-230217_101141.476473",
+            "wsc_generative": "/checkpoints/distill/paper/24.1024-18.896_64-15w_glmd_takd/ft_glmd_takd/WSC/blank-tiny6-WSC_generative-230217_160414.306633/ft_glmd_takd/WSC/blank-tiny6-WSC_generative-230217_160415.407331",
+            "cb": "/checkpoints/distill/paper/24.1024-18.896_64-15w_glmd_takd/ft_glmd_takd/CB/blank-tiny6-CB-230217_132550.141052/ft_glmd_takd/CB/blank-tiny6-CB-230217_132551.242656",
+            "rte": "/checkpoints/distill/paper/24.1024-18.896_64-15w_glmd_takd/ft_glmd_takd/RTE/blank-tiny6-RTE-230217_104318.372052/ft_glmd_takd/RTE/blank-tiny6-RTE-230217_104319.474274",
+            "boolq": "/checkpoints/distill/paper/24.1024-18.896_64-15w_glmd_takd/ft_glmd_takd/BoolQ/blank-tiny6-BoolQ-230217_112638.124502/ft_glmd_takd/BoolQ/blank-tiny6-BoolQ-230217_112639.226508",
+            "wic": "/checkpoints/distill/paper/24.1024-18.896_64-15w_glmd_takd/ft_glmd_takd/WiC/blank-tiny6-WiC-230217_123024.014654/ft_glmd_takd/WiC/blank-tiny6-WiC-230217_123025.116297",
+            "multirc": "/checkpoints/distill/paper/24.1024-18.896_64-15w_glmd_takd/ft_glmd_takd/MultiRC/blank-tiny6-MultiRC-230217_133308.359894/ft_glmd_takd/MultiRC/blank-tiny6-MultiRC-230217_133309.461786",
+            "wsc": "/checkpoints/distill/paper/24.1024-18.896_64-15w_glmd_takd/ft_glmd_takd/WSC/blank-tiny6-WSC-230217_103035.625014/ft_glmd_takd/WSC/blank-tiny6-WSC-230217_103036.726336",
+            "record": "/checkpoints/distill/paper/24.1024-18.896_64-15w_glmd_takd/ft_glmd_takd/ReCoRD/blank-tiny6-ReCoRD-230216_113127.287597/ft_glmd_takd/ReCoRD/blank-tiny6-ReCoRD-230216_113128.391058"
+        },
+        "args": [
+            ["--teacher_load_pretrained", ["tune_230216_113127.287433"]],
+            ["--teacher_num_layers", "18"],
+            ["--teacher_hidden_size", "896"],
+            ["--teacher_num_attention_heads", "14"],
+            ["--teacher_max_position_embeddings", "512"],
+            ["--teacher_fp16", null]
+        ]
+    },
+    "tune_230217_193040.926421": {
+        "comments": "GLMD TAKD 18.896-12.768_64-15w_takd",
+        "tasks": {
+            "copa": "/checkpoints/distill/paper/18.896-12.768_64-15w_glmd_takd/ft_glmd_takd/COPA/blank-tiny6-COPA-230218_084631.215339/ft_glmd_takd/COPA/blank-tiny6-COPA-230218_084632.317148",
+            "wsc_generative": "/checkpoints/distill/paper/18.896-12.768_64-15w_glmd_takd/ft_glmd_takd/WSC/blank-tiny6-WSC_generative-230218_131757.559423/ft_glmd_takd/WSC/blank-tiny6-WSC_generative-230218_131758.661661",
+            "cb": "/checkpoints/distill/paper/18.896-12.768_64-15w_glmd_takd/ft_glmd_takd/CB/blank-tiny6-CB-230218_112307.373399/ft_glmd_takd/CB/blank-tiny6-CB-230218_112308.475100",
+            "rte": "/checkpoints/distill/paper/18.896-12.768_64-15w_glmd_takd/ft_glmd_takd/RTE/blank-tiny6-RTE-230218_091157.070202/ft_glmd_takd/RTE/blank-tiny6-RTE-230218_091158.173169",
+            "boolq": "/checkpoints/distill/paper/18.896-12.768_64-15w_glmd_takd/ft_glmd_takd/BoolQ/blank-tiny6-BoolQ-230218_094732.471603/ft_glmd_takd/BoolQ/blank-tiny6-BoolQ-230218_094733.573367",
+            "wic": "/checkpoints/distill/paper/18.896-12.768_64-15w_glmd_takd/ft_glmd_takd/WiC/blank-tiny6-WiC-230218_103846.106391/ft_glmd_takd/WiC/blank-tiny6-WiC-230218_103847.208035",
+            "multirc": "/checkpoints/distill/paper/18.896-12.768_64-15w_glmd_takd/ft_glmd_takd/MultiRC/blank-tiny6-MultiRC-230218_112939.527355/ft_glmd_takd/MultiRC/blank-tiny6-MultiRC-230218_112940.628778",
+            "wsc": "/checkpoints/distill/paper/18.896-12.768_64-15w_glmd_takd/ft_glmd_takd/WSC/blank-tiny6-WSC-230218_090233.824087/ft_glmd_takd/WSC/blank-tiny6-WSC-230218_090234.925330",
+            "record": "/checkpoints/distill/paper/18.896-12.768_64-15w_glmd_takd/ft_glmd_takd/ReCoRD/blank-tiny6-ReCoRD-230217_193040.926837/ft_glmd_takd/ReCoRD/blank-tiny6-ReCoRD-230217_193042.028389"
+        },
+        "args": [
+            ["--teacher_load_pretrained", ["tune_230217_193040.926421"]],
+            ["--teacher_num_layers", "12"],
+            ["--teacher_hidden_size", "768"],
+            ["--teacher_num_attention_heads", "12"],
+            ["--teacher_max_position_embeddings", "512"],
+            ["--teacher_fp16", null]
+        ]
+    },
+    "for_24.1024,18.896-12.768_64-15w_glmd_dgkd": {
+        "comments": "230220",
+        "args": [
+            ["--mt_load_pretrained", ["tune_230216_113127.287433", "large"]],
+            ["--mt_num_layers", "18:24"],
+            ["--mt_hidden_size", "896:1024"],
+            ["--mt_num_attention_heads", "14:16"],
+            ["--mt_max_position_embeddings", "512:512"],
+            ["--teacher_fp16", null]
+        ]
+    },
+    "for_24.1024,18.896,12.768-6.768_64-15w_glmd_dgkd": {
+        "comments": "230221,内部task是24.1024,18.896,12.768-6.768_64-15w_glmd_dgkd的结果",
+        "tasks": {
+            "copa": "/checkpoints/distill/paper/24.1024,18.896-12.768_64-15w_glmd_dgkd/ft_glmd_dgkd/COPA/blank-tiny6-COPA-230220_211726.375614/ft_glmd_dgkd/COPA/blank-tiny6-COPA-230220_211727.476343",
+            "wsc_generative": "/checkpoints/distill/paper/24.1024,18.896-12.768_64-15w_glmd_dgkd/ft_glmd_dgkd/WSC/blank-tiny6-WSC_generative-230221_023219.794734/ft_glmd_dgkd/WSC/blank-tiny6-WSC_generative-230221_023220.896526",
+            "cb": "/checkpoints/distill/paper/24.1024,18.896-12.768_64-15w_glmd_dgkd/ft_glmd_dgkd/CB/blank-tiny6-CB-230221_001722.197453/ft_glmd_dgkd/CB/blank-tiny6-CB-230221_001723.299268",
+            "rte": "/checkpoints/distill/paper/24.1024,18.896-12.768_64-15w_glmd_dgkd/ft_glmd_dgkd/RTE/blank-tiny6-RTE-230220_214555.344790/ft_glmd_dgkd/RTE/blank-tiny6-RTE-230220_214556.446557",
+            "boolq": "/checkpoints/distill/paper/24.1024,18.896-12.768_64-15w_glmd_dgkd/ft_glmd_dgkd/BoolQ/blank-tiny6-BoolQ-230220_222649.835053/ft_glmd_dgkd/BoolQ/blank-tiny6-BoolQ-230220_222650.936947",
+            "wic": "/checkpoints/distill/paper/24.1024,18.896-12.768_64-15w_glmd_dgkd/ft_glmd_dgkd/WiC/blank-tiny6-WiC-230220_232624.924364/ft_glmd_dgkd/WiC/blank-tiny6-WiC-230220_232626.026152",
+            "multirc": "/checkpoints/distill/paper/24.1024,18.896-12.768_64-15w_glmd_dgkd/ft_glmd_dgkd/MultiRC/blank-tiny6-MultiRC-230221_002540.922144/ft_glmd_dgkd/MultiRC/blank-tiny6-MultiRC-230221_002542.023506",
+            "wsc": "/checkpoints/distill/paper/24.1024,18.896-12.768_64-15w_glmd_dgkd/ft_glmd_dgkd/WSC/blank-tiny6-WSC-230220_213543.426039/ft_glmd_dgkd/WSC/blank-tiny6-WSC-230220_213544.528305",
+            "record": "/checkpoints/distill/paper/24.1024,18.896-12.768_64-15w_glmd_dgkd/ft_glmd_dgkd/ReCoRD/blank-tiny6-ReCoRD-230220_111842.215644/ft_glmd_dgkd/ReCoRD/blank-tiny6-ReCoRD-230220_111843.317311"
+        },
+        "args": [
+            ["--mt_load_pretrained", ["for_24.1024,18.896,12.768-6.768_64-15w_glmd_dgkd" ,"tune_230216_113127.287433", "large"]],
+            ["--mt_num_layers", "12:18:24"],
+            ["--mt_hidden_size", "768:896:1024"],
+            ["--mt_num_attention_heads", "12:14:16"],
+            ["--mt_max_position_embeddings", "512:512:512"],
+            ["--teacher_fp16", null]
+        ]
     }
 }

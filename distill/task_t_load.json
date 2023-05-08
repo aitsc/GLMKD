@@ -55,7 +55,8 @@
             "wic": "/checkpoints/pretrain/blocklm-large-blank/finetune/WiC/blank-large-WiC-220813_142454",
             "multirc": "/checkpoints/pretrain/blocklm-large-blank/finetune/MultiRC/blank-large-MultiRC-220813_152437",
             "wsc": "/checkpoints/pretrain/blocklm-large-blank/finetune/WSC/blank-large-WSC-220813_150605",
-            "record": "/checkpoints/pretrain/blocklm-large-blank/finetune/ReCoRD/blank-large-ReCoRD-220813_190003"
+            "record": "/checkpoints/pretrain/blocklm-large-blank/finetune/ReCoRD/blank-large-ReCoRD-220813_190003",
+            "seq_cnndm_org": "/checkpoints/pretrain/blocklm-large-blank/finetune_seq2seq/cnn_dm_original/blank-large-cnn_dm_original-230417_230154.774370"
         },
         "args": [
             ["--teacher_load_pretrained", ["large"]],
@@ -124,7 +125,8 @@
             "wic": "/checkpoints/pretrain/blocklm-2b-512/finetune/WiC/blocklm-10B-WiC-230106_025856.266341",
             "multirc": "/checkpoints/pretrain/blocklm-2b-512/finetune/MultiRC/blocklm-10B-MultiRC-230106_074527.670288",
             "wsc": "/checkpoints/pretrain/blocklm-2b-512/finetune/WSC/blocklm-10B-WSC-230105_174925.529740",
-            "record": "/checkpoints/pretrain/blocklm-2b-512/finetune/ReCoRD/blocklm-10B-ReCoRD-230103_133234.493239"
+            "record": "/checkpoints/pretrain/blocklm-2b-512/finetune/ReCoRD/blocklm-10B-ReCoRD-230103_133234.493239",
+            "seq_cnndm_org": "/checkpoints/pretrain/blocklm-2b-512/finetune_seq2seq/cnn_dm_original/blocklm-10B-cnn_dm_original-230424_160836.317962"
         },
         "args": [
             ["--teacher_load_pretrained", ["2b"]],

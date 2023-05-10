@@ -241,6 +241,11 @@ def _train(model, optimizer, lr_scheduler, forward_step,
         if mpu.get_model_parallel_rank() == 0:
             train_dataloader[0].sampler.set_epoch(args.seed + epoch)
 
+        if summary_writer is not None:
+            for k, v in list(model.state_dict().items()):
+                name = '/'.join(k.split('.', 1))
+                summary_writer.add_scalar(name, v.mean().item(), args.iteration)
+
         # For all the batches in the dataset.
         for iteration_, batch in enumerate(train_dataloader[0]):
 

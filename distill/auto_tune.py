@@ -1077,6 +1077,10 @@ def auto_tune():
                         deepspeed_config.setdefault('fp16', {})['enabled'] = not args.del_fp16
                         print(f'deepspeed_config: fp16.enabled: {args.del_fp16} → {not args.del_fp16}')
                         restructure = True
+                    if args.del_fp16 and 'zero_optimization' in deepspeed_config:  # fp32 不使用zero
+                        del deepspeed_config['zero_optimization']
+                        print(f'deepspeed_config: zero_optimization: del')
+                        restructure = True
                     if restructure:
                         config_path = 'tmp_deepspeed_config'
                         if not os.path.exists(config_path):

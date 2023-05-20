@@ -1,0 +1,456 @@
+[
+    {
+      "args": {
+        "save": "../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad/ft_logitsdistil/ReCoRD/blank-tiny6-ReCoRD-221217_224626.762940",
+        "epochs": 5,
+        "iteration": 86770,
+        "task": "ReCoRD",
+        "wsc_negative": false
+      },
+      "now": "2022-12-18 07:05:29.796987",
+      "max_score_dict": {
+        "EM": {
+          "epoch": 4,
+          "iteration": 86770,
+          "score_dict": {
+            "EM": 67.64,
+            "F1": 68.34895238095248
+          }
+        },
+        "F1": {
+          "epoch": 4,
+          "iteration": 86770,
+          "score_dict": {
+            "EM": 67.64,
+            "F1": 68.34895238095248
+          }
+        }
+      },
+      "epoch": -1,
+      "*cmd": "NCCL_DEBUG=info NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2 deepspeed --master_port=21001 --include=localhost:4,5 --hostfile= distill/finetune.py --finetune --cloze-eval --experiment-name=blank-tiny6-ReCoRD-221217_224626.762940 --task=ReCoRD --data-dir=../GLM/data/english_data/superglue/ReCoRD --save=../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad/ft_logitsdistil/ReCoRD --seq-length=512 --checkpoint-activations --eval-batch-size=16 --save-epoch=100000 --block-lm --num-layers=6 --hidden-size=768 --num-attention-heads=12 --max-position-embeddings=512 --tokenizer-model-type=bert-base-uncased --tokenizer-type=BertWordPieceTokenizer --load-pretrained=../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad --fp16 --lr-decay-style=linear --warmup=0.1 --weight-decay=1.0e-1 --pattern-id=0 --save-interval=10000 --log-interval=50 --eval-interval=1000 --eval-iters=100 --batch-size=8 --epochs=5 --lr=1e-5 --overwrite --deepspeed-activation-checkpointing --deepspeed --deepspeed_config=tmp_deepspeed_config/221217_224627.866993_3775906575000868.json --student_model=logitsdistil --distill_temperature=15 --logitsdistil_mask_pad --seed=1234 --teacher_load_pretrained=../GLM/data/checkpoints/pretrain/blocklm-base-blank/finetune/ReCoRD/blank-base-ReCoRD-220813_083745 --teacher_num_layers=12 --teacher_hidden_size=768 --teacher_num_attention_heads=12 --teacher_max_position_embeddings=512 --teacher_fp16 --custom_tmp_result=../GLM/data/tmp/result_221217_224627.873028.json"
+    },
+    {
+      "args": {
+        "save": "../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad/ft_logitsdistil/ReCoRD/blank-tiny6-ReCoRD-221217_224626.762940/ft_logitsdistil/ReCoRD/blank-tiny6-ReCoRD-221217_224627.864403",
+        "epochs": 5,
+        "iteration": 86770,
+        "task": "ReCoRD",
+        "wsc_negative": false
+      },
+      "now": "2022-12-18 13:18:10.591611",
+      "max_score_dict": {
+        "EM": {
+          "epoch": 4,
+          "iteration": 86770,
+          "score_dict": {
+            "EM": 67.8,
+            "F1": 68.53599350649358
+          }
+        },
+        "F1": {
+          "epoch": 4,
+          "iteration": 86770,
+          "score_dict": {
+            "EM": 67.8,
+            "F1": 68.53599350649358
+          }
+        }
+      },
+      "epoch": -1,
+      "*cmd": "NCCL_DEBUG=info NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2 deepspeed --master_port=28080 --include=localhost:4,5 --hostfile= distill/finetune.py --finetune --cloze-eval --experiment-name=blank-tiny6-ReCoRD-221217_224627.864403 --task=ReCoRD --data-dir=../GLM/data/english_data/superglue/ReCoRD --save=../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad/ft_logitsdistil/ReCoRD/blank-tiny6-ReCoRD-221217_224626.762940/ft_logitsdistil/ReCoRD --seq-length=512 --checkpoint-activations --eval-batch-size=16 --save-epoch=100000 --block-lm --num-layers=6 --hidden-size=768 --num-attention-heads=12 --max-position-embeddings=512 --tokenizer-model-type=bert-base-uncased --tokenizer-type=BertWordPieceTokenizer --load-pretrained=../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad/ft_logitsdistil/ReCoRD/blank-tiny6-ReCoRD-221217_224626.762940 --fp16 --lr-decay-style=linear --warmup=0.1 --weight-decay=1.0e-1 --pattern-id=0 --save-interval=10000 --log-interval=50 --eval-interval=1000 --eval-iters=100 --batch-size=8 --epochs=5 --lr=1e-5 --overwrite --deepspeed-activation-checkpointing --deepspeed --deepspeed_config=tmp_deepspeed_config/221217_224627.870092_4485419577197771.json --teacher_load_pretrained=../GLM/data/checkpoints/pretrain/blocklm-base-blank/finetune/ReCoRD/blank-base-ReCoRD-220813_083745 --teacher_num_layers=12 --teacher_hidden_size=768 --teacher_num_attention_heads=12 --teacher_max_position_embeddings=512 --teacher_fp16 --student_model=logitsdistil --distill_temperature=1 --logitsdistil_mask_pad --seed=1234 --distill_ft_soft --logitsdistil_wo_inter --custom_first_eval --custom_tmp_result=../GLM/data/tmp/result_221218_070533.255908.json"
+    },
+    {
+      "args": {
+        "save": "../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad/ft_logitsdistil/COPA/blank-tiny6-COPA-221218_131815.981517",
+        "epochs": 50,
+        "iteration": 5000,
+        "task": "COPA",
+        "wsc_negative": false
+      },
+      "now": "2022-12-18 13:25:48.732203",
+      "max_score_dict": {
+        "accuracy": {
+          "epoch": 8,
+          "iteration": 900,
+          "score_dict": {
+            "accuracy": 70.0
+          }
+        }
+      },
+      "epoch": -1,
+      "*cmd": "NCCL_DEBUG=info NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2 deepspeed --master_port=45054 --include=localhost:4,5 --hostfile= distill/finetune.py --finetune --cloze-eval --experiment-name=blank-tiny6-COPA-221218_131815.981517 --task=COPA --data-dir=../GLM/data/english_data/superglue/COPA --save=../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad/ft_logitsdistil/COPA --seq-length=256 --checkpoint-activations --eval-batch-size=16 --save-epoch=100000 --block-lm --num-layers=6 --hidden-size=768 --num-attention-heads=12 --max-position-embeddings=512 --tokenizer-model-type=bert-base-uncased --tokenizer-type=BertWordPieceTokenizer --load-pretrained=../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad --fp16 --lr-decay-style=linear --warmup=0.1 --weight-decay=1.0e-1 --pattern-id=0 --save-interval=10000 --log-interval=20 --eval-interval=1000 --eval-iters=100 --batch-size=8 --epochs=50 --lr=1e-5 --overwrite --deepspeed-activation-checkpointing --deepspeed --deepspeed_config=tmp_deepspeed_config/221218_131817.091049_4643277228892311.json --student_model=logitsdistil --distill_temperature=15 --logitsdistil_mask_pad --seed=1234 --teacher_load_pretrained=../GLM/data/checkpoints/pretrain/blocklm-base-blank/finetune/COPA/blank-base-COPA-220813_064749 --teacher_num_layers=12 --teacher_hidden_size=768 --teacher_num_attention_heads=12 --teacher_max_position_embeddings=512 --teacher_fp16 --custom_tmp_result=../GLM/data/tmp/result_221218_131817.101275.json"
+    },
+    {
+      "args": {
+        "save": "../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad/ft_logitsdistil/COPA/blank-tiny6-COPA-221218_131815.981517/ft_logitsdistil/COPA/blank-tiny6-COPA-221218_131817.083021",
+        "epochs": 50,
+        "iteration": 5000,
+        "task": "COPA",
+        "wsc_negative": false
+      },
+      "now": "2022-12-18 13:32:01.574893",
+      "max_score_dict": {
+        "accuracy": {
+          "epoch": 0,
+          "iteration": 0,
+          "score_dict": {
+            "accuracy": 70.0
+          }
+        }
+      },
+      "epoch": -1,
+      "*cmd": "NCCL_DEBUG=info NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2 deepspeed --master_port=52056 --include=localhost:4,5 --hostfile= distill/finetune.py --finetune --cloze-eval --experiment-name=blank-tiny6-COPA-221218_131817.083021 --task=COPA --data-dir=../GLM/data/english_data/superglue/COPA --save=../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad/ft_logitsdistil/COPA/blank-tiny6-COPA-221218_131815.981517/ft_logitsdistil/COPA --seq-length=256 --checkpoint-activations --eval-batch-size=16 --save-epoch=100000 --block-lm --num-layers=6 --hidden-size=768 --num-attention-heads=12 --max-position-embeddings=512 --tokenizer-model-type=bert-base-uncased --tokenizer-type=BertWordPieceTokenizer --load-pretrained=../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad/ft_logitsdistil/COPA/blank-tiny6-COPA-221218_131815.981517 --fp16 --lr-decay-style=linear --warmup=0.1 --weight-decay=1.0e-1 --pattern-id=0 --save-interval=10000 --log-interval=20 --eval-interval=1000 --eval-iters=100 --batch-size=8 --epochs=50 --lr=1e-5 --overwrite --deepspeed-activation-checkpointing --deepspeed --deepspeed_config=tmp_deepspeed_config/221218_131817.099601_9996567496407519.json --teacher_load_pretrained=../GLM/data/checkpoints/pretrain/blocklm-base-blank/finetune/COPA/blank-base-COPA-220813_064749 --teacher_num_layers=12 --teacher_hidden_size=768 --teacher_num_attention_heads=12 --teacher_max_position_embeddings=512 --teacher_fp16 --student_model=logitsdistil --distill_temperature=1 --logitsdistil_mask_pad --seed=1234 --distill_ft_soft --logitsdistil_wo_inter --custom_first_eval --custom_tmp_result=../GLM/data/tmp/result_221218_132553.066792.json"
+    },
+    {
+      "args": {
+        "save": "../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad/ft_logitsdistil/WSC/blank-tiny6-WSC-221218_133206.200615",
+        "epochs": 50,
+        "iteration": 2000,
+        "task": "WSC",
+        "wsc_negative": true
+      },
+      "now": "2022-12-18 13:36:56.612360",
+      "max_score_dict": {
+        "accuracy": {
+          "epoch": 27,
+          "iteration": 1120,
+          "score_dict": {
+            "accuracy": 75.96153846153847
+          }
+        }
+      },
+      "epoch": -1,
+      "*cmd": "NCCL_DEBUG=info NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2 deepspeed --master_port=45255 --include=localhost:4,5 --hostfile= distill/finetune.py --finetune --cloze-eval --experiment-name=blank-tiny6-WSC-221218_133206.200615 --task=WSC --data-dir=../GLM/data/english_data/superglue/WSC-negative --save=../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad/ft_logitsdistil/WSC --seq-length=128 --checkpoint-activations --eval-batch-size=16 --save-epoch=100000 --block-lm --num-layers=6 --hidden-size=768 --num-attention-heads=12 --max-position-embeddings=512 --tokenizer-model-type=bert-base-uncased --tokenizer-type=BertWordPieceTokenizer --load-pretrained=../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad --fp16 --lr-decay-style=linear --warmup=0.1 --weight-decay=1.0e-1 --loss-func=mix --wsc-negative --length-penalty=1 --pattern-id=2 --save-interval=10000 --log-interval=50 --eval-interval=1000 --eval-iters=100 --batch-size=8 --epochs=50 --lr=1e-5 --overwrite --deepspeed-activation-checkpointing --deepspeed --deepspeed_config=tmp_deepspeed_config/221218_133207.302783_11292453629674704.json --student_model=logitsdistil --distill_temperature=15 --logitsdistil_mask_pad --seed=1234 --teacher_load_pretrained=../GLM/data/checkpoints/pretrain/blocklm-base-blank/finetune/WSC/blank-base-WSC-220813_073441 --teacher_num_layers=12 --teacher_hidden_size=768 --teacher_num_attention_heads=12 --teacher_max_position_embeddings=512 --teacher_fp16 --custom_tmp_result=../GLM/data/tmp/result_221218_133207.306668.json"
+    },
+    {
+      "args": {
+        "save": "../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad/ft_logitsdistil/WSC/blank-tiny6-WSC-221218_133206.200615/ft_logitsdistil/WSC/blank-tiny6-WSC-221218_133207.301922",
+        "epochs": 50,
+        "iteration": 2000,
+        "task": "WSC",
+        "wsc_negative": true
+      },
+      "now": "2022-12-18 13:41:10.171561",
+      "max_score_dict": {
+        "accuracy": {
+          "epoch": 0,
+          "iteration": 0,
+          "score_dict": {
+            "accuracy": 75.96153846153847
+          }
+        }
+      },
+      "epoch": -1,
+      "*cmd": "NCCL_DEBUG=info NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2 deepspeed --master_port=46838 --include=localhost:4,5 --hostfile= distill/finetune.py --finetune --cloze-eval --experiment-name=blank-tiny6-WSC-221218_133207.301922 --task=WSC --data-dir=../GLM/data/english_data/superglue/WSC-negative --save=../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad/ft_logitsdistil/WSC/blank-tiny6-WSC-221218_133206.200615/ft_logitsdistil/WSC --seq-length=128 --checkpoint-activations --eval-batch-size=16 --save-epoch=100000 --block-lm --num-layers=6 --hidden-size=768 --num-attention-heads=12 --max-position-embeddings=512 --tokenizer-model-type=bert-base-uncased --tokenizer-type=BertWordPieceTokenizer --load-pretrained=../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad/ft_logitsdistil/WSC/blank-tiny6-WSC-221218_133206.200615 --fp16 --lr-decay-style=linear --warmup=0.1 --weight-decay=1.0e-1 --loss-func=mix --wsc-negative --length-penalty=1 --pattern-id=2 --save-interval=10000 --log-interval=50 --eval-interval=1000 --eval-iters=100 --batch-size=8 --epochs=50 --lr=1e-5 --overwrite --deepspeed-activation-checkpointing --deepspeed --deepspeed_config=tmp_deepspeed_config/221218_133207.305095_40539532140374235.json --teacher_load_pretrained=../GLM/data/checkpoints/pretrain/blocklm-base-blank/finetune/WSC/blank-base-WSC-220813_073441 --teacher_num_layers=12 --teacher_hidden_size=768 --teacher_num_attention_heads=12 --teacher_max_position_embeddings=512 --teacher_fp16 --student_model=logitsdistil --distill_temperature=1 --logitsdistil_mask_pad --seed=1234 --distill_ft_soft --logitsdistil_wo_inter --custom_first_eval --custom_tmp_result=../GLM/data/tmp/result_221218_133700.050248.json"
+    },
+    {
+      "args": {
+        "save": "../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad/ft_logitsdistil/RTE/blank-tiny6-RTE-221218_134114.267177",
+        "epochs": 50,
+        "iteration": 15600,
+        "task": "RTE",
+        "wsc_negative": false
+      },
+      "now": "2022-12-18 13:56:25.694655",
+      "max_score_dict": {
+        "accuracy": {
+          "epoch": 3,
+          "iteration": 1248,
+          "score_dict": {
+            "accuracy": 68.95306859205776
+          }
+        }
+      },
+      "epoch": -1,
+      "*cmd": "NCCL_DEBUG=info NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2 deepspeed --master_port=55048 --include=localhost:4,5 --hostfile= distill/finetune.py --finetune --cloze-eval --experiment-name=blank-tiny6-RTE-221218_134114.267177 --task=RTE --data-dir=../GLM/data/english_data/superglue/RTE --save=../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad/ft_logitsdistil/RTE --seq-length=256 --checkpoint-activations --eval-batch-size=16 --save-epoch=100000 --block-lm --num-layers=6 --hidden-size=768 --num-attention-heads=12 --max-position-embeddings=512 --tokenizer-model-type=bert-base-uncased --tokenizer-type=BertWordPieceTokenizer --load-pretrained=../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad --fp16 --lr-decay-style=linear --warmup=0.1 --weight-decay=1.0e-1 --pattern-id=0 --save-interval=10000 --log-interval=50 --eval-interval=10000000 --eval-iters=100 --batch-size=8 --epochs=50 --lr=1e-5 --overwrite --deepspeed-activation-checkpointing --deepspeed --deepspeed_config=tmp_deepspeed_config/221218_134115.369304_8165529678122847.json --student_model=logitsdistil --distill_temperature=15 --logitsdistil_mask_pad --seed=1234 --teacher_load_pretrained=../GLM/data/checkpoints/pretrain/blocklm-base-blank/finetune/RTE/blank-base-RTE-220813_065724 --teacher_num_layers=12 --teacher_hidden_size=768 --teacher_num_attention_heads=12 --teacher_max_position_embeddings=512 --teacher_fp16 --custom_tmp_result=../GLM/data/tmp/result_221218_134115.373768.json"
+    },
+    {
+      "args": {
+        "save": "../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad/ft_logitsdistil/RTE/blank-tiny6-RTE-221218_134114.267177/ft_logitsdistil/RTE/blank-tiny6-RTE-221218_134115.368477",
+        "epochs": 50,
+        "iteration": 15600,
+        "task": "RTE",
+        "wsc_negative": false
+      },
+      "now": "2022-12-18 14:09:28.676725",
+      "max_score_dict": {
+        "accuracy": {
+          "epoch": 0,
+          "iteration": 0,
+          "score_dict": {
+            "accuracy": 68.95306859205776
+          }
+        }
+      },
+      "epoch": -1,
+      "*cmd": "NCCL_DEBUG=info NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2 deepspeed --master_port=15399 --include=localhost:4,5 --hostfile= distill/finetune.py --finetune --cloze-eval --experiment-name=blank-tiny6-RTE-221218_134115.368477 --task=RTE --data-dir=../GLM/data/english_data/superglue/RTE --save=../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad/ft_logitsdistil/RTE/blank-tiny6-RTE-221218_134114.267177/ft_logitsdistil/RTE --seq-length=256 --checkpoint-activations --eval-batch-size=16 --save-epoch=100000 --block-lm --num-layers=6 --hidden-size=768 --num-attention-heads=12 --max-position-embeddings=512 --tokenizer-model-type=bert-base-uncased --tokenizer-type=BertWordPieceTokenizer --load-pretrained=../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad/ft_logitsdistil/RTE/blank-tiny6-RTE-221218_134114.267177 --fp16 --lr-decay-style=linear --warmup=0.1 --weight-decay=1.0e-1 --pattern-id=0 --save-interval=10000 --log-interval=50 --eval-interval=10000000 --eval-iters=100 --batch-size=8 --epochs=50 --lr=1e-5 --overwrite --deepspeed-activation-checkpointing --deepspeed --deepspeed_config=tmp_deepspeed_config/221218_134115.371452_6215003881963355.json --teacher_load_pretrained=../GLM/data/checkpoints/pretrain/blocklm-base-blank/finetune/RTE/blank-base-RTE-220813_065724 --teacher_num_layers=12 --teacher_hidden_size=768 --teacher_num_attention_heads=12 --teacher_max_position_embeddings=512 --teacher_fp16 --student_model=logitsdistil --distill_temperature=1 --logitsdistil_mask_pad --seed=1234 --distill_ft_soft --logitsdistil_wo_inter --custom_first_eval --custom_tmp_result=../GLM/data/tmp/result_221218_135630.027783.json"
+    },
+    {
+      "args": {
+        "save": "../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad/ft_logitsdistil/BoolQ/blank-tiny6-BoolQ-221218_140932.566700",
+        "epochs": 20,
+        "iteration": 23580,
+        "task": "BoolQ",
+        "wsc_negative": false
+      },
+      "now": "2022-12-18 14:31:46.881790",
+      "max_score_dict": {
+        "accuracy": {
+          "epoch": 15,
+          "iteration": 18864,
+          "score_dict": {
+            "accuracy": 78.2874617737003
+          }
+        }
+      },
+      "epoch": -1,
+      "*cmd": "NCCL_DEBUG=info NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2 deepspeed --master_port=52343 --include=localhost:4,5 --hostfile= distill/finetune.py --finetune --cloze-eval --experiment-name=blank-tiny6-BoolQ-221218_140932.566700 --task=BoolQ --data-dir=../GLM/data/english_data/superglue/BoolQ --save=../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad/ft_logitsdistil/BoolQ --seq-length=256 --checkpoint-activations --eval-batch-size=16 --save-epoch=100000 --block-lm --num-layers=6 --hidden-size=768 --num-attention-heads=12 --max-position-embeddings=512 --tokenizer-model-type=bert-base-uncased --tokenizer-type=BertWordPieceTokenizer --load-pretrained=../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad --fp16 --lr-decay-style=linear --warmup=0.1 --weight-decay=1.0e-1 --pattern-id=4 --save-interval=10000 --log-interval=50 --eval-interval=10000000 --eval-iters=100 --batch-size=8 --epochs=20 --lr=1e-5 --overwrite --deepspeed-activation-checkpointing --deepspeed --deepspeed_config=tmp_deepspeed_config/221218_140933.669797_5708693547834144.json --student_model=logitsdistil --distill_temperature=15 --logitsdistil_mask_pad --seed=1234 --teacher_load_pretrained=../GLM/data/checkpoints/pretrain/blocklm-base-blank/finetune/BoolQ/blank-base-BoolQ-220813_070712 --teacher_num_layers=12 --teacher_hidden_size=768 --teacher_num_attention_heads=12 --teacher_max_position_embeddings=512 --teacher_fp16 --custom_tmp_result=../GLM/data/tmp/result_221218_140933.678985.json"
+    },
+    {
+      "args": {
+        "save": "../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad/ft_logitsdistil/BoolQ/blank-tiny6-BoolQ-221218_140932.566700/ft_logitsdistil/BoolQ/blank-tiny6-BoolQ-221218_140933.668017",
+        "epochs": 20,
+        "iteration": 23580,
+        "task": "BoolQ",
+        "wsc_negative": false
+      },
+      "now": "2022-12-18 14:50:57.829676",
+      "max_score_dict": {
+        "accuracy": {
+          "epoch": 0,
+          "iteration": 0,
+          "score_dict": {
+            "accuracy": 78.2874617737003
+          }
+        }
+      },
+      "epoch": -1,
+      "*cmd": "NCCL_DEBUG=info NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2 deepspeed --master_port=14969 --include=localhost:4,5 --hostfile= distill/finetune.py --finetune --cloze-eval --experiment-name=blank-tiny6-BoolQ-221218_140933.668017 --task=BoolQ --data-dir=../GLM/data/english_data/superglue/BoolQ --save=../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad/ft_logitsdistil/BoolQ/blank-tiny6-BoolQ-221218_140932.566700/ft_logitsdistil/BoolQ --seq-length=256 --checkpoint-activations --eval-batch-size=16 --save-epoch=100000 --block-lm --num-layers=6 --hidden-size=768 --num-attention-heads=12 --max-position-embeddings=512 --tokenizer-model-type=bert-base-uncased --tokenizer-type=BertWordPieceTokenizer --load-pretrained=../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad/ft_logitsdistil/BoolQ/blank-tiny6-BoolQ-221218_140932.566700 --fp16 --lr-decay-style=linear --warmup=0.1 --weight-decay=1.0e-1 --pattern-id=4 --save-interval=10000 --log-interval=50 --eval-interval=10000000 --eval-iters=100 --batch-size=8 --epochs=20 --lr=1e-5 --overwrite --deepspeed-activation-checkpointing --deepspeed --deepspeed_config=tmp_deepspeed_config/221218_140933.674056_1341004442084366.json --teacher_load_pretrained=../GLM/data/checkpoints/pretrain/blocklm-base-blank/finetune/BoolQ/blank-base-BoolQ-220813_070712 --teacher_num_layers=12 --teacher_hidden_size=768 --teacher_num_attention_heads=12 --teacher_max_position_embeddings=512 --teacher_fp16 --student_model=logitsdistil --distill_temperature=1 --logitsdistil_mask_pad --seed=1234 --distill_ft_soft --logitsdistil_wo_inter --custom_first_eval --custom_tmp_result=../GLM/data/tmp/result_221218_143150.571246.json"
+    },
+    {
+      "args": {
+        "save": "../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad/ft_logitsdistil/WiC/blank-tiny6-WiC-221218_145101.889253",
+        "epochs": 30,
+        "iteration": 20370,
+        "task": "WiC",
+        "wsc_negative": false
+      },
+      "now": "2022-12-18 15:08:55.903524",
+      "max_score_dict": {
+        "accuracy": {
+          "epoch": 16,
+          "iteration": 11543,
+          "score_dict": {
+            "accuracy": 66.92789968652038
+          }
+        }
+      },
+      "epoch": -1,
+      "*cmd": "NCCL_DEBUG=info NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2 deepspeed --master_port=57481 --include=localhost:4,5 --hostfile= distill/finetune.py --finetune --cloze-eval --experiment-name=blank-tiny6-WiC-221218_145101.889253 --task=WiC --data-dir=../GLM/data/english_data/superglue/WiC --save=../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad/ft_logitsdistil/WiC --seq-length=256 --checkpoint-activations --eval-batch-size=16 --save-epoch=100000 --block-lm --num-layers=6 --hidden-size=768 --num-attention-heads=12 --max-position-embeddings=512 --tokenizer-model-type=bert-base-uncased --tokenizer-type=BertWordPieceTokenizer --load-pretrained=../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad --fp16 --lr-decay-style=linear --warmup=0.1 --weight-decay=1.0e-1 --pattern-id=1 --save-interval=10000 --log-interval=50 --eval-interval=10000000 --eval-iters=100 --batch-size=8 --epochs=30 --lr=1e-5 --overwrite --deepspeed-activation-checkpointing --deepspeed --deepspeed_config=tmp_deepspeed_config/221218_145103.001401_3528803745042245.json --student_model=logitsdistil --distill_temperature=15 --logitsdistil_mask_pad --seed=1234 --teacher_load_pretrained=../GLM/data/checkpoints/pretrain/blocklm-base-blank/finetune/WiC/blank-base-WiC-220813_072213 --teacher_num_layers=12 --teacher_hidden_size=768 --teacher_num_attention_heads=12 --teacher_max_position_embeddings=512 --teacher_fp16 --custom_tmp_result=../GLM/data/tmp/result_221218_145103.009438.json"
+    },
+    {
+      "args": {
+        "save": "../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad/ft_logitsdistil/WiC/blank-tiny6-WiC-221218_145101.889253/ft_logitsdistil/WiC/blank-tiny6-WiC-221218_145102.990812",
+        "epochs": 30,
+        "iteration": 20370,
+        "task": "WiC",
+        "wsc_negative": false
+      },
+      "now": "2022-12-18 15:25:11.628450",
+      "max_score_dict": {
+        "accuracy": {
+          "epoch": 0,
+          "iteration": 0,
+          "score_dict": {
+            "accuracy": 66.92789968652038
+          }
+        }
+      },
+      "epoch": -1,
+      "*cmd": "NCCL_DEBUG=info NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2 deepspeed --master_port=46812 --include=localhost:4,5 --hostfile= distill/finetune.py --finetune --cloze-eval --experiment-name=blank-tiny6-WiC-221218_145102.990812 --task=WiC --data-dir=../GLM/data/english_data/superglue/WiC --save=../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad/ft_logitsdistil/WiC/blank-tiny6-WiC-221218_145101.889253/ft_logitsdistil/WiC --seq-length=256 --checkpoint-activations --eval-batch-size=16 --save-epoch=100000 --block-lm --num-layers=6 --hidden-size=768 --num-attention-heads=12 --max-position-embeddings=512 --tokenizer-model-type=bert-base-uncased --tokenizer-type=BertWordPieceTokenizer --load-pretrained=../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad/ft_logitsdistil/WiC/blank-tiny6-WiC-221218_145101.889253 --fp16 --lr-decay-style=linear --warmup=0.1 --weight-decay=1.0e-1 --pattern-id=1 --save-interval=10000 --log-interval=50 --eval-interval=10000000 --eval-iters=100 --batch-size=8 --epochs=30 --lr=1e-5 --overwrite --deepspeed-activation-checkpointing --deepspeed --deepspeed_config=tmp_deepspeed_config/221218_145103.007738_9059326072186102.json --teacher_load_pretrained=../GLM/data/checkpoints/pretrain/blocklm-base-blank/finetune/WiC/blank-base-WiC-220813_072213 --teacher_num_layers=12 --teacher_hidden_size=768 --teacher_num_attention_heads=12 --teacher_max_position_embeddings=512 --teacher_fp16 --student_model=logitsdistil --distill_temperature=1 --logitsdistil_mask_pad --seed=1234 --distill_ft_soft --logitsdistil_wo_inter --custom_first_eval --custom_tmp_result=../GLM/data/tmp/result_221218_150859.266870.json"
+    },
+    {
+      "args": {
+        "save": "../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad/ft_logitsdistil/CB/blank-tiny6-CB-221218_152514.962156",
+        "epochs": 50,
+        "iteration": 1600,
+        "task": "CB",
+        "wsc_negative": false
+      },
+      "now": "2022-12-18 15:27:30.945044",
+      "max_score_dict": {
+        "accuracy": {
+          "epoch": 21,
+          "iteration": 704,
+          "score_dict": {
+            "accuracy": 83.92857142857143,
+            "f1-macro": 0.8127186406796602
+          }
+        },
+        "f1-macro": {
+          "epoch": 31,
+          "iteration": 1024,
+          "score_dict": {
+            "accuracy": 83.92857142857143,
+            "f1-macro": 0.8515094447297837
+          }
+        }
+      },
+      "epoch": -1,
+      "*cmd": "NCCL_DEBUG=info NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2 deepspeed --master_port=20330 --include=localhost:4,5 --hostfile= distill/finetune.py --finetune --cloze-eval --experiment-name=blank-tiny6-CB-221218_152514.962156 --task=CB --data-dir=../GLM/data/english_data/superglue/CB --save=../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad/ft_logitsdistil/CB --seq-length=256 --checkpoint-activations --eval-batch-size=16 --save-epoch=100000 --block-lm --num-layers=6 --hidden-size=768 --num-attention-heads=12 --max-position-embeddings=512 --tokenizer-model-type=bert-base-uncased --tokenizer-type=BertWordPieceTokenizer --load-pretrained=../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad --fp16 --lr-decay-style=linear --warmup=0.1 --weight-decay=1.0e-1 --pattern-id=3 --save-interval=10000 --log-interval=50 --eval-interval=10000000 --eval-iters=100 --batch-size=8 --epochs=50 --lr=1e-5 --overwrite --deepspeed-activation-checkpointing --deepspeed --deepspeed_config=tmp_deepspeed_config/221218_152516.065670_5241929856749638.json --student_model=logitsdistil --distill_temperature=15 --logitsdistil_mask_pad --seed=1234 --teacher_load_pretrained=../GLM/data/checkpoints/pretrain/blocklm-base-blank/finetune/CB/blank-base-CB-220813_065532 --teacher_num_layers=12 --teacher_hidden_size=768 --teacher_num_attention_heads=12 --teacher_max_position_embeddings=512 --teacher_fp16 --custom_tmp_result=../GLM/data/tmp/result_221218_152516.070025.json"
+    },
+    {
+      "args": {
+        "save": "../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad/ft_logitsdistil/CB/blank-tiny6-CB-221218_152514.962156/ft_logitsdistil/CB/blank-tiny6-CB-221218_152516.063256",
+        "epochs": 50,
+        "iteration": 1600,
+        "task": "CB",
+        "wsc_negative": false
+      },
+      "now": "2022-12-18 15:30:26.521908",
+      "max_score_dict": {
+        "accuracy": {
+          "epoch": 11,
+          "iteration": 384,
+          "score_dict": {
+            "accuracy": 91.07142857142857,
+            "f1-macro": 0.9048497554157932
+          }
+        },
+        "f1-macro": {
+          "epoch": 15,
+          "iteration": 512,
+          "score_dict": {
+            "accuracy": 91.07142857142857,
+            "f1-macro": 0.9048821548821548
+          }
+        }
+      },
+      "epoch": -1,
+      "*cmd": "NCCL_DEBUG=info NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2 deepspeed --master_port=38567 --include=localhost:4,5 --hostfile= distill/finetune.py --finetune --cloze-eval --experiment-name=blank-tiny6-CB-221218_152516.063256 --task=CB --data-dir=../GLM/data/english_data/superglue/CB --save=../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad/ft_logitsdistil/CB/blank-tiny6-CB-221218_152514.962156/ft_logitsdistil/CB --seq-length=256 --checkpoint-activations --eval-batch-size=16 --save-epoch=100000 --block-lm --num-layers=6 --hidden-size=768 --num-attention-heads=12 --max-position-embeddings=512 --tokenizer-model-type=bert-base-uncased --tokenizer-type=BertWordPieceTokenizer --load-pretrained=../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad/ft_logitsdistil/CB/blank-tiny6-CB-221218_152514.962156 --fp16 --lr-decay-style=linear --warmup=0.1 --weight-decay=1.0e-1 --pattern-id=3 --save-interval=10000 --log-interval=50 --eval-interval=10000000 --eval-iters=100 --batch-size=8 --epochs=50 --lr=1e-5 --overwrite --deepspeed-activation-checkpointing --deepspeed --deepspeed_config=tmp_deepspeed_config/221218_152516.068642_6297718494336546.json --teacher_load_pretrained=../GLM/data/checkpoints/pretrain/blocklm-base-blank/finetune/CB/blank-base-CB-220813_065532 --teacher_num_layers=12 --teacher_hidden_size=768 --teacher_num_attention_heads=12 --teacher_max_position_embeddings=512 --teacher_fp16 --student_model=logitsdistil --distill_temperature=1 --logitsdistil_mask_pad --seed=1234 --distill_ft_soft --logitsdistil_wo_inter --custom_first_eval --custom_tmp_result=../GLM/data/tmp/result_221218_152733.551725.json"
+    },
+    {
+      "args": {
+        "save": "../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad/ft_logitsdistil/MultiRC/blank-tiny6-MultiRC-221218_153029.300080",
+        "epochs": 15,
+        "iteration": 51090,
+        "task": "MultiRC",
+        "wsc_negative": false
+      },
+      "now": "2022-12-18 16:23:07.911872",
+      "max_score_dict": {
+        "f1a": {
+          "epoch": 9,
+          "iteration": 34060,
+          "score_dict": {
+            "f1a": 0.7090255949708127,
+            "em": 0.24449108079748164,
+            "acc": 73.26732673267327
+          }
+        },
+        "em": {
+          "epoch": 12,
+          "iteration": 44278,
+          "score_dict": {
+            "f1a": 0.7029478458049886,
+            "em": 0.24658971668415533,
+            "acc": 72.97854785478548
+          }
+        },
+        "acc": {
+          "epoch": 9,
+          "iteration": 34060,
+          "score_dict": {
+            "f1a": 0.7090255949708127,
+            "em": 0.24449108079748164,
+            "acc": 73.26732673267327
+          }
+        }
+      },
+      "epoch": -1,
+      "*cmd": "NCCL_DEBUG=info NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2 deepspeed --master_port=35272 --include=localhost:4,5 --hostfile= distill/finetune.py --finetune --cloze-eval --experiment-name=blank-tiny6-MultiRC-221218_153029.300080 --task=MultiRC --data-dir=../GLM/data/english_data/superglue/MultiRC --save=../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad/ft_logitsdistil/MultiRC --seq-length=512 --checkpoint-activations --eval-batch-size=16 --save-epoch=100000 --block-lm --num-layers=6 --hidden-size=768 --num-attention-heads=12 --max-position-embeddings=512 --tokenizer-model-type=bert-base-uncased --tokenizer-type=BertWordPieceTokenizer --load-pretrained=../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad --fp16 --lr-decay-style=linear --warmup=0.1 --weight-decay=1.0e-1 --pattern-id=0 --save-interval=10000 --log-interval=50 --eval-interval=10000000 --eval-iters=100 --batch-size=8 --epochs=15 --lr=1e-5 --overwrite --deepspeed-activation-checkpointing --deepspeed --deepspeed_config=tmp_deepspeed_config/221218_153030.402200_3901862244181077.json --student_model=logitsdistil --distill_temperature=15 --logitsdistil_mask_pad --seed=1234 --teacher_load_pretrained=../GLM/data/checkpoints/pretrain/blocklm-base-blank/finetune/MultiRC/blank-base-MultiRC-220813_074014 --teacher_num_layers=12 --teacher_hidden_size=768 --teacher_num_attention_heads=12 --teacher_max_position_embeddings=512 --teacher_fp16 --custom_tmp_result=../GLM/data/tmp/result_221218_153030.407087.json"
+    },
+    {
+      "args": {
+        "save": "../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad/ft_logitsdistil/MultiRC/blank-tiny6-MultiRC-221218_153029.300080/ft_logitsdistil/MultiRC/blank-tiny6-MultiRC-221218_153030.401240",
+        "epochs": 15,
+        "iteration": 51090,
+        "task": "MultiRC",
+        "wsc_negative": false
+      },
+      "now": "2022-12-18 17:04:39.688455",
+      "max_score_dict": {
+        "f1a": {
+          "epoch": 10,
+          "iteration": 37466,
+          "score_dict": {
+            "f1a": 0.7122171945701358,
+            "em": 0.25813221406086045,
+            "acc": 73.76237623762377
+          }
+        },
+        "em": {
+          "epoch": 7,
+          "iteration": 27248,
+          "score_dict": {
+            "f1a": 0.7044982698961938,
+            "em": 0.2633788037775446,
+            "acc": 73.57673267326733
+          }
+        },
+        "acc": {
+          "epoch": 9,
+          "iteration": 34060,
+          "score_dict": {
+            "f1a": 0.7090316573556797,
+            "em": 0.2602308499475341,
+            "acc": 74.21617161716172
+          }
+        }
+      },
+      "epoch": -1,
+      "*cmd": "NCCL_DEBUG=info NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2 deepspeed --master_port=56205 --include=localhost:4,5 --hostfile= distill/finetune.py --finetune --cloze-eval --experiment-name=blank-tiny6-MultiRC-221218_153030.401240 --task=MultiRC --data-dir=../GLM/data/english_data/superglue/MultiRC --save=../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad/ft_logitsdistil/MultiRC/blank-tiny6-MultiRC-221218_153029.300080/ft_logitsdistil/MultiRC --seq-length=512 --checkpoint-activations --eval-batch-size=16 --save-epoch=100000 --block-lm --num-layers=6 --hidden-size=768 --num-attention-heads=12 --max-position-embeddings=512 --tokenizer-model-type=bert-base-uncased --tokenizer-type=BertWordPieceTokenizer --load-pretrained=../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad/ft_logitsdistil/MultiRC/blank-tiny6-MultiRC-221218_153029.300080 --fp16 --lr-decay-style=linear --warmup=0.1 --weight-decay=1.0e-1 --pattern-id=0 --save-interval=10000 --log-interval=50 --eval-interval=10000000 --eval-iters=100 --batch-size=8 --epochs=15 --lr=1e-5 --overwrite --deepspeed-activation-checkpointing --deepspeed --deepspeed_config=tmp_deepspeed_config/221218_153030.404705_5852334766329462.json --teacher_load_pretrained=../GLM/data/checkpoints/pretrain/blocklm-base-blank/finetune/MultiRC/blank-base-MultiRC-220813_074014 --teacher_num_layers=12 --teacher_hidden_size=768 --teacher_num_attention_heads=12 --teacher_max_position_embeddings=512 --teacher_fp16 --student_model=logitsdistil --distill_temperature=1 --logitsdistil_mask_pad --seed=1234 --distill_ft_soft --logitsdistil_wo_inter --custom_first_eval --custom_tmp_result=../GLM/data/tmp/result_221218_162313.010509.json"
+    },
+    {
+      "args": {
+        "save": "../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad/ft_logitsdistil/WSC/blank-tiny6-WSC_generative-221218_170443.485113",
+        "epochs": 50,
+        "iteration": 1650,
+        "task": "WSC",
+        "wsc_negative": false
+      },
+      "now": "2022-12-18 17:07:00.696030",
+      "max_score_dict": {
+        "accuracy": {
+          "epoch": 45,
+          "iteration": 1518,
+          "score_dict": {
+            "accuracy": 71.15384615384616
+          }
+        }
+      },
+      "epoch": -1,
+      "*cmd": "NCCL_DEBUG=info NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2 deepspeed --master_port=43570 --include=localhost:4,5 --hostfile= distill/finetune.py --finetune --cloze-eval --experiment-name=blank-tiny6-WSC_generative-221218_170443.485113 --task=WSC --data-dir=../GLM/data/english_data/superglue/WSC --save=../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad/ft_logitsdistil/WSC --seq-length=128 --checkpoint-activations --eval-batch-size=16 --save-epoch=100000 --block-lm --num-layers=6 --hidden-size=768 --num-attention-heads=12 --max-position-embeddings=512 --tokenizer-model-type=bert-base-uncased --tokenizer-type=BertWordPieceTokenizer --load-pretrained=../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad --fp16 --lr-decay-style=linear --warmup=0.1 --weight-decay=1.0e-1 --save-interval=10000 --log-interval=50 --eval-interval=1000 --eval-iters=100 --batch-size=8 --epochs=50 --lr=1e-5 --overwrite --deepspeed-activation-checkpointing --deepspeed --deepspeed_config=tmp_deepspeed_config/221218_170444.603336_609822408221744.json --student_model=logitsdistil --distill_temperature=15 --logitsdistil_mask_pad --seed=1234 --teacher_load_pretrained=../GLM/data/checkpoints/pretrain/blocklm-base-blank/finetune/WSC/blank-base-WSC_generative-220813_065345 --teacher_num_layers=12 --teacher_hidden_size=768 --teacher_num_attention_heads=12 --teacher_max_position_embeddings=512 --teacher_fp16 --custom_tmp_result=../GLM/data/tmp/result_221218_170444.619297.json"
+    },
+    {
+      "args": {
+        "save": "../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad/ft_logitsdistil/WSC/blank-tiny6-WSC_generative-221218_170443.485113/ft_logitsdistil/WSC/blank-tiny6-WSC_generative-221218_170444.586570",
+        "epochs": 50,
+        "iteration": 1650,
+        "task": "WSC",
+        "wsc_negative": false
+      },
+      "now": "2022-12-18 17:09:10.423661",
+      "max_score_dict": {
+        "accuracy": {
+          "epoch": 31,
+          "iteration": 1056,
+          "score_dict": {
+            "accuracy": 75.0
+          }
+        }
+      },
+      "epoch": -1,
+      "*cmd": "NCCL_DEBUG=info NCCL_IB_DISABLE=0 NCCL_NET_GDR_LEVEL=2 deepspeed --master_port=52965 --include=localhost:4,5 --hostfile= distill/finetune.py --finetune --cloze-eval --experiment-name=blank-tiny6-WSC_generative-221218_170444.586570 --task=WSC --data-dir=../GLM/data/english_data/superglue/WSC --save=../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad/ft_logitsdistil/WSC/blank-tiny6-WSC_generative-221218_170443.485113/ft_logitsdistil/WSC --seq-length=128 --checkpoint-activations --eval-batch-size=16 --save-epoch=100000 --block-lm --num-layers=6 --hidden-size=768 --num-attention-heads=12 --max-position-embeddings=512 --tokenizer-model-type=bert-base-uncased --tokenizer-type=BertWordPieceTokenizer --load-pretrained=../GLM/data/checkpoints/distill/paper/12.768-6.768_64-15w_glmd-vc-dta_mask-pad/ft_logitsdistil/WSC/blank-tiny6-WSC_generative-221218_170443.485113 --fp16 --lr-decay-style=linear --warmup=0.1 --weight-decay=1.0e-1 --save-interval=10000 --log-interval=50 --eval-interval=1000 --eval-iters=100 --batch-size=8 --epochs=50 --lr=1e-5 --overwrite --deepspeed-activation-checkpointing --deepspeed --deepspeed_config=tmp_deepspeed_config/221218_170444.616777_7091656737382998.json --teacher_load_pretrained=../GLM/data/checkpoints/pretrain/blocklm-base-blank/finetune/WSC/blank-base-WSC_generative-220813_065345 --teacher_num_layers=12 --teacher_hidden_size=768 --teacher_num_attention_heads=12 --teacher_max_position_embeddings=512 --teacher_fp16 --student_model=logitsdistil --distill_temperature=1 --logitsdistil_mask_pad --seed=1234 --distill_ft_soft --logitsdistil_wo_inter --custom_first_eval --custom_tmp_result=../GLM/data/tmp/result_221218_170705.310060.json"
+    }
+  ]

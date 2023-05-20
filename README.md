@@ -48,7 +48,8 @@ python change_mp.py path_to_the_checkpoint 2
 Then change `--model-parallel-size` in the command to `2`.
 
 ## Download Distilled Models
-
+You can access the distilled model files for download at the following location:
+- Link: https://pan.baidu.com/s/1Q2lUY96Ix5emMAb-fkJgbQ?pwd=wwm8
 
 ## Usage of existing methods
 We provide commands for distilling GLM on all methods with deepspeed.

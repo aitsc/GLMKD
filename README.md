@@ -9,6 +9,12 @@ For more details about the techniques of GLMD, refer to our paper:
 
 [Are Intermediate Layers and Labels Really Necessary? A General Language Model Distillation Method](https://arxiv.org)
 
+## Related Model Files
+Download link: https://pan.baidu.com/s/1Q2lUY96Ix5emMAb-fkJgbQ?pwd=wwm8
+- The fine-tuning teacher models for glm-large, glm-base, glm-2b, glm-10b, and ibglm-large.
+- The optimal models related to GLMD, along with models from certain other methods.
+- The pretraining teacher models for ibglm-large and alglm-base.
+
 # GKD
 GKD: A General Knowledge Distillation Framework for Large-scale Pre-trained Language Model
 
@@ -46,10 +52,6 @@ If your encounter the `CUDA out of memory` error, which means you GPU memory is 
 python change_mp.py path_to_the_checkpoint 2
 ```
 Then change `--model-parallel-size` in the command to `2`.
-
-## Download Distilled Models
-You can access the distilled model files for download at the following location:
-- Link: https://pan.baidu.com/s/1Q2lUY96Ix5emMAb-fkJgbQ?pwd=wwm8
 
 ## Usage of existing methods
 We provide commands for distilling GLM on all methods with deepspeed.

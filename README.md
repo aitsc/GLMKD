@@ -7,7 +7,7 @@ GLMD: General Language Model Distillation without Intermediate Layer Features an
 
 For more details about the techniques of GLMD, refer to our paper:
 
-[Are Intermediate Layers and Labels Really Necessary? A General Language Model Distillation Method](https://arxiv.org)
+[Are Intermediate Layers and Labels Really Necessary? A General Language Model Distillation Method](https://arxiv.org/abs/2306.06625)
 
 ## Related Model Files
 Download link: https://pan.baidu.com/s/1Q2lUY96Ix5emMAb-fkJgbQ?pwd=wwm8
@@ -23,7 +23,7 @@ GKD: A General Knowledge Distillation Framework for Large-scale Pre-trained Lang
 
 For more details about the techniques of GKD, refer to our paper:
 
-[GKD: A General Knowledge Distillation Framework for Large-scale Pre-trained Language Model](https://arxiv.org)
+[GKD: A General Knowledge Distillation Framework for Large-scale Pre-trained Language Model](https://arxiv.org/abs/2306.06629)
 
 ## Get Started
 ### Docker Image

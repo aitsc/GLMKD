@@ -33,10 +33,10 @@ We prepare a docker image based on Python 3.8.13, PyTorch 1.9.1, and CUDA 11.1. 
   ```
 ### Manual Installation
 ```shell
-git clone https://github.com/THUDM/GKD
-cd GKD
-conda create -n GLM python=3.8
-conda activate GLM
+git clone https://github.com/aitsc/GLMKD
+cd GLMKD
+conda create -n GLMKD python=3.8
+conda activate GLMKD
 pip install torch==1.9.1+cu111 torchvision==0.10.1+cu111 torchaudio==0.9.1 -f https://download.pytorch.org/whl/torch_stable.html
 pip install -r requirements.txt
 git clone https://github.com/NVIDIA/apex

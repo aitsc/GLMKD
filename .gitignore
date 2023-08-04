@@ -13,3 +13,4 @@ test*
 results.json
 samples/
 tmp_*
+apex/
